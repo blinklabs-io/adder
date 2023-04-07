@@ -1,5 +1,7 @@
 # snek
 
+![Snek Logo](./imgs/snek_logo_pink.png)
+
 Snek is a tool for tailing the Cardano blockchain and emitting events for each
 block and transaction that it sees.
 
