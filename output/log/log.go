@@ -9,13 +9,18 @@ type LogOutput struct {
 	errorChan chan error
 	eventChan chan event.Event
 	logger    *logging.Logger
+	level     string
 }
 
-func New() *LogOutput {
+func New(options ...LogOptionFunc) *LogOutput {
 	l := &LogOutput{
 		errorChan: make(chan error),
 		eventChan: make(chan event.Event, 10),
 		logger:    logging.GetLogger().With("type", "event"),
+		level:     "info",
+	}
+	for _, option := range options {
+		option(l)
 	}
 	return l
 }
@@ -29,7 +34,17 @@ func (l *LogOutput) Start() error {
 			if !ok {
 				return
 			}
-			l.logger.Infow("", "event", evt)
+			switch l.level {
+			case "info":
+				l.logger.Infow("", "event", evt)
+			case "warn":
+				l.logger.Warnw("", "event", evt)
+			case "error":
+				l.logger.Errorw("", "event", evt)
+			default:
+				// Use INFO level if log level isn't recognized
+				l.logger.Infow("", "event", evt)
+			}
 		}
 	}()
 	return nil
@@ -47,7 +62,12 @@ func (l *LogOutput) ErrorChan() chan error {
 	return l.errorChan
 }
 
-// EventChan returns the input event channel
-func (l *LogOutput) EventChan() chan event.Event {
+// InputChan returns the input event channel
+func (l *LogOutput) InputChan() chan<- event.Event {
 	return l.eventChan
+}
+
+// OutputChan always returns nil
+func (l *LogOutput) OutputChan() <-chan event.Event {
+	return nil
 }

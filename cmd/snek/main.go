@@ -1,29 +1,60 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"net/http"
 	"os"
 
-	"github.com/blinklabs-io/snek/input/chainsync"
+	_ "github.com/blinklabs-io/snek/input"
 	"github.com/blinklabs-io/snek/internal/config"
 	"github.com/blinklabs-io/snek/internal/logging"
-	"github.com/blinklabs-io/snek/output/log"
+	_ "github.com/blinklabs-io/snek/output"
+	"github.com/blinklabs-io/snek/plugin"
 )
 
-var cmdlineFlags struct {
-	configFile string
-}
+const (
+	programName = "snek"
+)
 
 func main() {
-	flag.StringVar(&cmdlineFlags.configFile, "config", "", "path to config file to load")
-	flag.Parse()
+	cfg := config.GetConfig()
+
+	if err := cfg.ParseCmdlineArgs(programName, os.Args[1:]); err != nil {
+		fmt.Printf("Failed to parse commandline: %s\n", err)
+		os.Exit(1)
+	}
+
+	if cfg.Input == "list" {
+		fmt.Printf("Available input plugins:\n\n")
+		for _, plugin := range plugin.GetPlugins(plugin.PluginTypeInput) {
+			fmt.Println(plugin)
+		}
+		return
+	}
+
+	if cfg.Output == "list" {
+		fmt.Printf("Available output plugins:\n\n")
+		for _, plugin := range plugin.GetPlugins(plugin.PluginTypeOutput) {
+			fmt.Println(plugin)
+		}
+		return
+	}
 
 	// Load config
-	cfg, err := config.Load(cmdlineFlags.configFile)
-	if err != nil {
+	if err := cfg.Load(cfg.ConfigFile); err != nil {
 		fmt.Printf("Failed to load config: %s\n", err)
+		os.Exit(1)
+	}
+
+	// Process config for plugins
+	if err := plugin.ProcessConfig(cfg.Plugin); err != nil {
+		fmt.Printf("Failed to process plugin config: %s\n", err)
+		os.Exit(1)
+	}
+
+	// Process env vars for plugins
+	if err := plugin.ProcessEnvVars(); err != nil {
+		fmt.Printf("Failed to process env vars: %s\n", err)
 		os.Exit(1)
 	}
 
@@ -51,34 +82,31 @@ func main() {
 	}
 
 	// Configure input
-	input := chainsync.New(
-		chainsync.WithNetwork(cfg.Node.Network),
-		chainsync.WithNetworkMagic(cfg.Node.NetworkMagic),
-		chainsync.WithSocketPath(cfg.Node.SocketPath),
-		chainsync.WithAddress(cfg.Node.Address),
-		chainsync.WithPort(cfg.Node.Port),
-		chainsync.WithNodeToNode(cfg.Node.UseNtN),
-		// TODO: add intersect point(s)
-		chainsync.WithIntersectTip(true),
-	)
+	input := plugin.GetPlugin(plugin.PluginTypeInput, cfg.Input)
+	if input == nil {
+		logger.Fatalf("unknown input: %s", cfg.Input)
+	}
 	if err := input.Start(); err != nil {
-		logger.Fatalf("failed to start ChainSync input: %s", err)
+		logger.Fatalf("failed to start input: %s", err)
 	}
 
 	// Configure output
-	output := log.New()
+	output := plugin.GetPlugin(plugin.PluginTypeOutput, cfg.Output)
+	if output == nil {
+		logger.Fatalf("unknown output: %s", cfg.Output)
+	}
 	if err := output.Start(); err != nil {
-		logger.Fatalf("failed to start Log output: %s", err)
+		logger.Fatalf("failed to start output: %s", err)
 	}
 
 	// Process input events
 	for {
 		select {
-		case evt, ok := <-input.EventChan():
+		case evt, ok := <-input.OutputChan():
 			if !ok {
 				return
 			}
-			output.EventChan() <- evt
+			output.InputChan() <- evt
 		case err, ok := <-input.ErrorChan():
 			if !ok {
 				return
