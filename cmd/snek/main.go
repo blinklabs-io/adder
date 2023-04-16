@@ -9,6 +9,7 @@ import (
 	"github.com/blinklabs-io/snek/internal/config"
 	"github.com/blinklabs-io/snek/internal/logging"
 	_ "github.com/blinklabs-io/snek/output"
+	"github.com/blinklabs-io/snek/pipeline"
 	"github.com/blinklabs-io/snek/plugin"
 )
 
@@ -81,37 +82,29 @@ func main() {
 		}()
 	}
 
+	// Create pipeline
+	pipe := pipeline.New()
+
 	// Configure input
 	input := plugin.GetPlugin(plugin.PluginTypeInput, cfg.Input)
 	if input == nil {
 		logger.Fatalf("unknown input: %s", cfg.Input)
 	}
-	if err := input.Start(); err != nil {
-		logger.Fatalf("failed to start input: %s", err)
-	}
+	pipe.AddInput(input)
 
 	// Configure output
 	output := plugin.GetPlugin(plugin.PluginTypeOutput, cfg.Output)
 	if output == nil {
 		logger.Fatalf("unknown output: %s", cfg.Output)
 	}
-	if err := output.Start(); err != nil {
-		logger.Fatalf("failed to start output: %s", err)
-	}
+	pipe.AddOutput(output)
 
-	// Process input events
-	for {
-		select {
-		case evt, ok := <-input.OutputChan():
-			if !ok {
-				return
-			}
-			output.InputChan() <- evt
-		case err, ok := <-input.ErrorChan():
-			if !ok {
-				return
-			}
-			logger.Fatalf("output failure: %s", err)
-		}
+	// Start pipeline and wait for error
+	if err := pipe.Start(); err != nil {
+		logger.Fatalf("failed to start pipeline: %s\n", err)
+	}
+	err, ok := <-pipe.ErrorChan()
+	if ok {
+		logger.Fatalf("pipeline failed: %s\n", err)
 	}
 }
