@@ -77,8 +77,13 @@ func (c *ChainSync) ErrorChan() chan error {
 	return c.errorChan
 }
 
-// EventChan returns the input event channel
-func (c *ChainSync) EventChan() chan event.Event {
+// InputChan always returns nil
+func (c *ChainSync) InputChan() chan<- event.Event {
+	return nil
+}
+
+// OutputChan returns the output event channel
+func (c *ChainSync) OutputChan() <-chan event.Event {
 	return c.eventChan
 }
 

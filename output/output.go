@@ -1,12 +1,5 @@
 package output
 
 import (
-	"github.com/blinklabs-io/snek/event"
+	_ "github.com/blinklabs-io/snek/output/log"
 )
-
-type Output interface {
-	Start() error
-	Stop() error
-	ErrorChan() chan error
-	EventChan() chan event.Event
-}

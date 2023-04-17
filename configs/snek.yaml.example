@@ -1,2 +1,42 @@
 ---
-# TODO: populate me
+# Example config
+
+# Logging options
+logging:
+  # Log level
+  level: info
+
+# Debug options
+debug:
+  # Debug listener address
+  address: localhost
+
+  # Debug listener port
+  # Set this to a non-zero value to enable debug listener
+  #port: 0
+
+# Input plugin to use
+input: chainsync
+
+# Output plugin to use
+output: log
+
+# Plugin options
+plugins:
+
+  # Input plugin options
+  input:
+    # Chainsync input plugin options
+    chainsync:
+      network: preview
+      address: preview-node.world.dev.cardano.org
+      port: 30002
+      use-ntn: true
+      intersect-tip: true
+
+  # Output plugin options
+  output:
+    # Log output plugin options
+    log:
+      # Logging level
+      level: info
