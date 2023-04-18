@@ -29,10 +29,6 @@ plugins:
     # Chainsync input plugin options
     chainsync:
       network: preview
-      address: preview-node.world.dev.cardano.org
-      port: 30002
-      use-ntn: true
-      intersect-tip: true
 
   # Output plugin options
   output:

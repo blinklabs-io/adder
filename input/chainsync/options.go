@@ -20,10 +20,10 @@ func WithNetworkMagic(networkMagic uint32) ChainSyncOptionFunc {
 	}
 }
 
-// WithNodeToNode specifies whether to use the node-to-node protocol. The default is to use node-to-client
-func WithNodeToNode(nodeToNode bool) ChainSyncOptionFunc {
+// WithNtcTcp specifies whether to use the NtC (node-to-client) protocol over TCP. This is useful when exposing a node's UNIX socket via socat or similar. The default is to use the NtN (node-to-node) protocol over TCP
+func WithNtcTcp(ntcTcp bool) ChainSyncOptionFunc {
 	return func(o *ChainSync) {
-		o.useNodeToNode = nodeToNode
+		o.ntcTcp = ntcTcp
 	}
 }
 
@@ -34,17 +34,10 @@ func WithSocketPath(socketPath string) ChainSyncOptionFunc {
 	}
 }
 
-// WithAddress specifies the TCP address of the node to connect to
+// WithAddress specifies the TCP address of the node to connect to in the form "host:port"
 func WithAddress(address string) ChainSyncOptionFunc {
 	return func(c *ChainSync) {
 		c.address = address
-	}
-}
-
-// WithPort specifies the TCP port of the node to connect to
-func WithPort(port uint) ChainSyncOptionFunc {
-	return func(c *ChainSync) {
-		c.port = port
 	}
 }
 

@@ -18,9 +18,8 @@ type ChainSync struct {
 	network            string
 	networkMagic       uint32
 	address            string
-	port               uint
 	socketPath         string
-	useNodeToNode      bool
+	ntcTcp             bool
 	intersectTip       bool
 	intersectPoints    []ocommon.Point
 	errorChan          chan error
@@ -48,7 +47,7 @@ func (c *ChainSync) Start() error {
 		return err
 	}
 	c.oConn.ChainSync().Client.Start()
-	if c.useNodeToNode {
+	if c.oConn.BlockFetch() != nil {
 		c.oConn.BlockFetch().Client.Start()
 	}
 	if c.intersectTip {
@@ -88,19 +87,44 @@ func (c *ChainSync) OutputChan() <-chan event.Event {
 }
 
 func (c *ChainSync) setupConnection() error {
-	// Populate network magic value from network name
+	// Determine connection parameters
+	var useNtn bool
+	var dialFamily, dialAddress string
+	// Lookup network by name, if provided
 	if c.network != "" {
 		network := ouroboros.NetworkByName(c.network)
 		if network == ouroboros.NetworkInvalid {
 			return fmt.Errorf("unknown network: %s", c.network)
 		}
 		c.networkMagic = network.NetworkMagic
+		// If network has well-known public root address/port, use those as our dial default
+		if network.PublicRootAddress != "" && network.PublicRootPort > 0 {
+			dialFamily = "tcp"
+			dialAddress = fmt.Sprintf("%s:%d", network.PublicRootAddress, network.PublicRootPort)
+			useNtn = true
+		}
+	}
+	// Use user-provided address or socket path, if provided
+	if c.address != "" {
+		dialFamily = "tcp"
+		dialAddress = c.address
+		if c.ntcTcp {
+			useNtn = false
+		} else {
+			useNtn = true
+		}
+	} else if c.socketPath != "" {
+		dialFamily = "unix"
+		dialAddress = c.socketPath
+		useNtn = false
+	} else if dialFamily == "" || dialAddress == "" {
+		return fmt.Errorf("you must specify a host/port, UNIX socket path, or well-known network name")
 	}
 	// Create connection
 	var err error
 	c.oConn, err = ouroboros.New(
 		ouroboros.WithNetworkMagic(c.networkMagic),
-		ouroboros.WithNodeToNode(c.useNodeToNode),
+		ouroboros.WithNodeToNode(useNtn),
 		ouroboros.WithKeepAlive(true),
 		ouroboros.WithChainSyncConfig(
 			ochainsync.NewConfig(
@@ -112,14 +136,8 @@ func (c *ChainSync) setupConnection() error {
 	if err != nil {
 		return err
 	}
-	if c.address != "" && c.port > 0 {
-		if err := c.oConn.Dial("tcp", fmt.Sprintf("%s:%d", c.address, c.port)); err != nil {
-			return err
-		}
-	} else {
-		if err := c.oConn.Dial("unix", c.socketPath); err != nil {
-			return err
-		}
+	if err := c.oConn.Dial(dialFamily, dialAddress); err != nil {
+		return err
 	}
 	// Start async error handler
 	go func() {

@@ -101,9 +101,6 @@ plugins:
   input:
     chainsync:
       network: preview
-      address: preview-node.world.dev.cardano.org
-      port: 30002
-      use-ntn: true
 
   output:
     log:
@@ -115,11 +112,7 @@ plugins:
 ### Native using remote node
 
 ```bash
-export INPUT_CHAINSYNC_NETWORK=preview \
-  INPUT_CHAINSYNC_ADDRESS=preview-node.world.dev.cardano.org \
-  INPUT_CHAINSYNC_PORT=30002 \
-  INPUT_CHAINSYNC_USE_NTN=true \
-  INPUT_CHAINSYNC_INTERSECT_TIP=true
+export INPUT_CHAINSYNC_NETWORK=preview
 ./snek 
 ```
 
@@ -127,11 +120,7 @@ Alternatively using equivalent commandline options:
 
 ```bash
 ./snek \
-  -input-chainsync-network preview \
-  -input-chainsync-address preview-node.world.dev.cardano.org \
-  -input-chainsync-port 30002 \
-  -input-chainsync-use-ntn \
-  -input-chainsync-intersect-tip
+  -input-chainsync-network preview
 ```
 
 ### In Docker using local node
