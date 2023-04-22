@@ -8,9 +8,8 @@ var cmdlineOptions struct {
 	network        string
 	networkMagic   uint
 	address        string
-	port           uint
 	socketPath     string
-	ntn            bool
+	ntcTcp         bool
 	intersectTip   bool
 	intersectPoint string
 }
@@ -33,7 +32,6 @@ func init() {
 				{
 					Name:         "network-magic",
 					Type:         plugin.PluginOptionTypeUint,
-					CustomEnvVar: "CARDANO_NODE_NETWORK_MAGIC",
 					Description:  "specifies the network magic value to use, overrides 'network'",
 					DefaultValue: uint(0),
 					Dest:         &(cmdlineOptions.networkMagic),
@@ -41,40 +39,30 @@ func init() {
 				{
 					Name:         "address",
 					Type:         plugin.PluginOptionTypeString,
-					CustomEnvVar: "CARDANO_NODE_SOCKET_TCP_HOST",
-					Description:  "specifies the TCP address of the node to connect to",
+					Description:  "specifies the TCP address of the node to connect to in the form 'host:port'",
 					DefaultValue: "",
 					Dest:         &(cmdlineOptions.address),
-				},
-				{
-					Name:         "port",
-					Type:         plugin.PluginOptionTypeUint,
-					CustomEnvVar: "CARDANO_NODE_SOCKET_TCP_PORT",
-					Description:  "specifies the TCP port of the node to connect to",
-					DefaultValue: uint(0),
-					Dest:         &(cmdlineOptions.port),
 				},
 				{
 					Name:         "socket-path",
 					Type:         plugin.PluginOptionTypeString,
 					CustomEnvVar: "CARDANO_NODE_SOCKET_PATH",
 					Description:  "specifies the path to the UNIX socket to connect to",
-					DefaultValue: "/node-ipc/node.socket",
+					DefaultValue: "",
 					Dest:         &(cmdlineOptions.socketPath),
 				},
 				{
-					Name:         "use-ntn",
+					Name:         "ntc-tcp",
 					Type:         plugin.PluginOptionTypeBool,
-					CustomEnvVar: "CARDANO_NODE_USE_NTN",
-					Description:  "specifies that node-to-node mode should be used (defaults node-to-client)",
+					Description:  "use the NtC (node-to-client) protocol over TCP, for use when exposing a node's UNIX socket via socat or similar",
 					DefaultValue: false,
-					Dest:         &(cmdlineOptions.ntn),
+					Dest:         &(cmdlineOptions.ntcTcp),
 				},
 				{
 					Name:         "intersect-tip",
 					Type:         plugin.PluginOptionTypeBool,
 					Description:  "start syncing at the chain tip (defaults to chain genesis)",
-					DefaultValue: false,
+					DefaultValue: true,
 					Dest:         &(cmdlineOptions.intersectTip),
 				},
 				// TODO: intersect-point
@@ -88,9 +76,8 @@ func NewFromCmdlineOptions() plugin.Plugin {
 		WithNetwork(cmdlineOptions.network),
 		WithNetworkMagic(uint32(cmdlineOptions.networkMagic)),
 		WithAddress(cmdlineOptions.address),
-		WithPort(cmdlineOptions.port),
 		WithSocketPath(cmdlineOptions.socketPath),
-		WithNodeToNode(cmdlineOptions.ntn),
+		WithNtcTcp(cmdlineOptions.ntcTcp),
 		WithIntersectTip(cmdlineOptions.intersectTip),
 		// TODO: WithIntersectPoints
 	)
