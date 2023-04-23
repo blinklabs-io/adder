@@ -13,6 +13,7 @@ func init() {
 		plugin.PluginEntry{
 			Type:               plugin.PluginTypeOutput,
 			Name:               "log",
+			Description:        "display events to the console using the logger",
 			NewFromOptionsFunc: NewFromCmdlineOptions,
 			Options: []plugin.PluginOption{
 				{

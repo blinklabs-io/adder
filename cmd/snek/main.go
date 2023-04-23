@@ -34,7 +34,7 @@ func main() {
 	if cfg.Input == "list" {
 		fmt.Printf("Available input plugins:\n\n")
 		for _, plugin := range plugin.GetPlugins(plugin.PluginTypeInput) {
-			fmt.Println(plugin)
+			fmt.Printf("%- 14s %s\n", plugin.Name, plugin.Description)
 		}
 		return
 	}
@@ -42,7 +42,7 @@ func main() {
 	if cfg.Output == "list" {
 		fmt.Printf("Available output plugins:\n\n")
 		for _, plugin := range plugin.GetPlugins(plugin.PluginTypeOutput) {
-			fmt.Println(plugin)
+			fmt.Printf("%- 14s %s\n", plugin.Name, plugin.Description)
 		}
 		return
 	}
