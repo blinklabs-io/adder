@@ -8,6 +8,7 @@ import (
 	_ "github.com/blinklabs-io/snek/input"
 	"github.com/blinklabs-io/snek/internal/config"
 	"github.com/blinklabs-io/snek/internal/logging"
+	"github.com/blinklabs-io/snek/internal/version"
 	_ "github.com/blinklabs-io/snek/output"
 	"github.com/blinklabs-io/snek/pipeline"
 	"github.com/blinklabs-io/snek/plugin"
@@ -23,6 +24,11 @@ func main() {
 	if err := cfg.ParseCmdlineArgs(programName, os.Args[1:]); err != nil {
 		fmt.Printf("Failed to parse commandline: %s\n", err)
 		os.Exit(1)
+	}
+
+	if cfg.Version {
+		fmt.Printf("%s %s\n", programName, version.GetVersionString())
+		os.Exit(0)
 	}
 
 	if cfg.Input == "list" {

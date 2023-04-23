@@ -18,6 +18,7 @@ const (
 
 type Config struct {
 	ConfigFile string                                            `yaml:"-"`
+	Version    bool                                              `yaml:"-"`
 	Logging    LoggingConfig                                     `yaml:"logging"`
 	Debug      DebugConfig                                       `yaml:"debug"`
 	Input      string                                            `yaml:"input" envconfig:"INPUT"`
@@ -72,6 +73,7 @@ func (c *Config) Load(configFile string) error {
 func (c *Config) ParseCmdlineArgs(programName string, args []string) error {
 	fs := flag.NewFlagSet(programName, flag.ExitOnError)
 	fs.StringVar(&c.ConfigFile, "config", "", "path to config file to load")
+	fs.BoolVar(&c.Version, "version", false, "show version and exit")
 	fs.StringVar(&c.Input, "input", DefaultInputPlugin, "input plugin to use, 'list' to show available")
 	fs.StringVar(&c.Output, "output", DefaultOutputPlugin, "output plugin to use, 'list' to show available")
 	if err := plugin.PopulateCmdlineOptions(fs); err != nil {
