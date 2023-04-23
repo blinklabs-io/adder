@@ -19,6 +19,7 @@ func init() {
 		plugin.PluginEntry{
 			Type:               plugin.PluginTypeInput,
 			Name:               "chainsync",
+			Description:        "syncs blocks from a Cardano node using either NtC (node-to-client) or NtN (node-to-node)",
 			NewFromOptionsFunc: NewFromCmdlineOptions,
 			Options: []plugin.PluginOption{
 				{

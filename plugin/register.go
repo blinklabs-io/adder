@@ -26,6 +26,7 @@ func PluginTypeName(pluginType PluginType) string {
 type PluginEntry struct {
 	Type               PluginType
 	Name               string
+	Description        string
 	Options            []PluginOption
 	NewFromOptionsFunc func() Plugin
 }
@@ -76,11 +77,11 @@ func ProcessConfig(pluginConfig map[string]map[string]map[interface{}]interface{
 	return nil
 }
 
-func GetPlugins(pluginType PluginType) []string {
-	ret := []string{}
+func GetPlugins(pluginType PluginType) []PluginEntry {
+	ret := []PluginEntry{}
 	for _, plugin := range pluginEntries {
 		if plugin.Type == pluginType {
-			ret = append(ret, plugin.Name)
+			ret = append(ret, plugin)
 		}
 	}
 	return ret
