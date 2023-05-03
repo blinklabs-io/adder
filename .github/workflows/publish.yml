@@ -41,7 +41,7 @@ jobs:
   build-binaries:
     strategy:
       matrix:
-        os: [linux, darwin, windows]
+        os: [linux, darwin, freebsd, windows]
         arch: [amd64, arm64]
     runs-on: ubuntu-latest
     needs: [create-draft-release]
