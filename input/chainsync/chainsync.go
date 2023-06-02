@@ -28,7 +28,7 @@ import (
 )
 
 type ChainSync struct {
-	oConn              *ouroboros.Ouroboros
+	oConn              *ouroboros.Connection
 	network            string
 	networkMagic       uint32
 	address            string
@@ -136,7 +136,7 @@ func (c *ChainSync) setupConnection() error {
 	}
 	// Create connection
 	var err error
-	c.oConn, err = ouroboros.New(
+	c.oConn, err = ouroboros.NewConnection(
 		ouroboros.WithNetworkMagic(c.networkMagic),
 		ouroboros.WithNodeToNode(useNtn),
 		ouroboros.WithKeepAlive(true),
