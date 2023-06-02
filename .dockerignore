@@ -1,0 +1,6 @@
+.git/
+.github/
+assets/
+Dockerfile
+snek
+README.md

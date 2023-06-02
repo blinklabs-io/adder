@@ -1,6 +1,10 @@
-# Snek
+# snek
 
-Snek is a tool for tailing the Cardano blockchain and emitting events for each
+<div align="center">
+    <img src="./assets/snek-logo-with-text-horizontal.png" alt="snek Logo" width="640">
+</div>
+
+snek is a tool for tailing the Cardano blockchain and emitting events for each
 block and transaction that it sees.
 
 ## How it works
@@ -61,7 +65,7 @@ using Uber's `Zap` logging library.
 
 ## Configuration
 
-Snek supports multiple configuration methods for versatility: commandline arguments, YAML config file,
+snek supports multiple configuration methods for versatility: commandline arguments, YAML config file,
 and environment variables (in that order).
 
 You can get a list of all available commandline arguments by using the `-h`/`-help` flag.
