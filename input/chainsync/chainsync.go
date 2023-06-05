@@ -168,7 +168,7 @@ func (c *ChainSync) setupConnection() error {
 }
 
 func (c *ChainSync) handleRollBackward(point ocommon.Point, tip ochainsync.Tip) error {
-	evt := event.New("rollback", time.Now(), NewRollbackEvent(point))
+	evt := event.New("chainsync.rollback", time.Now(), NewRollbackEvent(point))
 	c.eventChan <- evt
 	return nil
 }
@@ -176,7 +176,7 @@ func (c *ChainSync) handleRollBackward(point ocommon.Point, tip ochainsync.Tip) 
 func (c *ChainSync) handleRollForward(blockType uint, blockData interface{}, tip ochainsync.Tip) error {
 	switch v := blockData.(type) {
 	case ledger.Block:
-		evt := event.New("block", time.Now(), NewBlockEvent(v, c.includeCbor))
+		evt := event.New("chainsync.block", time.Now(), NewBlockEvent(v, c.includeCbor))
 		c.eventChan <- evt
 	case ledger.BlockHeader:
 		var blockSlot uint64
@@ -202,10 +202,10 @@ func (c *ChainSync) handleRollForward(blockType uint, blockData interface{}, tip
 		if err != nil {
 			return err
 		}
-		blockEvt := event.New("block", time.Now(), NewBlockEvent(block, c.includeCbor))
+		blockEvt := event.New("chainsync.block", time.Now(), NewBlockEvent(block, c.includeCbor))
 		c.eventChan <- blockEvt
 		for _, transaction := range block.Transactions() {
-			txEvt := event.New("transaction", time.Now(), NewTransactionEvent(block, transaction, c.includeCbor))
+			txEvt := event.New("chainsync.transaction", time.Now(), NewTransactionEvent(block, transaction, c.includeCbor))
 			c.eventChan <- txEvt
 		}
 	}
