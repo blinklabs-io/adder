@@ -22,15 +22,17 @@ type BlockEvent struct {
 	BlockNumber uint64           `json:"blockNumber"`
 	BlockHash   string           `json:"blockHash"`
 	SlotNumber  uint64           `json:"slotNumber"`
-	BlockCbor   byteSliceJsonHex `json:"blockCbor"`
+	BlockCbor   byteSliceJsonHex `json:"blockCbor,omitempty"`
 }
 
-func NewBlockEvent(block ledger.Block) BlockEvent {
+func NewBlockEvent(block ledger.Block, includeCbor bool) BlockEvent {
 	evt := BlockEvent{
 		BlockNumber: block.BlockNumber(),
 		BlockHash:   block.Hash(),
 		SlotNumber:  block.SlotNumber(),
-		BlockCbor:   block.Cbor(),
+	}
+	if includeCbor {
+		evt.BlockCbor = block.Cbor()
 	}
 	return evt
 }
