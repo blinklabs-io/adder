@@ -36,13 +36,19 @@ type PluginOption struct {
 	Name         string
 	Type         PluginOptionType
 	CustomEnvVar string
+	CustomFlag   string
 	Description  string
 	DefaultValue interface{}
 	Dest         interface{}
 }
 
-func (p *PluginOption) AddToFlagSet(fs *flag.FlagSet, flagPrefix string) error {
-	flagName := fmt.Sprintf("%s%s", flagPrefix, p.Name)
+func (p *PluginOption) AddToFlagSet(fs *flag.FlagSet, pluginType string, pluginName string) error {
+	var flagName string
+	if p.CustomFlag != "" {
+		flagName = fmt.Sprintf("%s-%s", pluginType, p.CustomFlag)
+	} else {
+		flagName = fmt.Sprintf("%s-%s-%s", pluginType, pluginName, p.Name)
+	}
 	switch p.Type {
 	case PluginOptionTypeString:
 		fs.StringVar(p.Dest.(*string), flagName, p.DefaultValue.(string), p.Description)

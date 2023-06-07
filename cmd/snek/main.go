@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"os"
 
+	_ "github.com/blinklabs-io/snek/filter"
 	_ "github.com/blinklabs-io/snek/input"
 	"github.com/blinklabs-io/snek/internal/config"
 	"github.com/blinklabs-io/snek/internal/logging"
@@ -111,6 +112,12 @@ func main() {
 		logger.Fatalf("unknown input: %s", cfg.Input)
 	}
 	pipe.AddInput(input)
+
+	// Configure filters
+	for _, filterEntry := range plugin.GetPlugins(plugin.PluginTypeFilter) {
+		filter := plugin.GetPlugin(plugin.PluginTypeFilter, filterEntry.Name)
+		pipe.AddFilter(filter)
+	}
 
 	// Configure output
 	output := plugin.GetPlugin(plugin.PluginTypeOutput, cfg.Output)

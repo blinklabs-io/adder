@@ -24,6 +24,7 @@ type PluginType int
 const (
 	PluginTypeInput  PluginType = 1
 	PluginTypeOutput PluginType = 2
+	PluginTypeFilter PluginType = 3
 )
 
 func PluginTypeName(pluginType PluginType) string {
@@ -32,6 +33,8 @@ func PluginTypeName(pluginType PluginType) string {
 		return "input"
 	case PluginTypeOutput:
 		return "output"
+	case PluginTypeFilter:
+		return "filter"
 	default:
 		return ""
 	}
@@ -53,9 +56,8 @@ func Register(pluginEntry PluginEntry) {
 
 func PopulateCmdlineOptions(fs *flag.FlagSet) error {
 	for _, plugin := range pluginEntries {
-		flagPrefix := fmt.Sprintf("%s-%s-", PluginTypeName(plugin.Type), plugin.Name)
 		for _, option := range plugin.Options {
-			if err := option.AddToFlagSet(fs, flagPrefix); err != nil {
+			if err := option.AddToFlagSet(fs, PluginTypeName(plugin.Type), plugin.Name); err != nil {
 				return err
 			}
 		}

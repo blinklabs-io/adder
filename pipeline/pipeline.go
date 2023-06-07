@@ -23,7 +23,9 @@ import (
 
 type Pipeline struct {
 	inputs     []plugin.Plugin
+	filters    []plugin.Plugin
 	outputs    []plugin.Plugin
+	filterChan chan event.Event
 	outputChan chan event.Event
 	errorChan  chan error
 	doneChan   chan bool
@@ -31,6 +33,7 @@ type Pipeline struct {
 
 func New() *Pipeline {
 	p := &Pipeline{
+		filterChan: make(chan event.Event),
 		outputChan: make(chan event.Event),
 		errorChan:  make(chan error),
 		doneChan:   make(chan bool),
@@ -40,6 +43,10 @@ func New() *Pipeline {
 
 func (p *Pipeline) AddInput(input plugin.Plugin) {
 	p.inputs = append(p.inputs, input)
+}
+
+func (p *Pipeline) AddFilter(filter plugin.Plugin) {
+	p.filters = append(p.filters, filter)
 }
 
 func (p *Pipeline) AddOutput(output plugin.Plugin) {
@@ -57,10 +64,34 @@ func (p *Pipeline) Start() error {
 		if err := input.Start(); err != nil {
 			return fmt.Errorf("failed to start input: %s", err)
 		}
-		// Start background process to send input events to combined output channel
-		go p.chanCopyLoop(input.OutputChan(), p.outputChan)
+		// Start background process to send input events to combined filter channel
+		go p.chanCopyLoop(input.OutputChan(), p.filterChan)
 		// Start background error listener
 		go p.errorChanWait(input.ErrorChan())
+	}
+	// Start filters
+	for idx, filter := range p.filters {
+		if err := filter.Start(); err != nil {
+			return fmt.Errorf("failed to start input: %s", err)
+		}
+		if idx == 0 {
+			// Start background process to send events from combined filter channel to first filter plugin
+			go p.chanCopyLoop(p.filterChan, filter.InputChan())
+		} else {
+			// Start background process to send events from previous filter plugin to current filter plugin
+			go p.chanCopyLoop(p.filters[idx-1].OutputChan(), filter.InputChan())
+		}
+		if idx == len(p.filters)-1 {
+			// Start background process to send events from last filter to combined output channel
+			go p.chanCopyLoop(filter.OutputChan(), p.outputChan)
+		}
+		// Start background error listener
+		go p.errorChanWait(filter.ErrorChan())
+	}
+	if len(p.filters) == 0 {
+		// Start background process to send events from combined filter channel to combined output channel if
+		// there are no filter plugins
+		go p.chanCopyLoop(p.filterChan, p.outputChan)
 	}
 	// Start outputs
 	for _, output := range p.outputs {
@@ -78,6 +109,7 @@ func (p *Pipeline) Start() error {
 func (p *Pipeline) Stop() error {
 	close(p.doneChan)
 	close(p.errorChan)
+	close(p.filterChan)
 	close(p.outputChan)
 	// Stop inputs
 	for _, input := range p.inputs {
