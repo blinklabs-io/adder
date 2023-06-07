@@ -68,3 +68,10 @@ func WithIntersectTip(intersectTip bool) ChainSyncOptionFunc {
 		c.intersectTip = intersectTip
 	}
 }
+
+// WithIncludeCbor specifies whether to include the original CBOR for a block or transaction with the event
+func WithIncludeCbor(includeCbor bool) ChainSyncOptionFunc {
+	return func(c *ChainSync) {
+		c.includeCbor = includeCbor
+	}
+}

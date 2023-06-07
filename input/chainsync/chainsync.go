@@ -21,7 +21,7 @@ import (
 
 	"github.com/blinklabs-io/snek/event"
 
-	"github.com/blinklabs-io/gouroboros"
+	ouroboros "github.com/blinklabs-io/gouroboros"
 	"github.com/blinklabs-io/gouroboros/ledger"
 	ochainsync "github.com/blinklabs-io/gouroboros/protocol/chainsync"
 	ocommon "github.com/blinklabs-io/gouroboros/protocol/common"
@@ -36,6 +36,7 @@ type ChainSync struct {
 	ntcTcp             bool
 	intersectTip       bool
 	intersectPoints    []ocommon.Point
+	includeCbor        bool
 	errorChan          chan error
 	eventChan          chan event.Event
 	byronEpochBaseSlot uint64
@@ -175,7 +176,7 @@ func (c *ChainSync) handleRollBackward(point ocommon.Point, tip ochainsync.Tip) 
 func (c *ChainSync) handleRollForward(blockType uint, blockData interface{}, tip ochainsync.Tip) error {
 	switch v := blockData.(type) {
 	case ledger.Block:
-		evt := event.New("block", time.Now(), NewBlockEvent(v))
+		evt := event.New("block", time.Now(), NewBlockEvent(v, c.includeCbor))
 		c.eventChan <- evt
 	case ledger.BlockHeader:
 		var blockSlot uint64
@@ -201,10 +202,10 @@ func (c *ChainSync) handleRollForward(blockType uint, blockData interface{}, tip
 		if err != nil {
 			return err
 		}
-		blockEvt := event.New("block", time.Now(), NewBlockEvent(block))
+		blockEvt := event.New("block", time.Now(), NewBlockEvent(block, c.includeCbor))
 		c.eventChan <- blockEvt
 		for _, transaction := range block.Transactions() {
-			txEvt := event.New("transaction", time.Now(), NewTransactionEvent(block, transaction))
+			txEvt := event.New("transaction", time.Now(), NewTransactionEvent(block, transaction, c.includeCbor))
 			c.eventChan <- txEvt
 		}
 	}

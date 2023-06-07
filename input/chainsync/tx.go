@@ -23,16 +23,18 @@ type TransactionEvent struct {
 	BlockHash       string           `json:"blockHash"`
 	SlotNumber      uint64           `json:"slotNumber"`
 	TransactionHash string           `json:"transactionHash"`
-	TransactionCbor byteSliceJsonHex `json:"transactionCbor"`
+	TransactionCbor byteSliceJsonHex `json:"transactionCbor,omitempty"`
 }
 
-func NewTransactionEvent(block ledger.Block, txBody ledger.TransactionBody) TransactionEvent {
+func NewTransactionEvent(block ledger.Block, txBody ledger.TransactionBody, includeCbor bool) TransactionEvent {
 	evt := TransactionEvent{
 		BlockNumber:     block.BlockNumber(),
 		BlockHash:       block.Hash(),
 		SlotNumber:      block.SlotNumber(),
 		TransactionHash: txBody.Hash(),
-		TransactionCbor: txBody.Cbor(),
+	}
+	if includeCbor {
+		evt.TransactionCbor = txBody.Cbor()
 	}
 	return evt
 }

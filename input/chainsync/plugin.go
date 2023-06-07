@@ -26,6 +26,7 @@ var cmdlineOptions struct {
 	ntcTcp         bool
 	intersectTip   bool
 	intersectPoint string
+	includeCbor    bool
 }
 
 func init() {
@@ -81,6 +82,13 @@ func init() {
 					Dest:         &(cmdlineOptions.intersectTip),
 				},
 				// TODO: intersect-point
+				{
+					Name:         "include-cbor",
+					Type:         plugin.PluginOptionTypeBool,
+					Description:  "include original CBOR for block/transaction in events",
+					DefaultValue: false,
+					Dest:         &(cmdlineOptions.includeCbor),
+				},
 			},
 		},
 	)
@@ -95,6 +103,7 @@ func NewFromCmdlineOptions() plugin.Plugin {
 		WithNtcTcp(cmdlineOptions.ntcTcp),
 		WithIntersectTip(cmdlineOptions.intersectTip),
 		// TODO: WithIntersectPoints
+		WithIncludeCbor(cmdlineOptions.includeCbor),
 	)
 	return p
 }
