@@ -203,3 +203,11 @@ Only output transactions with outputs matching a particular address
 ```bash
 $ snek -filter-type chainsync.transaction -filter-address addr1qyht4ja0zcn45qvyx477qlyp6j5ftu5ng0prt9608dxp6l2j2c79gy9l76sdg0xwhd7r0c0kna0tycz4y5s6mlenh8pq4jxtdy
 ```
+
+#### Filtering on a stake address
+
+Only output transactions with outputs matching a particular stake address
+
+```bash
+$ snek -filter-type chainsync.transaction -filter-address stake1u9f9v0z5zzlldgx58n8tklphu8mf7h4jvp2j2gddluemnssjfnkzz
+```
