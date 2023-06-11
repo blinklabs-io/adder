@@ -15,6 +15,8 @@
 package chainsync
 
 import (
+	"strings"
+
 	"github.com/blinklabs-io/gouroboros/ledger"
 	"github.com/blinklabs-io/snek/event"
 	"github.com/blinklabs-io/snek/input/chainsync"
@@ -56,13 +58,25 @@ func (c *ChainSync) Start() error {
 			case chainsync.TransactionEvent:
 				// Check address filter
 				if c.filterAddress != "" {
+					isStakeAddress := false
+					if strings.HasPrefix(c.filterAddress, "stake") {
+						isStakeAddress = true
+					}
 					foundMatch := false
-					// TODO: extract and compare stake addresses when this is done
-					// https://github.com/blinklabs-io/gouroboros/issues/302
 					for _, output := range v.Outputs {
 						if output.Address().String() == c.filterAddress {
 							foundMatch = true
 							break
+						}
+						if isStakeAddress {
+							stakeAddr := output.Address().StakeAddress()
+							if stakeAddr == nil {
+								continue
+							}
+							if stakeAddr.String() == c.filterAddress {
+								foundMatch = true
+								break
+							}
 						}
 					}
 					if !foundMatch {

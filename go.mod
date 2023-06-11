@@ -3,7 +3,7 @@ module github.com/blinklabs-io/snek
 go 1.18
 
 require (
-	github.com/blinklabs-io/gouroboros v0.44.0
+	github.com/blinklabs-io/gouroboros v0.45.1
 	github.com/kelseyhightower/envconfig v1.4.0
 	go.uber.org/zap v1.24.0
 	gopkg.in/yaml.v2 v2.4.0
