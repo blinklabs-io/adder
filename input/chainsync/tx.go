@@ -19,11 +19,13 @@ import (
 )
 
 type TransactionEvent struct {
-	BlockNumber     uint64           `json:"blockNumber"`
-	BlockHash       string           `json:"blockHash"`
-	SlotNumber      uint64           `json:"slotNumber"`
-	TransactionHash string           `json:"transactionHash"`
-	TransactionCbor byteSliceJsonHex `json:"transactionCbor,omitempty"`
+	BlockNumber     uint64                     `json:"blockNumber"`
+	BlockHash       string                     `json:"blockHash"`
+	SlotNumber      uint64                     `json:"slotNumber"`
+	TransactionHash string                     `json:"transactionHash"`
+	TransactionCbor byteSliceJsonHex           `json:"transactionCbor,omitempty"`
+	Inputs          []ledger.TransactionInput  `json:"inputs"`
+	Outputs         []ledger.TransactionOutput `json:"outputs"`
 }
 
 func NewTransactionEvent(block ledger.Block, txBody ledger.TransactionBody, includeCbor bool) TransactionEvent {
@@ -32,6 +34,8 @@ func NewTransactionEvent(block ledger.Block, txBody ledger.TransactionBody, incl
 		BlockHash:       block.Hash(),
 		SlotNumber:      block.SlotNumber(),
 		TransactionHash: txBody.Hash(),
+		Inputs:          txBody.Inputs(),
+		Outputs:         txBody.Outputs(),
 	}
 	if includeCbor {
 		evt.TransactionCbor = txBody.Cbor()

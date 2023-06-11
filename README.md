@@ -111,6 +111,29 @@ plugins:
       level: info
 ```
 
+## Filtering
+
+snek supports filtering events before they are output.
+
+You can get a list of all available filter options by using the `-h`/`-help` flag.
+
+```bash
+$ ./snek -h
+Usage of snek:
+...
+  -filter-address string
+        specifies address to filter on
+  -filter-asset string
+        specifies the asset fingerprint (asset1xxx) to filter on
+  -filter-policy string
+        specifies asset policy ID to filter on
+  -filter-type string
+        specifies event type to filter on
+...
+```
+
+Multiple filter options can be used together, and only events matching all filters will be output.
+
 ## Example usage
 
 ### Native using remote node
@@ -137,4 +160,46 @@ in Docker.
 docker run --rm -ti \
   -v node-ipc:/node-ipc \
   ghcr.io/blinklabs-io/snek:main
+```
+
+### Filtering
+
+#### Filtering on event type
+
+Only output `chainsync.transaction` event types
+
+```bash
+$ snek -filter-type chainsync.transaction
+```
+
+#### Filtering on asset policy
+
+Only output transactions involving an asset with a particular policy ID
+
+```bash
+$ snek -filter-type chainsync.transaction -filter-policy 13aa2accf2e1561723aa26871e071fdf32c867cff7e7d50ad470d62f
+```
+
+#### Filtering on asset fingerprint
+
+Only output transactions involving a particular asset
+
+```bash
+$ snek -filter-type chainsync.transaction -filter-asset asset108xu02ckwrfc8qs9d97mgyh4kn8gdu9w8f5sxk
+```
+
+#### Filtering on a policy ID and asset fingerprint
+
+Only output transactions involving both a particular policy ID and a particular asset (which do not need to be related)
+
+```bash
+$ snek -filter-type chainsync.transaction -filter-asset asset108xu02ckwrfc8qs9d97mgyh4kn8gdu9w8f5sxk -filter-policy 13aa2accf2e1561723aa26871e071fdf32c867cff7e7d50ad470d62f
+```
+
+#### Filtering on an address
+
+Only output transactions with outputs matching a particular address
+
+```bash
+$ snek -filter-type chainsync.transaction -filter-address addr1qyht4ja0zcn45qvyx477qlyp6j5ftu5ng0prt9608dxp6l2j2c79gy9l76sdg0xwhd7r0c0kna0tycz4y5s6mlenh8pq4jxtdy
 ```

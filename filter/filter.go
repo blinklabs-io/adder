@@ -15,5 +15,6 @@
 package filter
 
 import (
+	_ "github.com/blinklabs-io/snek/filter/chainsync"
 	_ "github.com/blinklabs-io/snek/filter/event"
 )
