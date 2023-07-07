@@ -14,6 +14,7 @@
 
 package input
 
+// We import the various plugins that we want to be auto-registered
 import (
 	_ "github.com/blinklabs-io/snek/input/chainsync"
 )
