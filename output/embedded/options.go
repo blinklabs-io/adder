@@ -12,10 +12,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package filter
+package embedded
 
-// We import the various plugins that we want to be auto-registered
-import (
-	_ "github.com/blinklabs-io/snek/filter/chainsync"
-	_ "github.com/blinklabs-io/snek/filter/event"
-)
+import "github.com/blinklabs-io/snek/event"
+
+type EmbeddedOptionFunc func(*EmbeddedOutput)
+
+// WithCallbackFunc specifies a callback function for events
+func WithCallbackFunc(callbackFunc CallbackFunc) EmbeddedOptionFunc {
+	return func(o *EmbeddedOutput) {
+		o.callbackFunc = callbackFunc
+	}
+}
+
+// WithOutputChan specifies an event.Event channel to use for events
+func WithOutputChan(outputChan chan event.Event) EmbeddedOptionFunc {
+	return func(o *EmbeddedOutput) {
+		o.outputChan = outputChan
+	}
+}
