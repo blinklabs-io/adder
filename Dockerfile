@@ -1,5 +1,5 @@
-# go:1.19 on 20230706
-FROM cgr.dev/chainguard/go@sha256:13a12452e39525bf71ca9bee362fcaccd933952960391a601676e55406b6fc2f AS build
+# go:1.19 on 20230712
+FROM cgr.dev/chainguard/go@sha256:c52c640eaaa1c5032d9eaa25e81e8ab0b7543d0ab1e2c09a0baec98e28620c9c AS build
 
 WORKDIR /code
 COPY . .
