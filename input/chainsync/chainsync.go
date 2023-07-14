@@ -28,19 +28,17 @@ import (
 )
 
 type ChainSync struct {
-	oConn              *ouroboros.Connection
-	network            string
-	networkMagic       uint32
-	address            string
-	socketPath         string
-	ntcTcp             bool
-	intersectTip       bool
-	intersectPoints    []ocommon.Point
-	includeCbor        bool
-	errorChan          chan error
-	eventChan          chan event.Event
-	byronEpochBaseSlot uint64
-	byronEpochSlot     uint64
+	oConn           *ouroboros.Connection
+	network         string
+	networkMagic    uint32
+	address         string
+	socketPath      string
+	ntcTcp          bool
+	intersectTip    bool
+	intersectPoints []ocommon.Point
+	includeCbor     bool
+	errorChan       chan error
+	eventChan       chan event.Event
 }
 
 // New returns a new ChainSync object with the specified options applied
@@ -179,25 +177,8 @@ func (c *ChainSync) handleRollForward(blockType uint, blockData interface{}, tip
 		evt := event.New("chainsync.block", time.Now(), NewBlockEvent(v, c.includeCbor))
 		c.eventChan <- evt
 	case ledger.BlockHeader:
-		var blockSlot uint64
-		var blockHash []byte
-		switch blockType {
-		case ledger.BLOCK_TYPE_BYRON_EBB:
-			h := blockData.(*ledger.ByronEpochBoundaryBlockHeader)
-			if c.byronEpochSlot > 0 {
-				c.byronEpochBaseSlot += c.byronEpochSlot + 1
-			}
-			blockSlot = c.byronEpochBaseSlot
-			blockHash, _ = hex.DecodeString(h.Hash())
-		case ledger.BLOCK_TYPE_BYRON_MAIN:
-			h := blockData.(*ledger.ByronMainBlockHeader)
-			c.byronEpochSlot = uint64(h.ConsensusData.SlotId.Slot)
-			blockSlot = c.byronEpochBaseSlot + c.byronEpochSlot
-			blockHash, _ = hex.DecodeString(h.Hash())
-		default:
-			blockSlot = v.SlotNumber()
-			blockHash, _ = hex.DecodeString(v.Hash())
-		}
+		blockSlot := v.SlotNumber()
+		blockHash, _ := hex.DecodeString(v.Hash())
 		block, err := c.oConn.BlockFetch().Client.GetBlock(ocommon.Point{Slot: blockSlot, Hash: blockHash})
 		if err != nil {
 			return err
