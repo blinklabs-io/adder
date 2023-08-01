@@ -28,18 +28,28 @@ import (
 )
 
 type ChainSync struct {
-	oConn           *ouroboros.Connection
-	network         string
-	networkMagic    uint32
-	address         string
-	socketPath      string
-	ntcTcp          bool
-	intersectTip    bool
-	intersectPoints []ocommon.Point
-	includeCbor     bool
-	errorChan       chan error
-	eventChan       chan event.Event
+	oConn            *ouroboros.Connection
+	network          string
+	networkMagic     uint32
+	address          string
+	socketPath       string
+	ntcTcp           bool
+	intersectTip     bool
+	intersectPoints  []ocommon.Point
+	includeCbor      bool
+	statusUpdateFunc StatusUpdateFunc
+	status           *ChainSyncStatus
+	errorChan        chan error
+	eventChan        chan event.Event
 }
+
+type ChainSyncStatus struct {
+	SlotNumber  uint64
+	BlockNumber uint64
+	BlockHash   string
+}
+
+type StatusUpdateFunc func(ChainSyncStatus)
 
 // New returns a new ChainSync object with the specified options applied
 func New(options ...ChainSyncOptionFunc) *ChainSync {
@@ -47,6 +57,7 @@ func New(options ...ChainSyncOptionFunc) *ChainSync {
 		errorChan:       make(chan error),
 		eventChan:       make(chan event.Event, 10),
 		intersectPoints: []ocommon.Point{},
+		status:          &ChainSyncStatus{},
 	}
 	for _, option := range options {
 		option(c)
@@ -176,6 +187,7 @@ func (c *ChainSync) handleRollForward(blockType uint, blockData interface{}, tip
 	case ledger.Block:
 		evt := event.New("chainsync.block", time.Now(), NewBlockEvent(v, c.includeCbor))
 		c.eventChan <- evt
+		c.updateStatus(v.SlotNumber(), v.BlockNumber(), v.Hash())
 	case ledger.BlockHeader:
 		blockSlot := v.SlotNumber()
 		blockHash, _ := hex.DecodeString(v.Hash())
@@ -189,6 +201,16 @@ func (c *ChainSync) handleRollForward(blockType uint, blockData interface{}, tip
 			txEvt := event.New("chainsync.transaction", time.Now(), NewTransactionEvent(block, transaction, c.includeCbor))
 			c.eventChan <- txEvt
 		}
+		c.updateStatus(v.SlotNumber(), v.BlockNumber(), v.Hash())
 	}
 	return nil
+}
+
+func (c *ChainSync) updateStatus(slotNumber uint64, blockNumber uint64, blockHash string) {
+	c.status.SlotNumber = slotNumber
+	c.status.BlockNumber = blockNumber
+	c.status.BlockHash = blockHash
+	if c.statusUpdateFunc != nil {
+		c.statusUpdateFunc(*(c.status))
+	}
 }
