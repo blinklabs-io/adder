@@ -12,10 +12,25 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package output
+package notify
 
-// We import the various plugins that we want to be auto-registered
 import (
-	_ "github.com/blinklabs-io/snek/output/log"
-	_ "github.com/blinklabs-io/snek/output/notify"
+	"github.com/blinklabs-io/snek/plugin"
 )
+
+func init() {
+	plugin.Register(
+		plugin.PluginEntry{
+			Type:               plugin.PluginTypeOutput,
+			Name:               "notify",
+			Description:        "display events using operating system notifications",
+			NewFromOptionsFunc: NewFromCmdlineOptions,
+			Options:            []plugin.PluginOption{},
+		},
+	)
+}
+
+func NewFromCmdlineOptions() plugin.Plugin {
+	p := New()
+	return p
+}
