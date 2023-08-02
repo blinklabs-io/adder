@@ -67,6 +67,45 @@ func (n *NotifyOutput) Start() error {
 				if err != nil {
 					panic(err)
 				}
+			case "chainsync.rollback":
+				payload := evt.Payload
+				if payload == nil {
+					panic(fmt.Errorf("ERROR: %v", payload))
+				}
+
+				re := payload.(chainsync.RollbackEvent)
+				err := beeep.Notify(
+					"Snek",
+					fmt.Sprintf("Rollback!\nSlotNumber: %d\nBlockHash: %s",
+						re.SlotNumber,
+						re.BlockHash,
+					),
+					"assets/snek-icon.png",
+				)
+				if err != nil {
+					panic(err)
+				}
+			case "chainsync.transaction":
+				payload := evt.Payload
+				if payload == nil {
+					panic(fmt.Errorf("ERROR: %v", payload))
+				}
+
+				te := payload.(chainsync.TransactionEvent)
+				err := beeep.Notify(
+					"Snek",
+					fmt.Sprintf("New Transaction!\nBlockNumber: %d, SlotNumber: %d\nInputs: %d, Outputs: %d\nHash: %s",
+						te.BlockNumber,
+						te.SlotNumber,
+						len(te.Inputs),
+						len(te.Outputs),
+						te.TransactionHash,
+					),
+					"assets/snek-icon.png",
+				)
+				if err != nil {
+					panic(err)
+				}
 			default:
 				err := beeep.Notify(
 					"Snek",
