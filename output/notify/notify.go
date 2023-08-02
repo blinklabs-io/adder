@@ -15,7 +15,6 @@
 package notify
 
 import (
-	"encoding/json"
 	"fmt"
 
 	"github.com/blinklabs-io/snek/event"
@@ -55,18 +54,8 @@ func (n *NotifyOutput) Start() error {
 					panic(fmt.Errorf("ERROR: %v", payload))
 				}
 
-				data, err := json.Marshal(payload)
-				if err != nil {
-					panic(err)
-				}
-
-				var be chainsync.BlockEvent
-				err = json.Unmarshal(data, &be)
-				if err != nil {
-					panic(err)
-				}
-
-				err = beeep.Notify(
+				be := payload.(chainsync.BlockEvent)
+				err := beeep.Notify(
 					"Snek",
 					fmt.Sprintf("New Block!\nBlockNumber: %d, SlotNumber: %d\nHash: %s",
 						be.BlockNumber,
