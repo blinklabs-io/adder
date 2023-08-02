@@ -33,5 +33,6 @@ test: mod-tidy
 $(BINARIES): mod-tidy $(GO_FILES)
 	go build \
 		$(GO_LDFLAGS) \
+		-tags nodbus \
 		-o $(@) \
 		./cmd/$(@)
