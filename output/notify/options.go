@@ -12,10 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package output
+package notify
 
-// We import the various plugins that we want to be auto-registered
-import (
-	_ "github.com/blinklabs-io/snek/output/log"
-	_ "github.com/blinklabs-io/snek/output/notify"
-)
+// import "github.com/blinklabs-io/snek/event"
+
+type NotifyOptionFunc func(*NotifyOutput)
