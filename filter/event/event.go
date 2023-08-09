@@ -19,10 +19,10 @@ import (
 )
 
 type Event struct {
-	errorChan  chan error
-	inputChan  chan event.Event
-	outputChan chan event.Event
-	filterType string
+	errorChan   chan error
+	inputChan   chan event.Event
+	outputChan  chan event.Event
+	filterTypes []string
 }
 
 // New returns a new Event object with the specified options applied
@@ -49,8 +49,15 @@ func (e *Event) Start() error {
 				return
 			}
 			// Drop events if we have a type filter configured and the event doesn't match
-			if e.filterType != "" {
-				if evt.Type != e.filterType {
+			if len(e.filterTypes) > 0 {
+				matched := false
+				for _, filterType := range e.filterTypes {
+					if evt.Type == filterType {
+						matched = true
+						break
+					}
+				}
+				if !matched {
 					continue
 				}
 			}

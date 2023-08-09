@@ -113,7 +113,9 @@ plugins:
 
 ## Filtering
 
-snek supports filtering events before they are output.
+snek supports filtering events before they are output using multiple criteria. An event must match all configured filters to be emitted.
+Each filter supports specifying multiple possible values separated by commas. When specifying multiple values for a filter, only one of
+the values specified must match an event.
 
 You can get a list of all available filter options by using the `-h`/`-help` flag.
 
@@ -170,6 +172,12 @@ Only output `chainsync.transaction` event types
 
 ```bash
 $ snek -filter-type chainsync.transaction
+```
+
+Only output `chainsync.rollback` and `chainsync.block` event types
+
+```bash
+$ snek -filter-type chainsync.transaction,chainsync.block
 ```
 
 #### Filtering on asset policy

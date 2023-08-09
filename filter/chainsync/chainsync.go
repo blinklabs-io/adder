@@ -23,12 +23,12 @@ import (
 )
 
 type ChainSync struct {
-	errorChan              chan error
-	inputChan              chan event.Event
-	outputChan             chan event.Event
-	filterAddress          string
-	filterPolicyId         string
-	filterAssetFingerprint string
+	errorChan               chan error
+	inputChan               chan event.Event
+	outputChan              chan event.Event
+	filterAddresses         []string
+	filterPolicyIds         []string
+	filterAssetFingerprints []string
 }
 
 // New returns a new ChainSync object with the specified options applied
@@ -57,74 +57,95 @@ func (c *ChainSync) Start() error {
 			switch v := evt.Payload.(type) {
 			case chainsync.TransactionEvent:
 				// Check address filter
-				if c.filterAddress != "" {
-					isStakeAddress := false
-					if strings.HasPrefix(c.filterAddress, "stake") {
-						isStakeAddress = true
-					}
-					foundMatch := false
-					for _, output := range v.Outputs {
-						if output.Address().String() == c.filterAddress {
-							foundMatch = true
-							break
-						}
-						if isStakeAddress {
-							stakeAddr := output.Address().StakeAddress()
-							if stakeAddr == nil {
-								continue
-							}
-							if stakeAddr.String() == c.filterAddress {
+				if len(c.filterAddresses) > 0 {
+					filterMatched := false
+					for _, filterAddress := range c.filterAddresses {
+						isStakeAddress := strings.HasPrefix(filterAddress, "stake")
+						foundMatch := false
+						for _, output := range v.Outputs {
+							if output.Address().String() == filterAddress {
 								foundMatch = true
 								break
 							}
-						}
-					}
-					if !foundMatch {
-						continue
-					}
-				}
-				// Check policy ID filter
-				if c.filterPolicyId != "" {
-					foundMatch := false
-					for _, output := range v.Outputs {
-						if output.Assets() != nil {
-							for _, policyId := range output.Assets().Policies() {
-								if policyId.String() == c.filterPolicyId {
+							if isStakeAddress {
+								stakeAddr := output.Address().StakeAddress()
+								if stakeAddr == nil {
+									continue
+								}
+								if stakeAddr.String() == filterAddress {
 									foundMatch = true
 									break
 								}
 							}
 						}
 						if foundMatch {
+							filterMatched = true
 							break
 						}
 					}
-					if !foundMatch {
+					// Skip the event if none of the filter values matched
+					if !filterMatched {
 						continue
 					}
 				}
-				// Check asset fingerprint filter
-				if c.filterAssetFingerprint != "" {
-					foundMatch := false
-					for _, output := range v.Outputs {
-						if output.Assets() != nil {
-							for _, policyId := range output.Assets().Policies() {
-								for _, assetName := range output.Assets().Assets(policyId) {
-									assetFp := ledger.NewAssetFingerprint(policyId.Bytes(), assetName)
-									if assetFp.String() == c.filterAssetFingerprint {
+				// Check policy ID filter
+				if len(c.filterPolicyIds) > 0 {
+					filterMatched := false
+					for _, filterPolicyId := range c.filterPolicyIds {
+						foundMatch := false
+						for _, output := range v.Outputs {
+							if output.Assets() != nil {
+								for _, policyId := range output.Assets().Policies() {
+									if policyId.String() == filterPolicyId {
 										foundMatch = true
+										break
 									}
-								}
-								if foundMatch {
-									break
 								}
 							}
 							if foundMatch {
 								break
 							}
 						}
+						if foundMatch {
+							filterMatched = true
+							break
+						}
 					}
-					if !foundMatch {
+					// Skip the event if none of the filter values matched
+					if !filterMatched {
+						continue
+					}
+				}
+				// Check asset fingerprint filter
+				if len(c.filterAssetFingerprints) > 0 {
+					filterMatched := false
+					for _, filterAssetFingerprint := range c.filterAssetFingerprints {
+						foundMatch := false
+						for _, output := range v.Outputs {
+							if output.Assets() != nil {
+								for _, policyId := range output.Assets().Policies() {
+									for _, assetName := range output.Assets().Assets(policyId) {
+										assetFp := ledger.NewAssetFingerprint(policyId.Bytes(), assetName)
+										if assetFp.String() == filterAssetFingerprint {
+											foundMatch = true
+										}
+									}
+									if foundMatch {
+										break
+									}
+								}
+								if foundMatch {
+									break
+								}
+							}
+						}
+						if foundMatch {
+							filterMatched = true
+							break
+						}
+					}
+					// Skip the event if none of the filter values matched
+					if !filterMatched {
 						continue
 					}
 				}

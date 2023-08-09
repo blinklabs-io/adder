@@ -16,9 +16,9 @@ package event
 
 type EventOptionFunc func(*Event)
 
-// WithType specfies the event type to filter on
-func WithType(eventType string) EventOptionFunc {
+// WithTypes specfies the event types to filter on
+func WithTypes(eventTypes []string) EventOptionFunc {
 	return func(e *Event) {
-		e.filterType = eventType
+		e.filterTypes = eventTypes[:]
 	}
 }
