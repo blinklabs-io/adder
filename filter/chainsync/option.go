@@ -16,23 +16,23 @@ package chainsync
 
 type ChainSyncOptionFunc func(*ChainSync)
 
-// WithAddress specfies the address to filter on
-func WithAddress(address string) ChainSyncOptionFunc {
+// WithAddresses specfies the address to filter on
+func WithAddresses(addresses []string) ChainSyncOptionFunc {
 	return func(c *ChainSync) {
-		c.filterAddress = address
+		c.filterAddresses = addresses[:]
 	}
 }
 
-// WithPolicy specfies the address to filter on
-func WithPolicy(policyId string) ChainSyncOptionFunc {
+// WithPolicies specfies the address to filter on
+func WithPolicies(policyIds []string) ChainSyncOptionFunc {
 	return func(c *ChainSync) {
-		c.filterPolicyId = policyId
+		c.filterPolicyIds = policyIds[:]
 	}
 }
 
-//WithAssetFingerprint specifies the asset fingerprint (asset1xxx) to filter on
-func WithAssetFingerprint(assetFingerprint string) ChainSyncOptionFunc {
+//WithAssetFingerprints specifies the asset fingerprint (asset1xxx) to filter on
+func WithAssetFingerprints(assetFingerprints []string) ChainSyncOptionFunc {
 	return func(c *ChainSync) {
-		c.filterAssetFingerprint = assetFingerprint
+		c.filterAssetFingerprints = assetFingerprints[:]
 	}
 }

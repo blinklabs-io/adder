@@ -15,6 +15,8 @@
 package chainsync
 
 import (
+	"strings"
+
 	"github.com/blinklabs-io/snek/plugin"
 )
 
@@ -62,10 +64,31 @@ func init() {
 }
 
 func NewFromCmdlineOptions() plugin.Plugin {
-	p := New(
-		WithAddress(cmdlineOptions.address),
-		WithPolicy(cmdlineOptions.policyId),
-		WithAssetFingerprint(cmdlineOptions.asset),
-	)
+	pluginOptions := []ChainSyncOptionFunc{}
+	if cmdlineOptions.address != "" {
+		pluginOptions = append(
+			pluginOptions,
+			WithAddresses(
+				strings.Split(cmdlineOptions.address, ","),
+			),
+		)
+	}
+	if cmdlineOptions.policyId != "" {
+		pluginOptions = append(
+			pluginOptions,
+			WithPolicies(
+				strings.Split(cmdlineOptions.policyId, ","),
+			),
+		)
+	}
+	if cmdlineOptions.asset != "" {
+		pluginOptions = append(
+			pluginOptions,
+			WithAssetFingerprints(
+				strings.Split(cmdlineOptions.asset, ","),
+			),
+		)
+	}
+	p := New(pluginOptions...)
 	return p
 }
