@@ -3,7 +3,7 @@ module github.com/blinklabs-io/snek
 go 1.19
 
 require (
-	github.com/blinklabs-io/gouroboros v0.48.0
+	github.com/blinklabs-io/gouroboros v0.50.0
 	github.com/gen2brain/beeep v0.0.0-20230602101333-f384c29b62dd
 	github.com/kelseyhightower/envconfig v1.4.0
 	go.uber.org/zap v1.25.0
@@ -19,6 +19,6 @@ require (
 	github.com/tadvi/systray v0.0.0-20190226123456-11a2b8fa57af // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	go.uber.org/multierr v1.10.0 // indirect
-	golang.org/x/crypto v0.11.0 // indirect
-	golang.org/x/sys v0.10.0 // indirect
+	golang.org/x/crypto v0.12.0 // indirect
+	golang.org/x/sys v0.11.0 // indirect
 )
