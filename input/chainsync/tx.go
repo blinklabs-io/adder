@@ -28,7 +28,6 @@ type TransactionEvent struct {
 	Inputs          []ledger.TransactionInput  `json:"inputs"`
 	Outputs         []ledger.TransactionOutput `json:"outputs"`
 	Metadata        *cbor.Value                `json:"metadata,omitempty"`
-	MetadataCbor    byteSliceJsonHex           `json:"metadataCbor,omitempty"`
 }
 
 func NewTransactionEvent(block ledger.Block, tx ledger.Transaction, includeCbor bool) TransactionEvent {
@@ -45,9 +44,6 @@ func NewTransactionEvent(block ledger.Block, tx ledger.Transaction, includeCbor 
 	}
 	if tx.Metadata() != nil {
 		evt.Metadata = tx.Metadata()
-		if includeCbor {
-			evt.MetadataCbor = tx.Metadata().Cbor()
-		}
 	}
 	return evt
 }
