@@ -1,6 +1,6 @@
 github.com/benbjohnson/clock v1.3.0 h1:ip6w0uFQkncKQ979AypyG0ER7mqUSBdKLOgAle/AT8A=
-github.com/blinklabs-io/gouroboros v0.50.0 h1:TcNgmWgenAE9mVoiZkTw68tk4r+n6oF4iPW0oeX6jjs=
-github.com/blinklabs-io/gouroboros v0.50.0/go.mod h1:cQt3XVVG2b+cpIJh+DhID7ivsyBQmTsXqbTDZ+7esXI=
+github.com/blinklabs-io/gouroboros v0.51.0 h1:cgl2jgTsPAKC1Jdp44vvzKxDn5fYJNooRR2HpP/ZjkI=
+github.com/blinklabs-io/gouroboros v0.51.0/go.mod h1:cQt3XVVG2b+cpIJh+DhID7ivsyBQmTsXqbTDZ+7esXI=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/fxamacker/cbor/v2 v2.4.0 h1:ri0ArlOR+5XunOP8CRUowT0pSJOwhW098ZCUyskZD88=
 github.com/fxamacker/cbor/v2 v2.4.0/go.mod h1:TA1xS00nchWmaBnEIxPSE5oHLuJBAVvqrtAnWBwBCVo=
