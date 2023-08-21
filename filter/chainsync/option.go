@@ -30,7 +30,7 @@ func WithPolicies(policyIds []string) ChainSyncOptionFunc {
 	}
 }
 
-//WithAssetFingerprints specifies the asset fingerprint (asset1xxx) to filter on
+// WithAssetFingerprints specifies the asset fingerprint (asset1xxx) to filter on
 func WithAssetFingerprints(assetFingerprints []string) ChainSyncOptionFunc {
 	return func(c *ChainSync) {
 		c.filterAssetFingerprints = assetFingerprints[:]
