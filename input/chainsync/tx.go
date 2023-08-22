@@ -15,6 +15,7 @@
 package chainsync
 
 import (
+	"github.com/blinklabs-io/gouroboros/cbor"
 	"github.com/blinklabs-io/gouroboros/ledger"
 )
 
@@ -26,19 +27,23 @@ type TransactionEvent struct {
 	TransactionCbor byteSliceJsonHex           `json:"transactionCbor,omitempty"`
 	Inputs          []ledger.TransactionInput  `json:"inputs"`
 	Outputs         []ledger.TransactionOutput `json:"outputs"`
+	Metadata        *cbor.Value                `json:"metadata,omitempty"`
 }
 
-func NewTransactionEvent(block ledger.Block, txBody ledger.TransactionBody, includeCbor bool) TransactionEvent {
+func NewTransactionEvent(block ledger.Block, tx ledger.Transaction, includeCbor bool) TransactionEvent {
 	evt := TransactionEvent{
 		BlockNumber:     block.BlockNumber(),
 		BlockHash:       block.Hash(),
 		SlotNumber:      block.SlotNumber(),
-		TransactionHash: txBody.Hash(),
-		Inputs:          txBody.Inputs(),
-		Outputs:         txBody.Outputs(),
+		TransactionHash: tx.Hash(),
+		Inputs:          tx.Inputs(),
+		Outputs:         tx.Outputs(),
 	}
 	if includeCbor {
-		evt.TransactionCbor = txBody.Cbor()
+		evt.TransactionCbor = tx.Cbor()
+	}
+	if tx.Metadata() != nil {
+		evt.Metadata = tx.Metadata()
 	}
 	return evt
 }
