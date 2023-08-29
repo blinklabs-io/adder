@@ -16,8 +16,10 @@ package push
 
 import (
 	"fmt"
+	"log"
 
 	"github.com/blinklabs-io/snek/event"
+	"github.com/blinklabs-io/snek/fcm"
 	"github.com/blinklabs-io/snek/input/chainsync"
 )
 
@@ -88,14 +90,27 @@ func (p *PushOutput) Start() error {
 				}
 
 				te := payload.(chainsync.TransactionEvent)
-				fmt.Println("Snek")
-				fmt.Printf("New Transaction!\nBlockNumber: %d, SlotNumber: %d\nInputs: %d, Outputs: %d\nHash: %s",
+				accessToken := fcm.GetAccessToken()
+				// TODO define where tokens will be fetched from or we add this to topic
+				fcmToken := ""
+				title := "Snek"
+				body := fmt.Sprintf("New Transaction!\nBlockNumber: %d, SlotNumber: %d\nInputs: %d, Outputs: %d\nHash: %s",
 					te.BlockNumber,
 					te.SlotNumber,
 					len(te.Inputs),
 					len(te.Outputs),
 					te.TransactionHash,
 				)
+				msg := fcm.NewMessage(
+					fcmToken,
+					fcm.WithNotification(title, body),
+				)
+				err := fcm.Send(accessToken, msg)
+				if err != nil {
+					log.Fatalf("Failed to send message: %v", err)
+				}
+				fmt.Println("Message 1 sent successfully!")
+
 			default:
 				fmt.Println("Snek")
 				fmt.Printf("New Event!\nEvent: %v", evt)
