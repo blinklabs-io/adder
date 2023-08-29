@@ -12,11 +12,25 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package output
+package push
 
-// We import the various plugins that we want to be auto-registered
 import (
-	_ "github.com/blinklabs-io/snek/output/log"
-	_ "github.com/blinklabs-io/snek/output/notify"
-	_ "github.com/blinklabs-io/snek/output/push"
+	"github.com/blinklabs-io/snek/plugin"
 )
+
+func init() {
+	plugin.Register(
+		plugin.PluginEntry{
+			Type:               plugin.PluginTypeOutput,
+			Name:               "push",
+			Description:        "Send push notifications for events",
+			NewFromOptionsFunc: NewFromCmdlineOptions,
+			Options:            []plugin.PluginOption{}, // Define any options if needed
+		},
+	)
+}
+
+func NewFromCmdlineOptions() plugin.Plugin {
+	p := New()
+	return p
+}
