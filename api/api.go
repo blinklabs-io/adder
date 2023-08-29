@@ -49,7 +49,7 @@ func WithPort(port string) APIOption {
 var apiInstance *APIv1
 var once sync.Once
 
-func NewAPI(debug bool, options ...APIOption) *APIv1 {
+func New(debug bool, options ...APIOption) *APIv1 {
 	once.Do(func() {
 		apiInstance = &APIv1{
 			engine: ConfigureRouter(debug),
