@@ -44,9 +44,11 @@ type ChainSync struct {
 }
 
 type ChainSyncStatus struct {
-	SlotNumber  uint64
-	BlockNumber uint64
-	BlockHash   string
+	SlotNumber    uint64
+	BlockNumber   uint64
+	BlockHash     string
+	TipSlotNumber uint64
+	TipBlockHash  string
 }
 
 type StatusUpdateFunc func(ChainSyncStatus)
@@ -187,7 +189,7 @@ func (c *ChainSync) handleRollForward(blockType uint, blockData interface{}, tip
 	case ledger.Block:
 		evt := event.New("chainsync.block", time.Now(), NewBlockEvent(v, c.includeCbor))
 		c.eventChan <- evt
-		c.updateStatus(v.SlotNumber(), v.BlockNumber(), v.Hash())
+		c.updateStatus(v.SlotNumber(), v.BlockNumber(), v.Hash(), tip.Point.Slot, hex.EncodeToString(tip.Point.Hash))
 	case ledger.BlockHeader:
 		blockSlot := v.SlotNumber()
 		blockHash, _ := hex.DecodeString(v.Hash())
@@ -201,15 +203,17 @@ func (c *ChainSync) handleRollForward(blockType uint, blockData interface{}, tip
 			txEvt := event.New("chainsync.transaction", time.Now(), NewTransactionEvent(block, transaction, c.includeCbor))
 			c.eventChan <- txEvt
 		}
-		c.updateStatus(v.SlotNumber(), v.BlockNumber(), v.Hash())
+		c.updateStatus(v.SlotNumber(), v.BlockNumber(), v.Hash(), tip.Point.Slot, hex.EncodeToString(tip.Point.Hash))
 	}
 	return nil
 }
 
-func (c *ChainSync) updateStatus(slotNumber uint64, blockNumber uint64, blockHash string) {
+func (c *ChainSync) updateStatus(slotNumber uint64, blockNumber uint64, blockHash string, tipSlotNumber uint64, tipBlockHash string) {
 	c.status.SlotNumber = slotNumber
 	c.status.BlockNumber = blockNumber
 	c.status.BlockHash = blockHash
+	c.status.TipSlotNumber = tipSlotNumber
+	c.status.TipBlockHash = tipBlockHash
 	if c.statusUpdateFunc != nil {
 		c.statusUpdateFunc(*(c.status))
 	}
