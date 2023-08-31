@@ -229,9 +229,12 @@ func (c *ChainSync) handleRollForward(blockType uint, blockData interface{}, tip
 }
 
 func (c *ChainSync) handleBlockFetchBlock(block ledger.Block) error {
-	evt := event.New("chainsync.block", time.Now(), NewBlockEvent(block, c.includeCbor))
-	c.eventChan <- evt
-	c.updateStatus(block.SlotNumber(), block.BlockNumber(), block.Hash(), c.bulkRangeEnd.Slot, hex.EncodeToString(c.bulkRangeEnd.Hash))
+	blockEvt := event.New("chainsync.block", time.Now(), NewBlockEvent(block, c.includeCbor))
+	c.eventChan <- blockEvt
+	for _, transaction := range block.Transactions() {
+		txEvt := event.New("chainsync.transaction", time.Now(), NewTransactionEvent(block, transaction, c.includeCbor))
+		c.eventChan <- txEvt
+	}
 	// Start normal chain-sync if we've reached the last block of our bulk range
 	if block.SlotNumber() == c.bulkRangeEnd.Slot {
 		if err := c.oConn.ChainSync().Client.Sync(c.intersectPoints); err != nil {
