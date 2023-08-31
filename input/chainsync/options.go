@@ -83,3 +83,10 @@ func WithStatusUpdateFunc(statusUpdateFunc StatusUpdateFunc) ChainSyncOptionFunc
 		c.statusUpdateFunc = statusUpdateFunc
 	}
 }
+
+// WithBulkMode specifies whether to use the "bulk" sync mode with NtN (node-to-node). This should only be used against your own nodes for resource usage reasons
+func WithBulkMode(bulkMode bool) ChainSyncOptionFunc {
+	return func(c *ChainSync) {
+		c.bulkMode = bulkMode
+	}
+}

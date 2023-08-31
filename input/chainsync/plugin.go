@@ -15,7 +15,13 @@
 package chainsync
 
 import (
+	"encoding/hex"
+	"strconv"
+	"strings"
+
 	"github.com/blinklabs-io/snek/plugin"
+
+	ocommon "github.com/blinklabs-io/gouroboros/protocol/common"
 )
 
 var cmdlineOptions struct {
@@ -24,6 +30,7 @@ var cmdlineOptions struct {
 	address        string
 	socketPath     string
 	ntcTcp         bool
+	bulkMode       bool
 	intersectTip   bool
 	intersectPoint string
 	includeCbor    bool
@@ -75,13 +82,26 @@ func init() {
 					Dest:         &(cmdlineOptions.ntcTcp),
 				},
 				{
+					Name:         "bulk-mode",
+					Type:         plugin.PluginOptionTypeBool,
+					Description:  "use the 'bulk' sync mode with NtN (node-to-node). This should only be used against your own nodes for resource usage reasons",
+					DefaultValue: false,
+					Dest:         &(cmdlineOptions.bulkMode),
+				},
+				{
 					Name:         "intersect-tip",
 					Type:         plugin.PluginOptionTypeBool,
 					Description:  "start syncing at the chain tip (defaults to chain genesis)",
 					DefaultValue: true,
 					Dest:         &(cmdlineOptions.intersectTip),
 				},
-				// TODO: intersect-point
+				{
+					Name:         "intersect-point",
+					Type:         plugin.PluginOptionTypeString,
+					Description:  "start syncing at the specified chain point(s) in '<slot>.<hash>' format",
+					DefaultValue: "",
+					Dest:         &(cmdlineOptions.intersectPoint),
+				},
 				{
 					Name:         "include-cbor",
 					Type:         plugin.PluginOptionTypeBool,
@@ -95,15 +115,48 @@ func init() {
 }
 
 func NewFromCmdlineOptions() plugin.Plugin {
-	p := New(
+	opts := []ChainSyncOptionFunc{
 		WithNetwork(cmdlineOptions.network),
 		WithNetworkMagic(uint32(cmdlineOptions.networkMagic)),
 		WithAddress(cmdlineOptions.address),
 		WithSocketPath(cmdlineOptions.socketPath),
 		WithNtcTcp(cmdlineOptions.ntcTcp),
-		WithIntersectTip(cmdlineOptions.intersectTip),
-		// TODO: WithIntersectPoints
+		WithBulkMode(cmdlineOptions.bulkMode),
 		WithIncludeCbor(cmdlineOptions.includeCbor),
-	)
+	}
+	if cmdlineOptions.intersectPoint != "" {
+		intersectPoints := []ocommon.Point{}
+		for _, point := range strings.Split(cmdlineOptions.intersectPoint, ",") {
+			intersectPointParts := strings.Split(point, ".")
+			if len(intersectPointParts) != 2 {
+				panic("invalid intersect point format")
+			}
+			intersectSlot, err := strconv.ParseUint(intersectPointParts[0], 10, 64)
+			if err != nil {
+				panic("invalid intersect point format")
+			}
+			intersectHashBytes, err := hex.DecodeString(intersectPointParts[1])
+			if err != nil {
+				panic("invalid intersect point format")
+			}
+			intersectPoints = append(
+				intersectPoints,
+				ocommon.Point{
+					Slot: intersectSlot,
+					Hash: intersectHashBytes[:],
+				},
+			)
+		}
+		opts = append(
+			opts,
+			WithIntersectPoints(intersectPoints),
+		)
+	} else {
+		opts = append(
+			opts,
+			WithIntersectTip(cmdlineOptions.intersectTip),
+		)
+	}
+	p := New(opts...)
 	return p
 }

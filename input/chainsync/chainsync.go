@@ -23,6 +23,7 @@ import (
 
 	ouroboros "github.com/blinklabs-io/gouroboros"
 	"github.com/blinklabs-io/gouroboros/ledger"
+	"github.com/blinklabs-io/gouroboros/protocol/blockfetch"
 	ochainsync "github.com/blinklabs-io/gouroboros/protocol/chainsync"
 	ocommon "github.com/blinklabs-io/gouroboros/protocol/common"
 )
@@ -34,6 +35,7 @@ type ChainSync struct {
 	address          string
 	socketPath       string
 	ntcTcp           bool
+	bulkMode         bool
 	intersectTip     bool
 	intersectPoints  []ocommon.Point
 	includeCbor      bool
@@ -41,6 +43,8 @@ type ChainSync struct {
 	status           *ChainSyncStatus
 	errorChan        chan error
 	eventChan        chan event.Event
+	bulkRangeStart   ocommon.Point
+	bulkRangeEnd     ocommon.Point
 }
 
 type ChainSyncStatus struct {
@@ -76,15 +80,26 @@ func (c *ChainSync) Start() error {
 	if c.oConn.BlockFetch() != nil {
 		c.oConn.BlockFetch().Client.Start()
 	}
-	if c.intersectTip {
-		tip, err := c.oConn.ChainSync().Client.GetCurrentTip()
+	if c.bulkMode && !c.intersectTip && c.oConn.BlockFetch() != nil {
+		var err error
+		c.bulkRangeStart, c.bulkRangeEnd, err = c.oConn.ChainSync().Client.GetAvailableBlockRange(c.intersectPoints)
 		if err != nil {
 			return err
 		}
-		c.intersectPoints = []ocommon.Point{tip.Point}
-	}
-	if err := c.oConn.ChainSync().Client.Sync(c.intersectPoints); err != nil {
-		return err
+		if err := c.oConn.BlockFetch().Client.GetBlockRange(c.bulkRangeStart, c.bulkRangeEnd); err != nil {
+			return err
+		}
+	} else {
+		if c.intersectTip {
+			tip, err := c.oConn.ChainSync().Client.GetCurrentTip()
+			if err != nil {
+				return err
+			}
+			c.intersectPoints = []ocommon.Point{tip.Point}
+		}
+		if err := c.oConn.ChainSync().Client.Sync(c.intersectPoints); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -158,6 +173,11 @@ func (c *ChainSync) setupConnection() error {
 				ochainsync.WithRollBackwardFunc(c.handleRollBackward),
 			),
 		),
+		ouroboros.WithBlockFetchConfig(
+			blockfetch.NewConfig(
+				blockfetch.WithBlockFunc(c.handleBlockFetchBlock),
+			),
+		),
 	)
 	if err != nil {
 		return err
@@ -204,6 +224,19 @@ func (c *ChainSync) handleRollForward(blockType uint, blockData interface{}, tip
 			c.eventChan <- txEvt
 		}
 		c.updateStatus(v.SlotNumber(), v.BlockNumber(), v.Hash(), tip.Point.Slot, hex.EncodeToString(tip.Point.Hash))
+	}
+	return nil
+}
+
+func (c *ChainSync) handleBlockFetchBlock(block ledger.Block) error {
+	evt := event.New("chainsync.block", time.Now(), NewBlockEvent(block, c.includeCbor))
+	c.eventChan <- evt
+	c.updateStatus(block.SlotNumber(), block.BlockNumber(), block.Hash(), c.bulkRangeEnd.Slot, hex.EncodeToString(c.bulkRangeEnd.Hash))
+	// Start normal chain-sync if we've reached the last block of our bulk range
+	if block.SlotNumber() == c.bulkRangeEnd.Slot {
+		if err := c.oConn.ChainSync().Client.Sync(c.intersectPoints); err != nil {
+			return err
+		}
 	}
 	return nil
 }
