@@ -235,6 +235,7 @@ func (c *ChainSync) handleBlockFetchBlock(block ledger.Block) error {
 		txEvt := event.New("chainsync.transaction", time.Now(), NewTransactionEvent(block, transaction, c.includeCbor))
 		c.eventChan <- txEvt
 	}
+	c.updateStatus(block.SlotNumber(), block.BlockNumber(), block.Hash(), c.bulkRangeEnd.Slot, hex.EncodeToString(c.bulkRangeEnd.Hash))
 	// Start normal chain-sync if we've reached the last block of our bulk range
 	if block.SlotNumber() == c.bulkRangeEnd.Slot {
 		if err := c.oConn.ChainSync().Client.Sync(c.intersectPoints); err != nil {
