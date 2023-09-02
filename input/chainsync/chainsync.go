@@ -53,6 +53,7 @@ type ChainSyncStatus struct {
 	BlockHash     string
 	TipSlotNumber uint64
 	TipBlockHash  string
+	TipReached    bool
 }
 
 type StatusUpdateFunc func(ChainSyncStatus)
@@ -246,6 +247,16 @@ func (c *ChainSync) handleBlockFetchBlock(block ledger.Block) error {
 }
 
 func (c *ChainSync) updateStatus(slotNumber uint64, blockNumber uint64, blockHash string, tipSlotNumber uint64, tipBlockHash string) {
+	// Determine if we've reached the chain tip
+	if !c.status.TipReached {
+		// Make sure we're past the end slot in any bulk range, since we don't update the tip during bulk sync
+		if slotNumber > c.bulkRangeEnd.Slot {
+			// Make sure our current slot is equal/higher than our last known tip slot
+			if c.status.SlotNumber > 0 && slotNumber >= c.status.TipSlotNumber {
+				c.status.TipReached = true
+			}
+		}
+	}
 	c.status.SlotNumber = slotNumber
 	c.status.BlockNumber = blockNumber
 	c.status.BlockHash = blockHash
