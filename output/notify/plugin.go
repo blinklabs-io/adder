@@ -18,6 +18,10 @@ import (
 	"github.com/blinklabs-io/snek/plugin"
 )
 
+var cmdlineOptions struct {
+	title string
+}
+
 func init() {
 	plugin.Register(
 		plugin.PluginEntry{
@@ -25,12 +29,22 @@ func init() {
 			Name:               "notify",
 			Description:        "display events using operating system notifications",
 			NewFromOptionsFunc: NewFromCmdlineOptions,
-			Options:            []plugin.PluginOption{},
+			Options:            []plugin.PluginOption{
+				{
+					Name: "title",
+					Type: plugin.PluginOptionTypeString,
+					Description: "specifies the title to use",
+					DefaultValue: "Snek",
+					Dest: &(cmdlineOptions.title),
+				},
+			},
 		},
 	)
 }
 
 func NewFromCmdlineOptions() plugin.Plugin {
-	p := New()
+	p := New(
+		WithTitle(cmdlineOptions.title),
+	)
 	return p
 }

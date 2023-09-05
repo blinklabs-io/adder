@@ -25,12 +25,14 @@ import (
 type NotifyOutput struct {
 	errorChan chan error
 	eventChan chan event.Event
+	title     string
 }
 
 func New(options ...NotifyOptionFunc) *NotifyOutput {
 	n := &NotifyOutput{
 		errorChan: make(chan error),
 		eventChan: make(chan event.Event, 10),
+		title:     "Snek",
 	}
 	for _, option := range options {
 		option(n)
@@ -56,7 +58,7 @@ func (n *NotifyOutput) Start() error {
 
 				be := payload.(chainsync.BlockEvent)
 				err := beeep.Notify(
-					"Snek",
+					n.title,
 					fmt.Sprintf("New Block!\nBlockNumber: %d, SlotNumber: %d\nHash: %s",
 						be.BlockNumber,
 						be.SlotNumber,
@@ -75,7 +77,7 @@ func (n *NotifyOutput) Start() error {
 
 				re := payload.(chainsync.RollbackEvent)
 				err := beeep.Notify(
-					"Snek",
+					n.title,
 					fmt.Sprintf("Rollback!\nSlotNumber: %d\nBlockHash: %s",
 						re.SlotNumber,
 						re.BlockHash,
@@ -93,7 +95,7 @@ func (n *NotifyOutput) Start() error {
 
 				te := payload.(chainsync.TransactionEvent)
 				err := beeep.Notify(
-					"Snek",
+					n.title,
 					fmt.Sprintf("New Transaction!\nBlockNumber: %d, SlotNumber: %d\nInputs: %d, Outputs: %d\nHash: %s",
 						te.BlockNumber,
 						te.SlotNumber,
@@ -108,7 +110,7 @@ func (n *NotifyOutput) Start() error {
 				}
 			default:
 				err := beeep.Notify(
-					"Snek",
+					n.title,
 					fmt.Sprintf("New Event!\nEvent: %v", evt),
 					"assets/snek-icon.png",
 				)

@@ -17,3 +17,10 @@ package notify
 // import "github.com/blinklabs-io/snek/event"
 
 type NotifyOptionFunc func(*NotifyOutput)
+
+// WithTitle specifies the notification title
+func WithTitle(title string) NotifyOptionFunc {
+	return func(o *NotifyOutput) {
+		o.title = title
+	}
+}
