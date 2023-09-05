@@ -29,13 +29,13 @@ func init() {
 			Name:               "notify",
 			Description:        "display events using operating system notifications",
 			NewFromOptionsFunc: NewFromCmdlineOptions,
-			Options:            []plugin.PluginOption{
+			Options: []plugin.PluginOption{
 				{
-					Name: "title",
-					Type: plugin.PluginOptionTypeString,
-					Description: "specifies the title to use",
+					Name:         "title",
+					Type:         plugin.PluginOptionTypeString,
+					Description:  "specifies the title to use",
 					DefaultValue: "Snek",
-					Dest: &(cmdlineOptions.title),
+					Dest:         &(cmdlineOptions.title),
 				},
 			},
 		},
