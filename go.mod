@@ -1,6 +1,6 @@
 module github.com/blinklabs-io/snek
 
-go 1.19
+go 1.20
 
 require (
 	github.com/blinklabs-io/gouroboros v0.53.0
