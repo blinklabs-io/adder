@@ -12,11 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package output
+package webhook
 
-// We import the various plugins that we want to be auto-registered
-import (
-	_ "github.com/blinklabs-io/snek/output/log"
-	_ "github.com/blinklabs-io/snek/output/notify"
-	_ "github.com/blinklabs-io/snek/output/webhook"
-)
+// import "github.com/blinklabs-io/snek/event"
+
+type WebhookOptionFunc func(*WebhookOutput)
+
+// WithUrl specifies the webhook URL
+func WithUrl(url string) WebhookOptionFunc {
+	return func(o *WebhookOutput) {
+		o.url = url
+	}
+}
