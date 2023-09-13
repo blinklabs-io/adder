@@ -16,10 +16,13 @@ package webhook
 
 import (
 	"bytes"
+	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"time"
 
 	"github.com/blinklabs-io/snek/event"
 	"github.com/blinklabs-io/snek/input/chainsync"
@@ -60,7 +63,6 @@ func (w *WebhookOutput) Start() error {
 			if payload == nil {
 				panic(fmt.Errorf("ERROR: %v", payload))
 			}
-			logger.Infof("debug: type: %s", evt.Type)
 			switch evt.Type {
 			case "chainsync.block":
 				be := payload.(chainsync.BlockEvent)
@@ -93,14 +95,28 @@ func SendWebhook(e *event.Event, url string) error {
 		return fmt.Errorf("%s", err)
 	}
 	// Setup request
-	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(data))
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(data))
 	if err != nil {
 		return fmt.Errorf("%s", err)
 	}
 	req.Header.Add("Content-Type", "application/json")
 	req.Header.Add("User-Agent", fmt.Sprintf("Snek/%s", version.GetVersionString()))
+	// Setup custom transport to ignore self-signed SSL
+	defaultTransport := http.DefaultTransport.(*http.Transport)
+	customTransport := &http.Transport{
+		Proxy: defaultTransport.Proxy,
+		DialContext: defaultTransport.DialContext,
+		MaxIdleConns: defaultTransport.MaxIdleConns,
+		IdleConnTimeout: defaultTransport.IdleConnTimeout,
+		ExpectContinueTimeout: defaultTransport.ExpectContinueTimeout,
+		TLSHandshakeTimeout: defaultTransport.TLSHandshakeTimeout,
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	}
+	client := &http.Client{Transport: customTransport}
 	// Send payload
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("%s", err)
 	}
