@@ -6,7 +6,7 @@ require (
 	github.com/blinklabs-io/gouroboros v0.53.0
 	github.com/gen2brain/beeep v0.0.0-20230602101333-f384c29b62dd
 	github.com/kelseyhightower/envconfig v1.4.0
-	go.uber.org/zap v1.25.0
+	go.uber.org/zap v1.26.0
 	gopkg.in/yaml.v2 v2.4.0
 )
 
