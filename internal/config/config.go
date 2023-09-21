@@ -38,6 +38,7 @@ type Config struct {
 	Input      string                                            `yaml:"input" envconfig:"INPUT"`
 	Output     string                                            `yaml:"output" envconfig:"OUTPUT"`
 	Plugin     map[string]map[string]map[interface{}]interface{} `yaml:"plugins"`
+	Auth       BasicAuth                                         `yaml:"auth"`
 }
 
 type LoggingConfig struct {
@@ -47,6 +48,11 @@ type LoggingConfig struct {
 type DebugConfig struct {
 	ListenAddress string `yaml:"address" envconfig:"DEBUG_ADDRESS"`
 	ListenPort    uint   `yaml:"port" envconfig:"DEBUG_PORT"`
+}
+
+type BasicAuth struct {
+	Username string `yaml:"username" envconfig:"BASIC_AUTH_USERNAME"`
+	Password string `yaml:"password" envconfig:"BASIC_AUTH_PASSWORD"`
 }
 
 // Singleton config instance with default values

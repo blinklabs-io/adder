@@ -25,6 +25,7 @@ import (
 	"github.com/blinklabs-io/snek/internal/logging"
 	"github.com/blinklabs-io/snek/internal/version"
 	_ "github.com/blinklabs-io/snek/output"
+	"github.com/blinklabs-io/snek/output/webhook"
 	"github.com/blinklabs-io/snek/pipeline"
 	"github.com/blinklabs-io/snek/plugin"
 )
@@ -124,6 +125,14 @@ func main() {
 	if output == nil {
 		logger.Fatalf("unknown output: %s", cfg.Output)
 	}
+
+	// Configure Auth for webhook
+	if cfg.Output == "webhook" {
+		if webhookPlugin, ok := output.(*webhook.WebhookOutput); ok {
+			webhookPlugin.SetBasicAuth(cfg.Auth.Username, cfg.Auth.Password)
+		}
+	}
+
 	pipe.AddOutput(output)
 
 	// Start pipeline and wait for error

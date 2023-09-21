@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -34,6 +35,8 @@ type WebhookOutput struct {
 	errorChan chan error
 	eventChan chan event.Event
 	url       string
+	username  string
+	password  string
 }
 
 func New(options ...WebhookOptionFunc) *WebhookOutput {
@@ -78,7 +81,7 @@ func (w *WebhookOutput) Start() error {
 				return
 			}
 			// TODO: error handle
-			err := SendWebhook(&evt, w.url)
+			err := w.SendWebhook(&evt)
 			if err != nil {
 				logger.Errorf("ERROR: %s", err)
 			}
@@ -87,9 +90,14 @@ func (w *WebhookOutput) Start() error {
 	return nil
 }
 
-func SendWebhook(e *event.Event, url string) error {
+func basicAuth(username, password string) string {
+	auth := username + ":" + password
+	return "Basic " + base64.StdEncoding.EncodeToString([]byte(auth))
+}
+
+func (w *WebhookOutput) SendWebhook(e *event.Event) error {
 	logger := logging.GetLogger()
-	logger.Infof("sending event %s to %s", e.Type, url)
+	logger.Infof("sending event %s to %s", e.Type, w.url)
 	data, err := json.Marshal(e)
 	if err != nil {
 		return fmt.Errorf("%s", err)
@@ -97,22 +105,27 @@ func SendWebhook(e *event.Event, url string) error {
 	// Setup request
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(data))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, w.url, bytes.NewReader(data))
 	if err != nil {
 		return fmt.Errorf("%s", err)
 	}
 	req.Header.Add("Content-Type", "application/json")
 	req.Header.Add("User-Agent", fmt.Sprintf("Snek/%s", version.GetVersionString()))
+
+	// Setup authorization
+	if w.username != "" && w.password != "" {
+		req.Header.Add("Authorization", basicAuth(w.username, w.password))
+	}
 	// Setup custom transport to ignore self-signed SSL
 	defaultTransport := http.DefaultTransport.(*http.Transport)
 	customTransport := &http.Transport{
-		Proxy: defaultTransport.Proxy,
-		DialContext: defaultTransport.DialContext,
-		MaxIdleConns: defaultTransport.MaxIdleConns,
-		IdleConnTimeout: defaultTransport.IdleConnTimeout,
+		Proxy:                 defaultTransport.Proxy,
+		DialContext:           defaultTransport.DialContext,
+		MaxIdleConns:          defaultTransport.MaxIdleConns,
+		IdleConnTimeout:       defaultTransport.IdleConnTimeout,
 		ExpectContinueTimeout: defaultTransport.ExpectContinueTimeout,
-		TLSHandshakeTimeout: defaultTransport.TLSHandshakeTimeout,
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		TLSHandshakeTimeout:   defaultTransport.TLSHandshakeTimeout,
+		TLSClientConfig:       &tls.Config{InsecureSkipVerify: true},
 	}
 	client := &http.Client{Transport: customTransport}
 	// Send payload
@@ -127,7 +140,7 @@ func SendWebhook(e *event.Event, url string) error {
 	defer resp.Body.Close()
 
 	logger.Infof("sent: %s, payload: %s, body: %s, response: %s, status: %d",
-		url,
+		w.url,
 		string(data),
 		string(respBody),
 		resp.Status,
@@ -156,4 +169,10 @@ func (w *WebhookOutput) InputChan() chan<- event.Event {
 // OutputChan always returns nil
 func (w *WebhookOutput) OutputChan() <-chan event.Event {
 	return nil
+}
+
+// Configure username and password for authentication
+func (w *WebhookOutput) SetBasicAuth(username, password string) {
+	w.username = username
+	w.password = password
 }
