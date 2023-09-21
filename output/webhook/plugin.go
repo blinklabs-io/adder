@@ -19,7 +19,9 @@ import (
 )
 
 var cmdlineOptions struct {
-	url string
+	url      string
+	username string
+	password string
 }
 
 func init() {
@@ -37,6 +39,20 @@ func init() {
 					DefaultValue: "http://localhost:3000",
 					Dest:         &(cmdlineOptions.url),
 				},
+				{
+					Name:         "username",
+					Type:         plugin.PluginOptionTypeString,
+					Description:  "specifies the username for basic auth",
+					DefaultValue: "",
+					Dest:         &(cmdlineOptions.username),
+				},
+				{
+					Name:         "password",
+					Type:         plugin.PluginOptionTypeString,
+					Description:  "specifies the password for basic auth",
+					DefaultValue: "",
+					Dest:         &(cmdlineOptions.password),
+				},
 			},
 		},
 	)
@@ -45,6 +61,7 @@ func init() {
 func NewFromCmdlineOptions() plugin.Plugin {
 	p := New(
 		WithUrl(cmdlineOptions.url),
+		WithBasicAuth(cmdlineOptions.username, cmdlineOptions.password),
 	)
 	return p
 }
