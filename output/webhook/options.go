@@ -24,3 +24,11 @@ func WithUrl(url string) WebhookOptionFunc {
 		o.url = url
 	}
 }
+
+// WithBasicAuth specifies the username and password
+func WithBasicAuth(username, password string) WebhookOptionFunc {
+	return func(o *WebhookOutput) {
+		o.username = username
+		o.password = password
+	}
+}
