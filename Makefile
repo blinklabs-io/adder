@@ -31,7 +31,7 @@ test: mod-tidy
 # Build our program binaries
 # Depends on GO_FILES to determine when rebuild is needed
 $(BINARIES): mod-tidy $(GO_FILES)
-	go build \
+	CGO_ENABLED=0 go build \
 		$(GO_LDFLAGS) \
 		-tags nodbus \
 		-o $(@) \
