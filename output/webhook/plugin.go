@@ -19,6 +19,7 @@ import (
 )
 
 var cmdlineOptions struct {
+	format   string
 	url      string
 	username string
 	password string
@@ -32,6 +33,13 @@ func init() {
 			Description:        "send events via HTTP POST to a webhook server",
 			NewFromOptionsFunc: NewFromCmdlineOptions,
 			Options: []plugin.PluginOption{
+				{
+					Name:         "format",
+					Type:         plugin.PluginOptionTypeString,
+					Description:  "specifies the webhook payload format to use",
+					DefaultValue: "snek",
+					Dest:         &(cmdlineOptions.format),
+				},
 				{
 					Name:         "url",
 					Type:         plugin.PluginOptionTypeString,
@@ -62,6 +70,7 @@ func NewFromCmdlineOptions() plugin.Plugin {
 	p := New(
 		WithUrl(cmdlineOptions.url),
 		WithBasicAuth(cmdlineOptions.username, cmdlineOptions.password),
+		WithFormat(cmdlineOptions.format),
 	)
 	return p
 }
