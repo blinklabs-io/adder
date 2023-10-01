@@ -34,6 +34,7 @@ import (
 type WebhookOutput struct {
 	errorChan chan error
 	eventChan chan event.Event
+	format    string
 	url       string
 	username  string
 	password  string
@@ -43,6 +44,7 @@ func New(options ...WebhookOptionFunc) *WebhookOutput {
 	w := &WebhookOutput{
 		errorChan: make(chan error),
 		eventChan: make(chan event.Event, 10),
+		format:    "snek",
 		url:       "http://localhost:3000",
 	}
 	for _, option := range options {
@@ -95,13 +97,63 @@ func basicAuth(username, password string) string {
 	return "Basic " + base64.StdEncoding.EncodeToString([]byte(auth))
 }
 
+func formatPayload(e *event.Event, format string) []byte {
+	var data []byte
+	var err error
+	switch format {
+	case "discord":
+		var dwe DiscordWebhookEvent
+		switch e.Type {
+		case "chainsync.block":
+			be := e.Payload.(chainsync.BlockEvent)
+			dwe.Content = fmt.Sprintf(
+				"New Cardano block!\nNumber: %d, Slot: %d\nHash: %s",
+				be.BlockNumber,
+				be.SlotNumber,
+				be.BlockHash,
+			)
+		case "chainsync.rollback":
+			be := e.Payload.(chainsync.RollbackEvent)
+			dwe.Content = fmt.Sprintf(
+				"Cardano rollback!\nSlot: %d\nHash: %s",
+				be.SlotNumber,
+				be.BlockHash,
+			)
+		case "chainsync.transaction":
+			te := e.Payload.(chainsync.TransactionEvent)
+			dwe.Content = fmt.Sprintf(
+				"New Cardano transaction!\nBlock: %d, Slot: %d, Inputs: %d, Outputs: %d\nHash: %s",
+				te.BlockNumber,
+				te.SlotNumber,
+				len(te.Inputs),
+				len(te.Outputs),
+				te.TransactionHash,
+			)
+		default:
+			dwe.Content = fmt.Sprintf("%v", e.Payload)
+		}
+
+		data, err = json.Marshal(dwe)
+		if err != nil {
+			return data
+		}
+	default:
+		data, err = json.Marshal(e)
+		if err != nil {
+			return data
+		}
+	}
+	return data
+}
+
+type DiscordWebhookEvent struct {
+	Content string `json:"content"`
+}
+
 func (w *WebhookOutput) SendWebhook(e *event.Event) error {
 	logger := logging.GetLogger()
 	logger.Infof("sending event %s to %s", e.Type, w.url)
-	data, err := json.Marshal(e)
-	if err != nil {
-		return fmt.Errorf("%s", err)
-	}
+	data := formatPayload(e, w.format)
 	// Setup request
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

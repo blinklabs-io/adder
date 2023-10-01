@@ -32,3 +32,10 @@ func WithBasicAuth(username, password string) WebhookOptionFunc {
 		o.password = password
 	}
 }
+
+// WithFormat specifies the output webhook format
+func WithFormat(format string) WebhookOptionFunc {
+	return func(o *WebhookOutput) {
+		o.format = format
+	}
+}
