@@ -18,5 +18,6 @@ package output
 import (
 	_ "github.com/blinklabs-io/snek/output/log"
 	_ "github.com/blinklabs-io/snek/output/notify"
+	_ "github.com/blinklabs-io/snek/output/push"
 	_ "github.com/blinklabs-io/snek/output/webhook"
 )
