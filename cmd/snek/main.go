@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/blinklabs-io/snek/api"
 	_ "github.com/blinklabs-io/snek/filter"
 	_ "github.com/blinklabs-io/snek/input"
 	"github.com/blinklabs-io/snek/internal/config"
@@ -103,6 +104,11 @@ func main() {
 		}()
 	}
 
+	// Create API instance with debug disabled
+	apiInstance := api.NewAPI(false,
+		api.WithGroup("/v1"),
+		api.WithPort("8080"))
+
 	// Create pipeline
 	pipe := pipeline.New()
 
@@ -125,6 +131,11 @@ func main() {
 		logger.Fatalf("unknown output: %s", cfg.Output)
 	}
 	pipe.AddOutput(output)
+
+	// Start API after plugins are configured
+	if err := apiInstance.Start(); err != nil {
+		logger.Fatalf("failed to start API: %s\n", err)
+	}
 
 	// Start pipeline and wait for error
 	if err := pipe.Start(); err != nil {
