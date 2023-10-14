@@ -105,7 +105,7 @@ func main() {
 	}
 
 	// Create API instance with debug disabled
-	apiInstance := api.NewAPI(false,
+	apiInstance := api.New(true,
 		api.WithGroup("/v1"),
 		api.WithPort("8080"))
 
@@ -129,6 +129,10 @@ func main() {
 	output := plugin.GetPlugin(plugin.PluginTypeOutput, cfg.Output)
 	if output == nil {
 		logger.Fatalf("unknown output: %s", cfg.Output)
+	}
+	// Check if output plugin implements APIRouteRegistrar
+	if registrar, ok := interface{}(output).(api.APIRouteRegistrar); ok {
+		registrar.RegisterRoutes()
 	}
 	pipe.AddOutput(output)
 

@@ -12,15 +12,15 @@ import (
 
 func TestRouteRegistration(t *testing.T) {
 	// Initialize the API and set it to debug mode for testing
-	apiInstance := api.NewAPI(true)
+	apiInstance := api.New(true)
 
 	// Check if Fcm implements APIRouteRegistrar and register its routes
 	// TODO: update this with actual plugin
-	fcmPlugin := &push.Fcm{}
-	if registrar, ok := interface{}(fcmPlugin).(api.APIRouteRegistrar); ok {
+	pushPlugin := &push.PushOutput{}
+	if registrar, ok := interface{}(pushPlugin).(api.APIRouteRegistrar); ok {
 		registrar.RegisterRoutes()
 	} else {
-		t.Fatal("push.Fcm does NOT implement APIRouteRegistrar")
+		t.Fatal("pushPlugin does NOT implement APIRouteRegistrar")
 	}
 
 	// Create a test request to one of the registered routes
