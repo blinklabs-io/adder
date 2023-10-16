@@ -103,35 +103,69 @@ func formatPayload(e *event.Event, format string) []byte {
 	switch format {
 	case "discord":
 		var dwe DiscordWebhookEvent
+		var dme DiscordMessageEmbed
+		var dmes []*DiscordMessageEmbed
+		var dmefs []*DiscordMessageEmbedField
 		switch e.Type {
 		case "chainsync.block":
 			be := e.Payload.(chainsync.BlockEvent)
-			dwe.Content = fmt.Sprintf(
-				"New Cardano block!\nNumber: %d, Slot: %d\nHash: %s",
-				be.BlockNumber,
-				be.SlotNumber,
-				be.BlockHash,
-			)
+			dme.Title = "New Cardano Block"
+			dmefs = append(dmefs, &DiscordMessageEmbedField{
+				Name:  "Block Number",
+				Value: fmt.Sprintf("%d", be.BlockNumber),
+			})
+			dmefs = append(dmefs, &DiscordMessageEmbedField{
+				Name:  "Slot Number",
+				Value: fmt.Sprintf("%d", be.SlotNumber),
+			})
+			dmefs = append(dmefs, &DiscordMessageEmbedField{
+				Name:  "Block Hash",
+				Value: be.BlockHash,
+			})
+			// TODO: fix this URL for different networks
+			dme.URL = fmt.Sprintf("https://cexplorer.io/block/%s", be.BlockHash)
 		case "chainsync.rollback":
 			be := e.Payload.(chainsync.RollbackEvent)
-			dwe.Content = fmt.Sprintf(
-				"Cardano rollback!\nSlot: %d\nHash: %s",
-				be.SlotNumber,
-				be.BlockHash,
-			)
+			dme.Title = "Cardano Rollback"
+			dmefs = append(dmefs, &DiscordMessageEmbedField{
+				Name:  "Slot Number",
+				Value: fmt.Sprintf("%d", be.SlotNumber),
+			})
+			dmefs = append(dmefs, &DiscordMessageEmbedField{
+				Name:  "Block Hash",
+				Value: be.BlockHash,
+			})
 		case "chainsync.transaction":
 			te := e.Payload.(chainsync.TransactionEvent)
-			dwe.Content = fmt.Sprintf(
-				"New Cardano transaction!\nBlock: %d, Slot: %d, Inputs: %d, Outputs: %d\nHash: %s",
-				te.BlockNumber,
-				te.SlotNumber,
-				len(te.Inputs),
-				len(te.Outputs),
-				te.TransactionHash,
-			)
+			dme.Title = "New Cardano Transaction"
+			dmefs = append(dmefs, &DiscordMessageEmbedField{
+				Name:  "Block Number",
+				Value: fmt.Sprintf("%d", te.BlockNumber),
+			})
+			dmefs = append(dmefs, &DiscordMessageEmbedField{
+				Name:  "Slot Number",
+				Value: fmt.Sprintf("%d", te.SlotNumber),
+			})
+			dmefs = append(dmefs, &DiscordMessageEmbedField{
+				Name:  "Inputs",
+				Value: fmt.Sprintf("%d", len(te.Inputs)),
+			})
+			dmefs = append(dmefs, &DiscordMessageEmbedField{
+				Name:  "Outputs",
+				Value: fmt.Sprintf("%d", len(te.Outputs)),
+			})
+			dmefs = append(dmefs, &DiscordMessageEmbedField{
+				Name:  "Transaction Hash",
+				Value: te.TransactionHash,
+			})
+			// TODO: fix this URL for different networks
+			dme.URL = fmt.Sprintf("https://cexplorer.io/tx/%s", te.TransactionHash)
 		default:
 			dwe.Content = fmt.Sprintf("%v", e.Payload)
 		}
+		dme.Fields = dmefs
+		dmes = append(dmes, &dme)
+		dwe.Embeds = dmes
 
 		data, err = json.Marshal(dwe)
 		if err != nil {
@@ -147,7 +181,19 @@ func formatPayload(e *event.Event, format string) []byte {
 }
 
 type DiscordWebhookEvent struct {
-	Content string `json:"content"`
+	Content string                 `json:"content,omitempty"`
+	Embeds  []*DiscordMessageEmbed `json:"embeds,omitempty"`
+}
+
+type DiscordMessageEmbed struct {
+	URL    string                      `json:"url,omitempty"`
+	Title  string                      `json:"title,omitempty"`
+	Fields []*DiscordMessageEmbedField `json:"fields,omitempty"`
+}
+
+type DiscordMessageEmbedField struct {
+	Name  string `json:"name"`
+	Value string `json:"value"`
 }
 
 func (w *WebhookOutput) SendWebhook(e *event.Event) error {
