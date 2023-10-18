@@ -1,0 +1,103 @@
+basePath: /v1
+definitions:
+  push.ErrorResponse:
+    properties:
+      error:
+        type: string
+    type: object
+  push.TokenRequest:
+    properties:
+      fcmToken:
+        type: string
+    required:
+    - fcmToken
+    type: object
+  push.TokenResponse:
+    properties:
+      fcmToken:
+        type: string
+    type: object
+info:
+  contact:
+    email: support@blinklabs.io
+    name: Blink Labs
+    url: https://blinklabs.io
+  description: Snek API
+  license:
+    name: Apache 2.0
+    url: http://www.apache.org/licenses/LICENSE-2.0.html
+  title: Snek API
+  version: v1
+paths:
+  /fcm:
+    post:
+      consumes:
+      - application/json
+      description: Store a new FCM token
+      parameters:
+      - description: FCM Token Request
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/push.TokenRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/push.ErrorResponse'
+      summary: Store FCM Token
+  /fcm/{token}:
+    delete:
+      consumes:
+      - application/json
+      description: Delete an FCM token by its value
+      parameters:
+      - description: FCM Token
+        in: path
+        name: token
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/push.ErrorResponse'
+      summary: Delete FCM Token
+    get:
+      consumes:
+      - application/json
+      description: Get an FCM token by its value
+      parameters:
+      - description: FCM Token
+        in: path
+        name: token
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/push.TokenResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/push.ErrorResponse'
+      summary: Get FCM Token
+schemes:
+- http
+swagger: "2.0"

@@ -25,6 +25,13 @@ mod-tidy:
 clean:
 	rm -f $(BINARIES)
 
+format: mod-tidy
+	go fmt ./...
+
+swagger:
+	swag f -g api.go -d api,output
+	swag i -g api.go -d api,output
+
 test: mod-tidy
 	go test -v ./...
 

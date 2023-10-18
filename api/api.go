@@ -6,7 +6,10 @@ import (
 	"sync"
 	"time"
 
+	_ "github.com/blinklabs-io/snek/docs"
 	"github.com/gin-gonic/gin"
+	swaggerFiles "github.com/swaggo/files"     // swagger embed files
+	ginSwagger "github.com/swaggo/gin-swagger" // gin-swagger middleware
 )
 
 type API interface {
@@ -71,6 +74,18 @@ func (a *APIv1) Engine() *gin.Engine {
 	return a.engine
 }
 
+//	@title			Snek API
+//	@version		v1
+//	@description	Snek API
+//	@Schemes		http
+//	@BasePath		/v1
+
+//	@contact.name	Blink Labs
+//	@contact.url	https://blinklabs.io
+//	@contact.email	support@blinklabs.io
+
+// @license.name	Apache 2.0
+// @license.url	http://www.apache.org/licenses/LICENSE-2.0.html
 func (a *APIv1) Start() error {
 	address := a.host + ":" + a.port
 	// Use buffered channel to not block goroutine
@@ -140,8 +155,7 @@ func ConfigureRouter(debug bool) *gin.Engine {
 		c.String(200, "pong")
 	})
 	// Swagger UI
-	// TODO: add swagger UI
-	// g.Static("/swagger-ui", "swagger-ui")
+	g.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 	return g
 }
 
