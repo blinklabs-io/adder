@@ -18,6 +18,7 @@ Events are created with a simple schema.
 {
     "type": "event type",
     "timestamp": "wall clock timestamp of event",
+    "context": "metadata about the event",
     "payload": "the full event specific payload"
 }
 ```
@@ -28,10 +29,14 @@ The chainsync input produces three event types: `block`, `rollback`, and
 block:
 ```json
 {
-    "payload": {
+    "context": {
         "blockNumber": 123,
-        "blockHash": "abcd123...",
         "slotNumber": 1234567,
+    },
+    "payload": {
+        "blockBodySize": 123,
+        "issuerVkey": "a712f81ab2eac...",
+        "blockHash": "abcd123...",
         "blockCbor": "85828a1a000995c21..."
     }
 }
@@ -50,12 +55,43 @@ rollback:
 transaction:
 ```json
 {
-    "payload": {
+    "context": {
         "blockNumber": 123,
-        "blockHash": "abcd123...",
         "slotNumber": 1234567,
         "transactionHash": "0deadbeef123...",
+        "transactionIdx": 0,
+    },
+    "payload": {
+        "blockHash": "abcd123...",
         "transactionCbor": "a500828258200a1ad..."
+        "inputs": [
+          "abcdef123...#0",
+          "abcdef123...#1",
+        ],
+        "outputs": [
+            {
+                "address": "addr1qwerty123...",
+                "amount":  12345687,
+                "assets": [
+                    {
+                        "name": "Foo",
+                        "nameHex": "abcd123...",
+                        "amount": 123,
+                        "fingerprint": "asset1abcd...",
+                        "policyId": "54321..."
+                    }
+                ]
+            }
+        ],
+        "metadata": {
+            674: {
+                "msg": [
+                    "Test message"
+                ]
+            }
+        },
+        "fee": 1234567,
+        "ttl": 123
     }
 }
 ```

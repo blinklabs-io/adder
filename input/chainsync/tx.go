@@ -19,25 +19,40 @@ import (
 	"github.com/blinklabs-io/gouroboros/ledger"
 )
 
+type TransactionContext struct {
+	BlockNumber     uint64 `json:"blockNumber"`
+	SlotNumber      uint64 `json:"slotNumber"`
+	TransactionHash string `json:"transactionHash"`
+	TransactionIdx  uint32 `json:"transactionIdx"`
+}
+
 type TransactionEvent struct {
-	BlockNumber     uint64                     `json:"blockNumber"`
 	BlockHash       string                     `json:"blockHash"`
-	SlotNumber      uint64                     `json:"slotNumber"`
-	TransactionHash string                     `json:"transactionHash"`
 	TransactionCbor byteSliceJsonHex           `json:"transactionCbor,omitempty"`
 	Inputs          []ledger.TransactionInput  `json:"inputs"`
 	Outputs         []ledger.TransactionOutput `json:"outputs"`
 	Metadata        *cbor.Value                `json:"metadata,omitempty"`
+	Fee             uint64                     `json:"fee"`
+	TTL             uint64                     `json:"ttl,omitempty"`
+}
+
+func NewTransactionContext(block ledger.Block, tx ledger.Transaction, index uint32) TransactionContext {
+	ctx := TransactionContext{
+		BlockNumber:     block.BlockNumber(),
+		SlotNumber:      block.SlotNumber(),
+		TransactionHash: tx.Hash(),
+		TransactionIdx:  index,
+	}
+	return ctx
 }
 
 func NewTransactionEvent(block ledger.Block, tx ledger.Transaction, includeCbor bool) TransactionEvent {
 	evt := TransactionEvent{
-		BlockNumber:     block.BlockNumber(),
 		BlockHash:       block.Hash(),
-		SlotNumber:      block.SlotNumber(),
-		TransactionHash: tx.Hash(),
 		Inputs:          tx.Inputs(),
 		Outputs:         tx.Outputs(),
+		Fee:             tx.Fee(),
+		TTL:             tx.TTL(),
 	}
 	if includeCbor {
 		evt.TransactionCbor = tx.Cbor()

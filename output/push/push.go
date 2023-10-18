@@ -114,17 +114,23 @@ func (p *PushOutput) Start() error {
 				if payload == nil {
 					panic(fmt.Errorf("ERROR: %v", payload))
 				}
+				context := evt.Context
+				if context == nil {
+					panic(fmt.Errorf("ERROR: %v", context))
+				}
 
 				te := payload.(chainsync.TransactionEvent)
+				tc := context.(chainsync.TransactionContext)
 
 				// Create notification message
 				title := "Snek"
-				body := fmt.Sprintf("New Transaction!\nBlockNumber: %d, SlotNumber: %d\nInputs: %d, Outputs: %d\nHash: %s",
-					te.BlockNumber,
-					te.SlotNumber,
+				body := fmt.Sprintf("New Transaction!\nBlockNumber: %d, SlotNumber: %d\nInputs: %d, Outputs: %d\nFee: %d\nHash: %s",
+					tc.BlockNumber,
+					tc.SlotNumber,
 					len(te.Inputs),
 					len(te.Outputs),
-					te.TransactionHash,
+					te.Fee,
+					tc.TransactionHash,
 				)
 
 				// Send notification
