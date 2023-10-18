@@ -155,14 +155,15 @@ func formatWebhook(e *event.Event, format string) []byte {
 			})
 		case "chainsync.transaction":
 			te := e.Payload.(chainsync.TransactionEvent)
+			tc := e.Context.(chainsync.TransactionContext)
 			dme.Title = "New Cardano Transaction"
 			dmefs = append(dmefs, &DiscordMessageEmbedField{
 				Name:  "Block Number",
-				Value: fmt.Sprintf("%d", te.BlockNumber),
+				Value: fmt.Sprintf("%d", tc.BlockNumber),
 			})
 			dmefs = append(dmefs, &DiscordMessageEmbedField{
 				Name:  "Slot Number",
-				Value: fmt.Sprintf("%d", te.SlotNumber),
+				Value: fmt.Sprintf("%d", tc.SlotNumber),
 			})
 			dmefs = append(dmefs, &DiscordMessageEmbedField{
 				Name:  "Inputs",
@@ -173,11 +174,15 @@ func formatWebhook(e *event.Event, format string) []byte {
 				Value: fmt.Sprintf("%d", len(te.Outputs)),
 			})
 			dmefs = append(dmefs, &DiscordMessageEmbedField{
+				Name:  "Fee",
+				Value: fmt.Sprintf("%d", te.Fee),
+			})
+			dmefs = append(dmefs, &DiscordMessageEmbedField{
 				Name:  "Transaction Hash",
-				Value: te.TransactionHash,
+				Value: tc.TransactionHash,
 			})
 			// TODO: fix this URL for different networks
-			dme.URL = fmt.Sprintf("https://cexplorer.io/tx/%s", te.TransactionHash)
+			dme.URL = fmt.Sprintf("https://cexplorer.io/tx/%s", tc.TransactionHash)
 		default:
 			dwe.Content = fmt.Sprintf("%v", e.Payload)
 		}
