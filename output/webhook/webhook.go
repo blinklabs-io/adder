@@ -25,6 +25,8 @@ import (
 	"net/http"
 	"time"
 
+	// cbor "github.com/fxamacker/cbor/v2"
+
 	"github.com/blinklabs-io/snek/event"
 	"github.com/blinklabs-io/snek/input/chainsync"
 	"github.com/blinklabs-io/snek/internal/logging"
@@ -68,10 +70,16 @@ func (w *WebhookOutput) Start() error {
 			if payload == nil {
 				panic(fmt.Errorf("ERROR: %v", payload))
 			}
+			context := evt.Context
 			switch evt.Type {
 			case "chainsync.block":
+				if context == nil {
+					panic(fmt.Errorf("ERROR: %v", context))
+				}
 				be := payload.(chainsync.BlockEvent)
+				bc := context.(chainsync.BlockContext)
 				evt.Payload = be
+				evt.Context = bc
 			case "chainsync.rollback":
 				re := payload.(chainsync.RollbackEvent)
 				evt.Payload = re
@@ -97,7 +105,7 @@ func basicAuth(username, password string) string {
 	return "Basic " + base64.StdEncoding.EncodeToString([]byte(auth))
 }
 
-func formatPayload(e *event.Event, format string) []byte {
+func formatWebhook(e *event.Event, format string) []byte {
 	var data []byte
 	var err error
 	switch format {
@@ -109,19 +117,29 @@ func formatPayload(e *event.Event, format string) []byte {
 		switch e.Type {
 		case "chainsync.block":
 			be := e.Payload.(chainsync.BlockEvent)
+			bc := e.Context.(chainsync.BlockContext)
+			// keyCbor, err := cbor.Marshal(be.IssuerVkey)
+			// if err != nil {
+			// 	panic(err)
+			// }
 			dme.Title = "New Cardano Block"
 			dmefs = append(dmefs, &DiscordMessageEmbedField{
 				Name:  "Block Number",
-				Value: fmt.Sprintf("%d", be.BlockNumber),
+				Value: fmt.Sprintf("%d", bc.BlockNumber),
 			})
 			dmefs = append(dmefs, &DiscordMessageEmbedField{
 				Name:  "Slot Number",
-				Value: fmt.Sprintf("%d", be.SlotNumber),
+				Value: fmt.Sprintf("%d", bc.SlotNumber),
 			})
 			dmefs = append(dmefs, &DiscordMessageEmbedField{
 				Name:  "Block Hash",
 				Value: be.BlockHash,
 			})
+			// TODO: get the pool identifier from be.IssuerVkey
+			// dmefs = append(dmefs, &DiscordMessageEmbedField{
+			// 	Name:  "Issuer Vkey",
+			// 	Value: fmt.Sprintf("%x", keyCbor),
+			// })
 			// TODO: fix this URL for different networks
 			dme.URL = fmt.Sprintf("https://cexplorer.io/block/%s", be.BlockHash)
 		case "chainsync.rollback":
@@ -199,7 +217,7 @@ type DiscordMessageEmbedField struct {
 func (w *WebhookOutput) SendWebhook(e *event.Event) error {
 	logger := logging.GetLogger()
 	logger.Infof("sending event %s to %s", e.Type, w.url)
-	data := formatPayload(e, w.format)
+	data := formatWebhook(e, w.format)
 	// Setup request
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

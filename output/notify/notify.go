@@ -55,13 +55,18 @@ func (n *NotifyOutput) Start() error {
 				if payload == nil {
 					panic(fmt.Errorf("ERROR: %v", payload))
 				}
+				context := evt.Context
+				if context == nil {
+					panic(fmt.Errorf("ERROR: %v", context))
+				}
 
 				be := payload.(chainsync.BlockEvent)
+				bc := context.(chainsync.BlockContext)
 				err := beeep.Notify(
 					n.title,
 					fmt.Sprintf("New Block!\nBlockNumber: %d, SlotNumber: %d\nHash: %s",
-						be.BlockNumber,
-						be.SlotNumber,
+						bc.BlockNumber,
+						bc.SlotNumber,
 						be.BlockHash,
 					),
 					"assets/snek-icon.png",

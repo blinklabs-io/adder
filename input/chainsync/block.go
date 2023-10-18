@@ -15,21 +15,51 @@
 package chainsync
 
 import (
+	"fmt"
+
 	"github.com/blinklabs-io/gouroboros/ledger"
+	"github.com/fxamacker/cbor/v2"
 )
 
-type BlockEvent struct {
+type BlockContext struct {
 	BlockNumber uint64           `json:"blockNumber"`
-	BlockHash   string           `json:"blockHash"`
 	SlotNumber  uint64           `json:"slotNumber"`
-	BlockCbor   byteSliceJsonHex `json:"blockCbor,omitempty"`
+}
+
+type BlockEvent struct {
+	BlockBodySize uint64           `json:"blockBodySize"`
+	IssuerVkey    string           `json:"issuerVkey"`
+	BlockHash     string           `json:"blockHash"`
+	BlockCbor     byteSliceJsonHex `json:"blockCbor,omitempty"`
+}
+
+func NewBlockContext(block ledger.Block) BlockContext {
+	ctx := BlockContext{
+		BlockNumber: block.BlockNumber(),
+		SlotNumber:  block.SlotNumber(),
+	}
+	return ctx
+}
+
+func NewBlockHeaderContext(block ledger.BlockHeader) BlockContext {
+	ctx := BlockContext{
+		BlockNumber: block.BlockNumber(),
+		SlotNumber:  block.SlotNumber(),
+	}
+	return ctx
 }
 
 func NewBlockEvent(block ledger.Block, includeCbor bool) BlockEvent {
+	keyCbor, err := cbor.Marshal(block.IssuerVkey())
+	if err != nil {
+		panic(err)
+	}
+	// iss := ledger.NewBlake2b256(block.IssuerVkey())
 	evt := BlockEvent{
-		BlockNumber: block.BlockNumber(),
-		BlockHash:   block.Hash(),
-		SlotNumber:  block.SlotNumber(),
+		BlockBodySize: block.BlockBodySize(),
+		BlockHash:     block.Hash(),
+		IssuerVkey:    fmt.Sprintf("%x", keyCbor),
+		// IssuerVkey:    iss.String(),
 	}
 	if includeCbor {
 		evt.BlockCbor = block.Cbor()
