@@ -19,9 +19,9 @@ type API interface {
 
 type APIv1 struct {
 	engine   *gin.Engine
-	apiGroup *gin.RouterGroup
-	host     string
-	port     string
+	ApiGroup *gin.RouterGroup
+	Host     string
+	Port     string
 }
 
 type APIRouteRegistrar interface {
@@ -33,19 +33,19 @@ type APIOption func(*APIv1)
 func WithGroup(group string) APIOption {
 	// Expects '/v1' as the group
 	return func(a *APIv1) {
-		a.apiGroup = a.engine.Group(group)
+		a.ApiGroup = a.engine.Group(group)
 	}
 }
 
 func WithHost(host string) APIOption {
 	return func(a *APIv1) {
-		a.host = host
+		a.Host = host
 	}
 }
 
 func WithPort(port string) APIOption {
 	return func(a *APIv1) {
-		a.port = port
+		a.Port = port
 	}
 }
 
@@ -56,8 +56,8 @@ func New(debug bool, options ...APIOption) *APIv1 {
 	once.Do(func() {
 		apiInstance = &APIv1{
 			engine: ConfigureRouter(debug),
-			host:   "localhost",
-			port:   "8080",
+			Host:   "localhost",
+			Port:   "8080",
 		}
 		for _, opt := range options {
 			opt(apiInstance)
@@ -87,7 +87,7 @@ func (a *APIv1) Engine() *gin.Engine {
 // @license.name	Apache 2.0
 // @license.url	http://www.apache.org/licenses/LICENSE-2.0.html
 func (a *APIv1) Start() error {
-	address := a.host + ":" + a.port
+	address := a.Host + ":" + a.Port
 	// Use buffered channel to not block goroutine
 	errChan := make(chan error, 1)
 
@@ -132,8 +132,8 @@ func (a *APIv1) AddRoute(method, path string, handler gin.HandlerFunc) {
 
 	// Check if a specific apiGroup is set
 	// If so, add the route to it. Otherwise, add to the main engine.
-	if a.apiGroup != nil {
-		addRouteToTarget(a.apiGroup)
+	if a.ApiGroup != nil {
+		addRouteToTarget(a.ApiGroup)
 	} else {
 		addRouteToTarget(a.engine)
 	}

@@ -27,6 +27,12 @@ func (p *PushOutput) RegisterRoutes() {
 	}
 
 	apiInstance := api.GetInstance()
+	var apiEndpoint string
+	if apiInstance.ApiGroup != nil {
+		apiEndpoint = apiInstance.Host + apiInstance.ApiGroup.BasePath() + "/fcm"
+	} else {
+		apiEndpoint = apiInstance.Host + "/fcm"
+	}
 
 	apiInstance.AddRoute("POST", "/fcm", storeFCMToken)
 	apiInstance.AddRoute("POST", "/fcm/", storeFCMToken)
@@ -36,6 +42,8 @@ func (p *PushOutput) RegisterRoutes() {
 
 	apiInstance.AddRoute("DELETE", "/fcm/:token", deleteFCMToken)
 	apiInstance.AddRoute("DELETE", "/fcm/:token/", deleteFCMToken)
+
+	apiInstance.AddRoute("GET", "/qrcode", generateQRPage(apiEndpoint))
 
 	routesRegistered = true
 }
