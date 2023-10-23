@@ -105,7 +105,7 @@ func main() {
 	}
 
 	// Create API instance with debug disabled
-	apiInstance := api.New(true,
+	apiInstance := api.New(false,
 		api.WithGroup("/v1"),
 		api.WithPort("8080"))
 
