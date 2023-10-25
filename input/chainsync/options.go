@@ -78,7 +78,9 @@ func WithIncludeCbor(includeCbor bool) ChainSyncOptionFunc {
 
 // WithStatusUpdateFunc specifies a callback function for status updates. This is useful for tracking the chain-sync status
 // to be able to resume a sync at a later time, especially when any filtering could prevent you from getting all block update events
-func WithStatusUpdateFunc(statusUpdateFunc StatusUpdateFunc) ChainSyncOptionFunc {
+func WithStatusUpdateFunc(
+	statusUpdateFunc StatusUpdateFunc,
+) ChainSyncOptionFunc {
 	return func(c *ChainSync) {
 		c.statusUpdateFunc = statusUpdateFunc
 	}

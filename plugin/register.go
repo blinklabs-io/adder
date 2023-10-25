@@ -68,7 +68,11 @@ func PopulateCmdlineOptions(fs *flag.FlagSet) error {
 func ProcessEnvVars() error {
 	for _, plugin := range pluginEntries {
 		// Generate env var prefix based on plugin type and name
-		envVarPrefix := fmt.Sprintf("%s-%s-", PluginTypeName(plugin.Type), plugin.Name)
+		envVarPrefix := fmt.Sprintf(
+			"%s-%s-",
+			PluginTypeName(plugin.Type),
+			plugin.Name,
+		)
 		for _, option := range plugin.Options {
 			if err := option.ProcessEnvVars(envVarPrefix); err != nil {
 				return err
@@ -78,7 +82,9 @@ func ProcessEnvVars() error {
 	return nil
 }
 
-func ProcessConfig(pluginConfig map[string]map[string]map[interface{}]interface{}) error {
+func ProcessConfig(
+	pluginConfig map[string]map[string]map[interface{}]interface{},
+) error {
 	for _, plugin := range pluginEntries {
 		if pluginTypeData, ok := pluginConfig[PluginTypeName(plugin.Type)]; ok {
 			if pluginData, ok := pluginTypeData[plugin.Name]; ok {

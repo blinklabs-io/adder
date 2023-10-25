@@ -240,12 +240,20 @@ func (w *WebhookOutput) SendWebhook(e *event.Event) error {
 	// Setup request
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, w.url, bytes.NewReader(data))
+	req, err := http.NewRequestWithContext(
+		ctx,
+		http.MethodPost,
+		w.url,
+		bytes.NewReader(data),
+	)
 	if err != nil {
 		return fmt.Errorf("%s", err)
 	}
 	req.Header.Add("Content-Type", "application/json")
-	req.Header.Add("User-Agent", fmt.Sprintf("Snek/%s", version.GetVersionString()))
+	req.Header.Add(
+		"User-Agent",
+		fmt.Sprintf("Snek/%s", version.GetVersionString()),
+	)
 
 	// Setup authorization
 	if w.username != "" && w.password != "" {

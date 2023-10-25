@@ -61,7 +61,10 @@ func NewMessage(token string, opts ...MessageOption) *Message {
 
 func Send(accessToken string, projectId string, msg *Message) error {
 
-	fcmEndpoint := fmt.Sprintf("https://fcm.googleapis.com/v1/projects/%s/messages:send", projectId)
+	fcmEndpoint := fmt.Sprintf(
+		"https://fcm.googleapis.com/v1/projects/%s/messages:send",
+		projectId,
+	)
 
 	// Convert the message to JSON
 	payload, err := json.Marshal(msg)

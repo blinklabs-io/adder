@@ -42,7 +42,11 @@ type PluginOption struct {
 	Dest         interface{}
 }
 
-func (p *PluginOption) AddToFlagSet(fs *flag.FlagSet, pluginType string, pluginName string) error {
+func (p *PluginOption) AddToFlagSet(
+	fs *flag.FlagSet,
+	pluginType string,
+	pluginName string,
+) error {
 	var flagName string
 	if p.CustomFlag != "" {
 		flagName = fmt.Sprintf("%s-%s", pluginType, p.CustomFlag)
@@ -51,15 +55,34 @@ func (p *PluginOption) AddToFlagSet(fs *flag.FlagSet, pluginType string, pluginN
 	}
 	switch p.Type {
 	case PluginOptionTypeString:
-		fs.StringVar(p.Dest.(*string), flagName, p.DefaultValue.(string), p.Description)
+		fs.StringVar(
+			p.Dest.(*string),
+			flagName,
+			p.DefaultValue.(string),
+			p.Description,
+		)
 	case PluginOptionTypeBool:
-		fs.BoolVar(p.Dest.(*bool), flagName, p.DefaultValue.(bool), p.Description)
+		fs.BoolVar(
+			p.Dest.(*bool),
+			flagName,
+			p.DefaultValue.(bool),
+			p.Description,
+		)
 	case PluginOptionTypeInt:
 		fs.IntVar(p.Dest.(*int), flagName, p.DefaultValue.(int), p.Description)
 	case PluginOptionTypeUint:
-		fs.UintVar(p.Dest.(*uint), flagName, p.DefaultValue.(uint), p.Description)
+		fs.UintVar(
+			p.Dest.(*uint),
+			flagName,
+			p.DefaultValue.(uint),
+			p.Description,
+		)
 	default:
-		return fmt.Errorf("unknown plugin option type %d for option %s", p.Type, p.Name)
+		return fmt.Errorf(
+			"unknown plugin option type %d for option %s",
+			p.Type,
+			p.Name,
+		)
 	}
 	return nil
 }
@@ -109,14 +132,20 @@ func (p *PluginOption) ProcessEnvVars(envPrefix string) error {
 				}
 				*(p.Dest.(*uint)) = uint(value)
 			default:
-				return fmt.Errorf("unknown plugin option type %d for option %s", p.Type, p.Name)
+				return fmt.Errorf(
+					"unknown plugin option type %d for option %s",
+					p.Type,
+					p.Name,
+				)
 			}
 		}
 	}
 	return nil
 }
 
-func (p *PluginOption) ProcessConfig(pluginData map[interface{}]interface{}) error {
+func (p *PluginOption) ProcessConfig(
+	pluginData map[interface{}]interface{},
+) error {
 	if optionData, ok := pluginData[p.Name]; ok {
 		switch p.Type {
 		case PluginOptionTypeString:
@@ -148,7 +177,11 @@ func (p *PluginOption) ProcessConfig(pluginData map[interface{}]interface{}) err
 				return fmt.Errorf("invalid value for option '%s': expected uint and got %T", p.Name, optionData)
 			}
 		default:
-			return fmt.Errorf("unknown plugin option type %d for option %s", p.Type, p.Name)
+			return fmt.Errorf(
+				"unknown plugin option type %d for option %s",
+				p.Type,
+				p.Name,
+			)
 
 		}
 	}

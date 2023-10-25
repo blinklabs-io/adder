@@ -35,8 +35,8 @@ type Config struct {
 	Version    bool                                              `yaml:"-"`
 	Logging    LoggingConfig                                     `yaml:"logging"`
 	Debug      DebugConfig                                       `yaml:"debug"`
-	Input      string                                            `yaml:"input" envconfig:"INPUT"`
-	Output     string                                            `yaml:"output" envconfig:"OUTPUT"`
+	Input      string                                            `yaml:"input"   envconfig:"INPUT"`
+	Output     string                                            `yaml:"output"  envconfig:"OUTPUT"`
 	Plugin     map[string]map[string]map[interface{}]interface{} `yaml:"plugins"`
 }
 
@@ -46,7 +46,7 @@ type LoggingConfig struct {
 
 type DebugConfig struct {
 	ListenAddress string `yaml:"address" envconfig:"DEBUG_ADDRESS"`
-	ListenPort    uint   `yaml:"port" envconfig:"DEBUG_PORT"`
+	ListenPort    uint   `yaml:"port"    envconfig:"DEBUG_PORT"`
 }
 
 // Singleton config instance with default values
@@ -88,8 +88,18 @@ func (c *Config) ParseCmdlineArgs(programName string, args []string) error {
 	fs := flag.NewFlagSet(programName, flag.ExitOnError)
 	fs.StringVar(&c.ConfigFile, "config", "", "path to config file to load")
 	fs.BoolVar(&c.Version, "version", false, "show version and exit")
-	fs.StringVar(&c.Input, "input", DefaultInputPlugin, "input plugin to use, 'list' to show available")
-	fs.StringVar(&c.Output, "output", DefaultOutputPlugin, "output plugin to use, 'list' to show available")
+	fs.StringVar(
+		&c.Input,
+		"input",
+		DefaultInputPlugin,
+		"input plugin to use, 'list' to show available",
+	)
+	fs.StringVar(
+		&c.Output,
+		"output",
+		DefaultOutputPlugin,
+		"output plugin to use, 'list' to show available",
+	)
 	if err := plugin.PopulateCmdlineOptions(fs); err != nil {
 		return err
 	}
