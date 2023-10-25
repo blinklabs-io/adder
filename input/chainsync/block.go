@@ -15,15 +15,12 @@
 package chainsync
 
 import (
-	"fmt"
-
 	"github.com/blinklabs-io/gouroboros/ledger"
-	"github.com/fxamacker/cbor/v2"
 )
 
 type BlockContext struct {
-	BlockNumber uint64           `json:"blockNumber"`
-	SlotNumber  uint64           `json:"slotNumber"`
+	BlockNumber uint64 `json:"blockNumber"`
+	SlotNumber  uint64 `json:"slotNumber"`
 }
 
 type BlockEvent struct {
@@ -50,16 +47,10 @@ func NewBlockHeaderContext(block ledger.BlockHeader) BlockContext {
 }
 
 func NewBlockEvent(block ledger.Block, includeCbor bool) BlockEvent {
-	keyCbor, err := cbor.Marshal(block.IssuerVkey())
-	if err != nil {
-		panic(err)
-	}
-	// iss := ledger.NewBlake2b256(block.IssuerVkey())
 	evt := BlockEvent{
 		BlockBodySize: block.BlockBodySize(),
 		BlockHash:     block.Hash(),
-		IssuerVkey:    fmt.Sprintf("%x", keyCbor),
-		// IssuerVkey:    iss.String(),
+		IssuerVkey:    block.IssuerVkey().Hash().String(),
 	}
 	if includeCbor {
 		evt.BlockCbor = block.Cbor()

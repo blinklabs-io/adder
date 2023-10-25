@@ -118,10 +118,6 @@ func formatWebhook(e *event.Event, format string) []byte {
 		case "chainsync.block":
 			be := e.Payload.(chainsync.BlockEvent)
 			bc := e.Context.(chainsync.BlockContext)
-			// keyCbor, err := cbor.Marshal(be.IssuerVkey)
-			// if err != nil {
-			// 	panic(err)
-			// }
 			dme.Title = "New Cardano Block"
 			dmefs = append(dmefs, &DiscordMessageEmbedField{
 				Name:  "Block Number",
@@ -135,11 +131,10 @@ func formatWebhook(e *event.Event, format string) []byte {
 				Name:  "Block Hash",
 				Value: be.BlockHash,
 			})
-			// TODO: get the pool identifier from be.IssuerVkey
-			// dmefs = append(dmefs, &DiscordMessageEmbedField{
-			// 	Name:  "Issuer Vkey",
-			// 	Value: fmt.Sprintf("%x", keyCbor),
-			// })
+			dmefs = append(dmefs, &DiscordMessageEmbedField{
+				Name:  "Issuer Vkey",
+				Value: be.IssuerVkey,
+			})
 			// TODO: fix this URL for different networks
 			dme.URL = fmt.Sprintf("https://cexplorer.io/block/%s", be.BlockHash)
 		case "chainsync.rollback":
