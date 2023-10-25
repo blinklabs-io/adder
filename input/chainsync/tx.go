@@ -48,11 +48,11 @@ func NewTransactionContext(block ledger.Block, tx ledger.Transaction, index uint
 
 func NewTransactionEvent(block ledger.Block, tx ledger.Transaction, includeCbor bool) TransactionEvent {
 	evt := TransactionEvent{
-		BlockHash:       block.Hash(),
-		Inputs:          tx.Inputs(),
-		Outputs:         tx.Outputs(),
-		Fee:             tx.Fee(),
-		TTL:             tx.TTL(),
+		BlockHash: block.Hash(),
+		Inputs:    tx.Inputs(),
+		Outputs:   tx.Outputs(),
+		Fee:       tx.Fee(),
+		TTL:       tx.TTL(),
 	}
 	if includeCbor {
 		evt.TransactionCbor = tx.Cbor()
