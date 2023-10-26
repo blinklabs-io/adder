@@ -3,7 +3,7 @@ module github.com/blinklabs-io/snek
 go 1.20
 
 require (
-	github.com/blinklabs-io/gouroboros v0.58.0
+	github.com/blinklabs-io/gouroboros v0.59.0
 	github.com/gen2brain/beeep v0.0.0-20230602101333-f384c29b62dd
 	github.com/gin-gonic/gin v1.9.1
 	github.com/kelseyhightower/envconfig v1.4.0

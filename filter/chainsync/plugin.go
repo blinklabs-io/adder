@@ -22,8 +22,9 @@ import (
 
 var cmdlineOptions struct {
 	address  string
-	policyId string
 	asset    string
+	policyId string
+	poolId   string
 }
 
 func init() {
@@ -43,6 +44,14 @@ func init() {
 					CustomFlag:   "address",
 				},
 				{
+					Name:         "asset",
+					Type:         plugin.PluginOptionTypeString,
+					Description:  "specifies the asset fingerprint (asset1xxx) to filter on",
+					DefaultValue: "",
+					Dest:         &(cmdlineOptions.asset),
+					CustomFlag:   "asset",
+				},
+				{
 					Name:         "policy",
 					Type:         plugin.PluginOptionTypeString,
 					Description:  "specifies asset policy ID to filter on",
@@ -51,12 +60,12 @@ func init() {
 					CustomFlag:   "policy",
 				},
 				{
-					Name:         "asset",
+					Name:         "pool",
 					Type:         plugin.PluginOptionTypeString,
-					Description:  "specifies the asset fingerprint (asset1xxx) to filter on",
+					Description:  "specifies Pool ID to filter on",
 					DefaultValue: "",
-					Dest:         &(cmdlineOptions.asset),
-					CustomFlag:   "asset",
+					Dest:         &(cmdlineOptions.poolId),
+					CustomFlag:   "pool",
 				},
 			},
 		},
@@ -73,6 +82,14 @@ func NewFromCmdlineOptions() plugin.Plugin {
 			),
 		)
 	}
+	if cmdlineOptions.asset != "" {
+		pluginOptions = append(
+			pluginOptions,
+			WithAssetFingerprints(
+				strings.Split(cmdlineOptions.asset, ","),
+			),
+		)
+	}
 	if cmdlineOptions.policyId != "" {
 		pluginOptions = append(
 			pluginOptions,
@@ -81,11 +98,11 @@ func NewFromCmdlineOptions() plugin.Plugin {
 			),
 		)
 	}
-	if cmdlineOptions.asset != "" {
+	if cmdlineOptions.poolId != "" {
 		pluginOptions = append(
 			pluginOptions,
-			WithAssetFingerprints(
-				strings.Split(cmdlineOptions.asset, ","),
+			WithPoolIds(
+				strings.Split(cmdlineOptions.poolId, ","),
 			),
 		)
 	}
