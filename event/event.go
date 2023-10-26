@@ -25,7 +25,11 @@ type Event struct {
 	Payload   interface{} `json:"payload"`
 }
 
-func New(eventType string, timestamp time.Time, context, payload interface{}) Event {
+func New(
+	eventType string,
+	timestamp time.Time,
+	context, payload interface{},
+) Event {
 	return Event{
 		Type:      eventType,
 		Timestamp: timestamp,

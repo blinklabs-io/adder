@@ -64,7 +64,8 @@ func (n *NotifyOutput) Start() error {
 				bc := context.(chainsync.BlockContext)
 				err := beeep.Notify(
 					n.title,
-					fmt.Sprintf("New Block!\nBlockNumber: %d, SlotNumber: %d\nHash: %s",
+					fmt.Sprintf(
+						"New Block!\nBlockNumber: %d, SlotNumber: %d\nHash: %s",
 						bc.BlockNumber,
 						bc.SlotNumber,
 						be.BlockHash,
@@ -106,7 +107,8 @@ func (n *NotifyOutput) Start() error {
 				tc := context.(chainsync.TransactionContext)
 				err := beeep.Notify(
 					n.title,
-					fmt.Sprintf("New Transaction!\nBlockNumber: %d, SlotNumber: %d\nInputs: %d, Outputs: %d\nFee: %d\nHash: %s",
+					fmt.Sprintf(
+						"New Transaction!\nBlockNumber: %d, SlotNumber: %d\nInputs: %d, Outputs: %d\nFee: %d\nHash: %s",
 						tc.BlockNumber,
 						tc.SlotNumber,
 						len(te.Inputs),

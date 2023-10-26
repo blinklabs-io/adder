@@ -131,7 +131,11 @@ func NewFromCmdlineOptions() plugin.Plugin {
 			if len(intersectPointParts) != 2 {
 				panic("invalid intersect point format")
 			}
-			intersectSlot, err := strconv.ParseUint(intersectPointParts[0], 10, 64)
+			intersectSlot, err := strconv.ParseUint(
+				intersectPointParts[0],
+				10,
+				64,
+			)
 			if err != nil {
 				panic("invalid intersect point format")
 			}

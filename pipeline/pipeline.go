@@ -127,7 +127,10 @@ func (p *Pipeline) Stop() error {
 }
 
 // chanCopyLoop is a generic function for reading an event from one channel and writing it to another in a loop
-func (p *Pipeline) chanCopyLoop(input <-chan event.Event, output chan<- event.Event) {
+func (p *Pipeline) chanCopyLoop(
+	input <-chan event.Event,
+	output chan<- event.Event,
+) {
 	for {
 		select {
 		case <-p.doneChan:

@@ -95,9 +95,20 @@ func main() {
 
 	// Start debug listener
 	if cfg.Debug.ListenPort > 0 {
-		logger.Infof("starting debug listener on %s:%d", cfg.Debug.ListenAddress, cfg.Debug.ListenPort)
+		logger.Infof(
+			"starting debug listener on %s:%d",
+			cfg.Debug.ListenAddress,
+			cfg.Debug.ListenPort,
+		)
 		go func() {
-			err := http.ListenAndServe(fmt.Sprintf("%s:%d", cfg.Debug.ListenAddress, cfg.Debug.ListenPort), nil)
+			err := http.ListenAndServe(
+				fmt.Sprintf(
+					"%s:%d",
+					cfg.Debug.ListenAddress,
+					cfg.Debug.ListenPort,
+				),
+				nil,
+			)
 			if err != nil {
 				logger.Fatalf("failed to start debug listener: %s", err)
 			}
