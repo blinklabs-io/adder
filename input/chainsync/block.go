@@ -19,8 +19,9 @@ import (
 )
 
 type BlockContext struct {
-	BlockNumber uint64 `json:"blockNumber"`
-	SlotNumber  uint64 `json:"slotNumber"`
+	BlockNumber  uint64 `json:"blockNumber"`
+	SlotNumber   uint64 `json:"slotNumber"`
+	NetworkMagic uint32 `json:"networkMagic"`
 }
 
 type BlockEvent struct {
@@ -30,10 +31,11 @@ type BlockEvent struct {
 	BlockCbor     byteSliceJsonHex `json:"blockCbor,omitempty"`
 }
 
-func NewBlockContext(block ledger.Block) BlockContext {
+func NewBlockContext(block ledger.Block, networkMagic uint32) BlockContext {
 	ctx := BlockContext{
-		BlockNumber: block.BlockNumber(),
-		SlotNumber:  block.SlotNumber(),
+		BlockNumber:  block.BlockNumber(),
+		SlotNumber:   block.SlotNumber(),
+		NetworkMagic: networkMagic,
 	}
 	return ctx
 }

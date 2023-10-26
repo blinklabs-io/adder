@@ -208,7 +208,7 @@ func (c *ChainSync) handleRollBackward(point ocommon.Point, tip ochainsync.Tip) 
 func (c *ChainSync) handleRollForward(blockType uint, blockData interface{}, tip ochainsync.Tip) error {
 	switch v := blockData.(type) {
 	case ledger.Block:
-		evt := event.New("chainsync.block", time.Now(), NewBlockContext(v), NewBlockEvent(v, c.includeCbor))
+		evt := event.New("chainsync.block", time.Now(), NewBlockContext(v, c.networkMagic), NewBlockEvent(v, c.includeCbor))
 		c.eventChan <- evt
 		c.updateStatus(v.SlotNumber(), v.BlockNumber(), v.Hash(), tip.Point.Slot, hex.EncodeToString(tip.Point.Hash))
 	case ledger.BlockHeader:
@@ -221,7 +221,7 @@ func (c *ChainSync) handleRollForward(blockType uint, blockData interface{}, tip
 		blockEvt := event.New("chainsync.block", time.Now(), NewBlockHeaderContext(v), NewBlockEvent(block, c.includeCbor))
 		c.eventChan <- blockEvt
 		for t, transaction := range block.Transactions() {
-			txEvt := event.New("chainsync.transaction", time.Now(), NewTransactionContext(block, transaction, uint32(t)), NewTransactionEvent(block, transaction, c.includeCbor))
+			txEvt := event.New("chainsync.transaction", time.Now(), NewTransactionContext(block, transaction, uint32(t), c.networkMagic), NewTransactionEvent(block, transaction, c.includeCbor))
 			c.eventChan <- txEvt
 		}
 		c.updateStatus(v.SlotNumber(), v.BlockNumber(), v.Hash(), tip.Point.Slot, hex.EncodeToString(tip.Point.Hash))
@@ -230,10 +230,10 @@ func (c *ChainSync) handleRollForward(blockType uint, blockData interface{}, tip
 }
 
 func (c *ChainSync) handleBlockFetchBlock(block ledger.Block) error {
-	blockEvt := event.New("chainsync.block", time.Now(), NewBlockContext(block), NewBlockEvent(block, c.includeCbor))
+	blockEvt := event.New("chainsync.block", time.Now(), NewBlockContext(block, c.networkMagic), NewBlockEvent(block, c.includeCbor))
 	c.eventChan <- blockEvt
 	for t, transaction := range block.Transactions() {
-		txEvt := event.New("chainsync.transaction", time.Now(), NewTransactionContext(block, transaction, uint32(t)), NewTransactionEvent(block, transaction, c.includeCbor))
+		txEvt := event.New("chainsync.transaction", time.Now(), NewTransactionContext(block, transaction, uint32(t), c.networkMagic), NewTransactionEvent(block, transaction, c.includeCbor))
 		c.eventChan <- txEvt
 	}
 	c.updateStatus(block.SlotNumber(), block.BlockNumber(), block.Hash(), c.bulkRangeEnd.Slot, hex.EncodeToString(c.bulkRangeEnd.Hash))
