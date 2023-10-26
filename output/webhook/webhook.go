@@ -33,6 +33,12 @@ import (
 	"github.com/blinklabs-io/snek/internal/version"
 )
 
+const (
+	mainnetNetworkMagic uint32 = 764824073
+	previewNetworkMagic uint32 = 2
+	preprodNetworkMagic uint32 = 1
+)
+
 type WebhookOutput struct {
 	errorChan chan error
 	eventChan chan event.Event
@@ -135,8 +141,8 @@ func formatWebhook(e *event.Event, format string) []byte {
 				Name:  "Issuer Vkey",
 				Value: be.IssuerVkey,
 			})
-			// TODO: fix this URL for different networks
-			dme.URL = fmt.Sprintf("https://cexplorer.io/block/%s", be.BlockHash)
+			baseURL := getBaseURL(bc.NetworkMagic)
+			dme.URL = fmt.Sprintf("%s/block/%s", baseURL, be.BlockHash)
 		case "chainsync.rollback":
 			be := e.Payload.(chainsync.RollbackEvent)
 			dme.Title = "Cardano Rollback"
@@ -176,8 +182,8 @@ func formatWebhook(e *event.Event, format string) []byte {
 				Name:  "Transaction Hash",
 				Value: tc.TransactionHash,
 			})
-			// TODO: fix this URL for different networks
-			dme.URL = fmt.Sprintf("https://cexplorer.io/tx/%s", tc.TransactionHash)
+			baseURL := getBaseURL(tc.NetworkMagic)
+			dme.URL = fmt.Sprintf("%s/tx/%s", baseURL, tc.TransactionHash)
 		default:
 			dwe.Content = fmt.Sprintf("%v", e.Payload)
 		}
@@ -212,6 +218,19 @@ type DiscordMessageEmbed struct {
 type DiscordMessageEmbedField struct {
 	Name  string `json:"name"`
 	Value string `json:"value"`
+}
+
+func getBaseURL(networkMagic uint32) string {
+	switch networkMagic {
+	case mainnetNetworkMagic:
+		return "https://cexplorer.io"
+	case preprodNetworkMagic:
+		return "https://preprod.cexplorer.io"
+	case previewNetworkMagic:
+		return "https://preview.cexplorer.io"
+	default:
+		return "https://cexplorer.io" // default to mainnet if unknown network
+	}
 }
 
 func (w *WebhookOutput) SendWebhook(e *event.Event) error {

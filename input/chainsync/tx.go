@@ -24,6 +24,7 @@ type TransactionContext struct {
 	SlotNumber      uint64 `json:"slotNumber"`
 	TransactionHash string `json:"transactionHash"`
 	TransactionIdx  uint32 `json:"transactionIdx"`
+	NetworkMagic    uint32 `json:"networkMagic"`
 }
 
 type TransactionEvent struct {
@@ -36,12 +37,13 @@ type TransactionEvent struct {
 	TTL             uint64                     `json:"ttl,omitempty"`
 }
 
-func NewTransactionContext(block ledger.Block, tx ledger.Transaction, index uint32) TransactionContext {
+func NewTransactionContext(block ledger.Block, tx ledger.Transaction, index uint32, networkMagic uint32) TransactionContext {
 	ctx := TransactionContext{
 		BlockNumber:     block.BlockNumber(),
 		SlotNumber:      block.SlotNumber(),
 		TransactionHash: tx.Hash(),
 		TransactionIdx:  index,
+		NetworkMagic:    networkMagic,
 	}
 	return ctx
 }
