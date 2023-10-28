@@ -23,6 +23,13 @@ func WithAddresses(addresses []string) ChainSyncOptionFunc {
 	}
 }
 
+// WithAssetFingerprints specifies the asset fingerprint (asset1xxx) to filter on
+func WithAssetFingerprints(assetFingerprints []string) ChainSyncOptionFunc {
+	return func(c *ChainSync) {
+		c.filterAssetFingerprints = assetFingerprints[:]
+	}
+}
+
 // WithPolicies specfies the address to filter on
 func WithPolicies(policyIds []string) ChainSyncOptionFunc {
 	return func(c *ChainSync) {
@@ -30,9 +37,9 @@ func WithPolicies(policyIds []string) ChainSyncOptionFunc {
 	}
 }
 
-// WithAssetFingerprints specifies the asset fingerprint (asset1xxx) to filter on
-func WithAssetFingerprints(assetFingerprints []string) ChainSyncOptionFunc {
+// WithPoolIds specifies the pool to filter on
+func WithPoolIds(poolIds []string) ChainSyncOptionFunc {
 	return func(c *ChainSync) {
-		c.filterAssetFingerprints = assetFingerprints[:]
+		c.filterPoolIds = poolIds[:]
 	}
 }

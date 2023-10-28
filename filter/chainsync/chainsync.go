@@ -15,8 +15,10 @@
 package chainsync
 
 import (
+	"encoding/hex"
 	"strings"
 
+	"github.com/blinklabs-io/gouroboros/bech32"
 	"github.com/blinklabs-io/gouroboros/ledger"
 	"github.com/blinklabs-io/snek/event"
 	"github.com/blinklabs-io/snek/input/chainsync"
@@ -27,8 +29,9 @@ type ChainSync struct {
 	inputChan               chan event.Event
 	outputChan              chan event.Event
 	filterAddresses         []string
-	filterPolicyIds         []string
 	filterAssetFingerprints []string
+	filterPolicyIds         []string
+	filterPoolIds           []string
 }
 
 // New returns a new ChainSync object with the specified options applied
@@ -55,6 +58,45 @@ func (c *ChainSync) Start() error {
 				return
 			}
 			switch v := evt.Payload.(type) {
+			case chainsync.BlockEvent:
+				// Check pool filter
+				if len(c.filterPoolIds) > 0 {
+					filterMatched := false
+					for _, filterPoolId := range c.filterPoolIds {
+						isPoolBech32 := strings.HasPrefix(filterPoolId, "pool")
+						foundMatch := false
+						be := evt.Payload.(chainsync.BlockEvent)
+						if be.IssuerVkey == filterPoolId {
+							foundMatch = true
+						} else if isPoolBech32 {
+							issuerBytes, err := hex.DecodeString(be.IssuerVkey)
+							if err != nil {
+								// eat this error... nom nom nom
+								continue
+							}
+							// lifted from gouroboros/ledger
+							convData, err := bech32.ConvertBits(issuerBytes, 8, 5, true)
+							if err != nil {
+								continue
+							}
+							encoded, err := bech32.Encode("pool", convData)
+							if err != nil {
+								continue
+							}
+							if encoded == filterPoolId {
+								foundMatch = true
+							}
+						}
+						if foundMatch {
+							filterMatched = true
+							break
+						}
+					}
+					// Skip the event if none of the filter values matched
+					if !filterMatched {
+						continue
+					}
+				}
 			case chainsync.TransactionEvent:
 				// Check address filter
 				if len(c.filterAddresses) > 0 {
