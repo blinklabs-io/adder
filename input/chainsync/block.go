@@ -25,10 +25,11 @@ type BlockContext struct {
 }
 
 type BlockEvent struct {
-	BlockBodySize uint64           `json:"blockBodySize"`
-	IssuerVkey    string           `json:"issuerVkey"`
-	BlockHash     string           `json:"blockHash"`
-	BlockCbor     byteSliceJsonHex `json:"blockCbor,omitempty"`
+	BlockBodySize    uint64           `json:"blockBodySize"`
+	IssuerVkey       string           `json:"issuerVkey"`
+	BlockHash        string           `json:"blockHash"`
+	BlockCbor        byteSliceJsonHex `json:"blockCbor,omitempty"`
+	TransactionCount uint64           `json:"transactionCount"`
 }
 
 func NewBlockContext(block ledger.Block, networkMagic uint32) BlockContext {
@@ -50,9 +51,10 @@ func NewBlockHeaderContext(block ledger.BlockHeader) BlockContext {
 
 func NewBlockEvent(block ledger.Block, includeCbor bool) BlockEvent {
 	evt := BlockEvent{
-		BlockBodySize: block.BlockBodySize(),
-		BlockHash:     block.Hash(),
-		IssuerVkey:    block.IssuerVkey().Hash().String(),
+		BlockBodySize:    block.BlockBodySize(),
+		BlockHash:        block.Hash(),
+		IssuerVkey:       block.IssuerVkey().Hash().String(),
+		TransactionCount: uint64(len(block.Transactions())),
 	}
 	if includeCbor {
 		evt.BlockCbor = block.Cbor()

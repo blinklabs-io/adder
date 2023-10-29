@@ -65,9 +65,10 @@ func (n *NotifyOutput) Start() error {
 				err := beeep.Notify(
 					n.title,
 					fmt.Sprintf(
-						"New Block!\nBlockNumber: %d, SlotNumber: %d\nHash: %s",
+						"New Block!\nBlockNumber: %d, SlotNumber: %d, TransactionCount: %d\nHash: %s",
 						bc.BlockNumber,
 						bc.SlotNumber,
+						be.TransactionCount,
 						be.BlockHash,
 					),
 					"assets/snek-icon.png",
