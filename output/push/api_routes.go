@@ -29,9 +29,9 @@ func (p *PushOutput) RegisterRoutes() {
 	apiInstance := api.GetInstance()
 	var apiEndpoint string
 	if apiInstance.ApiGroup != nil {
-		apiEndpoint = apiInstance.Host + apiInstance.ApiGroup.BasePath() + "/fcm"
+		apiEndpoint = apiInstance.ApiGroup.BasePath() + "/fcm"
 	} else {
-		apiEndpoint = apiInstance.Host + "/fcm"
+		apiEndpoint = "/fcm"
 	}
 
 	apiInstance.AddRoute("POST", "/fcm", storeFCMToken)
