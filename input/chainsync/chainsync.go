@@ -29,6 +29,11 @@ import (
 	ocommon "github.com/blinklabs-io/gouroboros/protocol/common"
 )
 
+const (
+	// Size of cache for recent chainsync cursors
+	cursorCacheSize = 20
+)
+
 type ChainSync struct {
 	oConn            *ouroboros.Connection
 	logger           plugin.Logger
@@ -41,12 +46,14 @@ type ChainSync struct {
 	intersectTip     bool
 	intersectPoints  []ocommon.Point
 	includeCbor      bool
+	autoReconnect    bool
 	statusUpdateFunc StatusUpdateFunc
 	status           *ChainSyncStatus
 	errorChan        chan error
 	eventChan        chan event.Event
 	bulkRangeStart   ocommon.Point
 	bulkRangeEnd     ocommon.Point
+	cursorCache      []ocommon.Point
 }
 
 type ChainSyncStatus struct {
@@ -79,6 +86,7 @@ func (c *ChainSync) Start() error {
 	if err := c.setupConnection(); err != nil {
 		return err
 	}
+	// Start chainsync client
 	c.oConn.ChainSync().Client.Start()
 	if c.oConn.BlockFetch() != nil {
 		c.oConn.BlockFetch().Client.Start()
@@ -201,11 +209,27 @@ func (c *ChainSync) setupConnection() error {
 	go func() {
 		err, ok := <-c.oConn.ErrorChan()
 		if ok {
-			// Pass error through our own error channel
-			c.errorChan <- err
-			return
+			if c.autoReconnect {
+				if c.logger != nil {
+					c.logger.Infof("reconnecting to %s due to error: %s", dialAddress, err)
+				}
+				// Shutdown current connection
+				if err := c.oConn.Close(); err != nil {
+					c.errorChan <- err
+					return
+				}
+				// Set the intersect points from the cursor cache
+				c.intersectPoints = c.cursorCache[:]
+				// Restart the connection
+				if err := c.Start(); err != nil {
+					c.errorChan <- err
+					return
+				}
+			} else {
+				// Pass error through our own error channel
+				c.errorChan <- err
+			}
 		}
-		close(c.errorChan)
 	}()
 	return nil
 }
@@ -297,6 +321,12 @@ func (c *ChainSync) updateStatus(
 	tipSlotNumber uint64,
 	tipBlockHash string,
 ) {
+	// Update cursor cache
+	blockHashBytes, _ := hex.DecodeString(blockHash)
+	c.cursorCache = append(c.cursorCache, ocommon.Point{Slot: slotNumber, Hash: blockHashBytes})
+	if len(c.cursorCache) > cursorCacheSize {
+		c.cursorCache = c.cursorCache[len(c.cursorCache)-cursorCacheSize:]
+	}
 	// Determine if we've reached the chain tip
 	if !c.status.TipReached {
 		// Make sure we're past the end slot in any bulk range, since we don't update the tip during bulk sync
