@@ -98,6 +98,18 @@ func (p *PushOutput) Start() error {
 					be.BlockHash,
 				)
 
+				// Create notification message
+				title := "Snek"
+				body := fmt.Sprintf(
+					"New Block!\nBlockNumber: %d, SlotNumber: %d\nHash: %s",
+					bc.BlockNumber,
+					bc.SlotNumber,
+					be.BlockHash,
+				)
+
+				// Send notification
+				p.processFcmNotifications(title, body)
+
 			case "chainsync.rollback":
 				payload := evt.Payload
 				if payload == nil {

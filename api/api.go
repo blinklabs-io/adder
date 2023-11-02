@@ -56,7 +56,7 @@ func New(debug bool, options ...APIOption) *APIv1 {
 	once.Do(func() {
 		apiInstance = &APIv1{
 			engine: ConfigureRouter(debug),
-			Host:   "localhost",
+			Host:   "0.0.0.0",
 			Port:   "8080",
 		}
 		for _, opt := range options {

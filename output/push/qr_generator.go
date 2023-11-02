@@ -15,7 +15,7 @@ type QRValue struct {
 
 func generateQRPage(apiEndpoint string) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		apiEndpoint = c.Request.Host + apiEndpoint
+		apiEndpoint := c.Request.Host + apiEndpoint
 		qrValue, err := json.Marshal(QRValue{
 			ApiEndpoint: apiEndpoint,
 		})
