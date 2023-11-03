@@ -255,3 +255,11 @@ Only output transactions with outputs matching a particular stake address
 ```bash
 $ snek -filter-type chainsync.transaction -filter-address stake1u9f9v0z5zzlldgx58n8tklphu8mf7h4jvp2j2gddluemnssjfnkzz
 ```
+
+### Push notifications
+
+The example shows how push notification output can be used with filtering options. In this example, push notifications will be sent to the block events. Push notifications will be sent to the specified project_id in the serviceAccount.json file. Please refer to https://github.com/blinklabs-io/snek-mobile for more details on how to send push notifications to snek-mobile.
+
+```bash
+$ snek -filter-type chainsync.block -output push -output-push-serviceAccountFilePath /path/to/serviceAccount.json
+```
