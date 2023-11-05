@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/blinklabs-io/snek/event"
+	"github.com/blinklabs-io/snek/plugin"
 
 	ouroboros "github.com/blinklabs-io/gouroboros"
 	"github.com/blinklabs-io/gouroboros/ledger"
@@ -30,6 +31,7 @@ import (
 
 type ChainSync struct {
 	oConn            *ouroboros.Connection
+	logger           plugin.Logger
 	network          string
 	networkMagic     uint32
 	address          string
@@ -191,6 +193,9 @@ func (c *ChainSync) setupConnection() error {
 	}
 	if err := c.oConn.Dial(dialFamily, dialAddress); err != nil {
 		return err
+	}
+	if c.logger != nil {
+		c.logger.Infof("connected to node at %s", dialAddress)
 	}
 	// Start async error handler
 	go func() {

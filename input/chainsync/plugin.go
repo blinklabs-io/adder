@@ -19,6 +19,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/blinklabs-io/snek/internal/logging"
 	"github.com/blinklabs-io/snek/plugin"
 
 	ocommon "github.com/blinklabs-io/gouroboros/protocol/common"
@@ -116,6 +117,9 @@ func init() {
 
 func NewFromCmdlineOptions() plugin.Plugin {
 	opts := []ChainSyncOptionFunc{
+		WithLogger(
+			logging.GetLogger().With("plugin", "input.chainsync"),
+		),
 		WithNetwork(cmdlineOptions.network),
 		WithNetworkMagic(uint32(cmdlineOptions.networkMagic)),
 		WithAddress(cmdlineOptions.address),

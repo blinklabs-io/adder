@@ -16,28 +16,36 @@ package chainsync
 
 import (
 	ocommon "github.com/blinklabs-io/gouroboros/protocol/common"
+	"github.com/blinklabs-io/snek/plugin"
 )
 
 type ChainSyncOptionFunc func(*ChainSync)
 
+// WithLogger specifies the logger object to use for logging messages
+func WithLogger(logger plugin.Logger) ChainSyncOptionFunc {
+	return func(c *ChainSync) {
+		c.logger = logger
+	}
+}
+
 // WithNetwork specifies the network
 func WithNetwork(network string) ChainSyncOptionFunc {
-	return func(o *ChainSync) {
-		o.network = network
+	return func(c *ChainSync) {
+		c.network = network
 	}
 }
 
 // WithNetworkMagic specifies the network magic value
 func WithNetworkMagic(networkMagic uint32) ChainSyncOptionFunc {
-	return func(o *ChainSync) {
-		o.networkMagic = networkMagic
+	return func(c *ChainSync) {
+		c.networkMagic = networkMagic
 	}
 }
 
 // WithNtcTcp specifies whether to use the NtC (node-to-client) protocol over TCP. This is useful when exposing a node's UNIX socket via socat or similar. The default is to use the NtN (node-to-node) protocol over TCP
 func WithNtcTcp(ntcTcp bool) ChainSyncOptionFunc {
-	return func(o *ChainSync) {
-		o.ntcTcp = ntcTcp
+	return func(c *ChainSync) {
+		c.ntcTcp = ntcTcp
 	}
 }
 

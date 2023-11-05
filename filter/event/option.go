@@ -14,7 +14,16 @@
 
 package event
 
+import "github.com/blinklabs-io/snek/plugin"
+
 type EventOptionFunc func(*Event)
+
+// WithLogger specifies the logger object to use for logging messages
+func WithLogger(logger plugin.Logger) EventOptionFunc {
+	return func(e *Event) {
+		e.logger = logger
+	}
+}
 
 // WithTypes specfies the event types to filter on
 func WithTypes(eventTypes []string) EventOptionFunc {

@@ -16,12 +16,14 @@ package event
 
 import (
 	"github.com/blinklabs-io/snek/event"
+	"github.com/blinklabs-io/snek/plugin"
 )
 
 type Event struct {
 	errorChan   chan error
 	inputChan   chan event.Event
 	outputChan  chan event.Event
+	logger      plugin.Logger
 	filterTypes []string
 }
 

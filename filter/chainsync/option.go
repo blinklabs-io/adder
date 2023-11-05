@@ -14,7 +14,16 @@
 
 package chainsync
 
+import "github.com/blinklabs-io/snek/plugin"
+
 type ChainSyncOptionFunc func(*ChainSync)
+
+// WithLogger specifies the logger object to use for logging messages
+func WithLogger(logger plugin.Logger) ChainSyncOptionFunc {
+	return func(c *ChainSync) {
+		c.logger = logger
+	}
+}
 
 // WithAddresses specfies the address to filter on
 func WithAddresses(addresses []string) ChainSyncOptionFunc {

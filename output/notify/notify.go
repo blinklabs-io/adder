@@ -19,12 +19,14 @@ import (
 
 	"github.com/blinklabs-io/snek/event"
 	"github.com/blinklabs-io/snek/input/chainsync"
+	"github.com/blinklabs-io/snek/plugin"
 	"github.com/gen2brain/beeep"
 )
 
 type NotifyOutput struct {
 	errorChan chan error
 	eventChan chan event.Event
+	logger    plugin.Logger
 	title     string
 }
 

@@ -24,12 +24,14 @@ import (
 	"github.com/blinklabs-io/snek/fcm"
 	"github.com/blinklabs-io/snek/input/chainsync"
 	"github.com/blinklabs-io/snek/internal/logging"
+	"github.com/blinklabs-io/snek/plugin"
 	"golang.org/x/oauth2/google"
 )
 
 type PushOutput struct {
 	errorChan              chan error
 	eventChan              chan event.Event
+	logger                 plugin.Logger
 	accessToken            string
 	accessTokenUrl         string
 	projectID              string
