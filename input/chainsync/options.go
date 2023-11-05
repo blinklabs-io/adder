@@ -84,6 +84,13 @@ func WithIncludeCbor(includeCbor bool) ChainSyncOptionFunc {
 	}
 }
 
+// WithAutoReconnect specified whether to automatically reconnect if the connection is broken
+func WithAutoReconnect(autoReconnect bool) ChainSyncOptionFunc {
+	return func(c *ChainSync) {
+		c.autoReconnect = autoReconnect
+	}
+}
+
 // WithStatusUpdateFunc specifies a callback function for status updates. This is useful for tracking the chain-sync status
 // to be able to resume a sync at a later time, especially when any filtering could prevent you from getting all block update events
 func WithStatusUpdateFunc(

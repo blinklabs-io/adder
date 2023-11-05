@@ -149,15 +149,15 @@ func main() {
 
 	// Start API after plugins are configured
 	if err := apiInstance.Start(); err != nil {
-		logger.Fatalf("failed to start API: %s\n", err)
+		logger.Fatalf("failed to start API: %s", err)
 	}
 
 	// Start pipeline and wait for error
 	if err := pipe.Start(); err != nil {
-		logger.Fatalf("failed to start pipeline: %s\n", err)
+		logger.Fatalf("failed to start pipeline: %s", err)
 	}
 	err, ok := <-pipe.ErrorChan()
 	if ok {
-		logger.Fatalf("pipeline failed: %s\n", err)
+		logger.Fatalf("pipeline failed: %s", err)
 	}
 }

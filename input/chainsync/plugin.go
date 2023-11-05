@@ -35,6 +35,7 @@ var cmdlineOptions struct {
 	intersectTip   bool
 	intersectPoint string
 	includeCbor    bool
+	autoReconnect  bool
 }
 
 func init() {
@@ -110,6 +111,13 @@ func init() {
 					DefaultValue: false,
 					Dest:         &(cmdlineOptions.includeCbor),
 				},
+				{
+					Name:         "auto-reconnect",
+					Type:         plugin.PluginOptionTypeBool,
+					Description:  "auto-reconnect if the connection is broken",
+					DefaultValue: true,
+					Dest:         &(cmdlineOptions.autoReconnect),
+				},
 			},
 		},
 	)
@@ -127,6 +135,7 @@ func NewFromCmdlineOptions() plugin.Plugin {
 		WithNtcTcp(cmdlineOptions.ntcTcp),
 		WithBulkMode(cmdlineOptions.bulkMode),
 		WithIncludeCbor(cmdlineOptions.includeCbor),
+		WithAutoReconnect(cmdlineOptions.autoReconnect),
 	}
 	if cmdlineOptions.intersectPoint != "" {
 		intersectPoints := []ocommon.Point{}
