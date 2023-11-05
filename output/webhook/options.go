@@ -14,9 +14,18 @@
 
 package webhook
 
+import "github.com/blinklabs-io/snek/plugin"
+
 // import "github.com/blinklabs-io/snek/event"
 
 type WebhookOptionFunc func(*WebhookOutput)
+
+// WithLogger specifies the logger object to use for logging messages
+func WithLogger(logger plugin.Logger) WebhookOptionFunc {
+	return func(o *WebhookOutput) {
+		o.logger = logger
+	}
+}
 
 // WithUrl specifies the webhook URL
 func WithUrl(url string) WebhookOptionFunc {

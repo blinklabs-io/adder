@@ -17,6 +17,7 @@ package event
 import (
 	"strings"
 
+	"github.com/blinklabs-io/snek/internal/logging"
 	"github.com/blinklabs-io/snek/plugin"
 )
 
@@ -46,7 +47,11 @@ func init() {
 }
 
 func NewFromCmdlineOptions() plugin.Plugin {
-	pluginOptions := []EventOptionFunc{}
+	pluginOptions := []EventOptionFunc{
+		WithLogger(
+			logging.GetLogger().With("plugin", "filter.event"),
+		),
+	}
 	if cmdlineOptions.eventType != "" {
 		pluginOptions = append(
 			pluginOptions,

@@ -15,6 +15,7 @@
 package webhook
 
 import (
+	"github.com/blinklabs-io/snek/internal/logging"
 	"github.com/blinklabs-io/snek/plugin"
 )
 
@@ -68,6 +69,9 @@ func init() {
 
 func NewFromCmdlineOptions() plugin.Plugin {
 	p := New(
+		WithLogger(
+			logging.GetLogger().With("plugin", "output.webhook"),
+		),
 		WithUrl(cmdlineOptions.url),
 		WithBasicAuth(cmdlineOptions.username, cmdlineOptions.password),
 		WithFormat(cmdlineOptions.format),

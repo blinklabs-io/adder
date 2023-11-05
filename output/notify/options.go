@@ -14,9 +14,18 @@
 
 package notify
 
+import "github.com/blinklabs-io/snek/plugin"
+
 // import "github.com/blinklabs-io/snek/event"
 
 type NotifyOptionFunc func(*NotifyOutput)
+
+// WithLogger specifies the logger object to use for logging messages
+func WithLogger(logger plugin.Logger) NotifyOptionFunc {
+	return func(o *NotifyOutput) {
+		o.logger = logger
+	}
+}
 
 // WithTitle specifies the notification title
 func WithTitle(title string) NotifyOptionFunc {

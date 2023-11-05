@@ -14,7 +14,16 @@
 
 package log
 
+import "github.com/blinklabs-io/snek/plugin"
+
 type LogOptionFunc func(*LogOutput)
+
+// WithLogger specifies the logger object to use for logging messages
+func WithLogger(logger plugin.Logger) LogOptionFunc {
+	return func(o *LogOutput) {
+		o.logger = logger
+	}
+}
 
 // WithLevel specifies the logging level
 func WithLevel(level string) LogOptionFunc {

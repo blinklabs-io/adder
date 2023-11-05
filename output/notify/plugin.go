@@ -15,6 +15,7 @@
 package notify
 
 import (
+	"github.com/blinklabs-io/snek/internal/logging"
 	"github.com/blinklabs-io/snek/plugin"
 )
 
@@ -44,6 +45,9 @@ func init() {
 
 func NewFromCmdlineOptions() plugin.Plugin {
 	p := New(
+		WithLogger(
+			logging.GetLogger().With("plugin", "output.notify"),
+		),
 		WithTitle(cmdlineOptions.title),
 	)
 	return p

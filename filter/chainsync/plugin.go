@@ -17,6 +17,7 @@ package chainsync
 import (
 	"strings"
 
+	"github.com/blinklabs-io/snek/internal/logging"
 	"github.com/blinklabs-io/snek/plugin"
 )
 
@@ -73,7 +74,11 @@ func init() {
 }
 
 func NewFromCmdlineOptions() plugin.Plugin {
-	pluginOptions := []ChainSyncOptionFunc{}
+	pluginOptions := []ChainSyncOptionFunc{
+		WithLogger(
+			logging.GetLogger().With("plugin", "filter.chainsync"),
+		),
+	}
 	if cmdlineOptions.address != "" {
 		pluginOptions = append(
 			pluginOptions,

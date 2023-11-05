@@ -31,6 +31,7 @@ import (
 	"github.com/blinklabs-io/snek/input/chainsync"
 	"github.com/blinklabs-io/snek/internal/logging"
 	"github.com/blinklabs-io/snek/internal/version"
+	"github.com/blinklabs-io/snek/plugin"
 )
 
 const (
@@ -42,6 +43,7 @@ const (
 type WebhookOutput struct {
 	errorChan chan error
 	eventChan chan event.Event
+	logger    plugin.Logger
 	format    string
 	url       string
 	username  string
