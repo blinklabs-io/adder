@@ -1,6 +1,11 @@
 ---
 # Example config
 
+# Api server address
+api:
+  address: localhost
+  port: 8080
+
 # Logging options
 logging:
   # Log level

@@ -31,6 +31,7 @@ const (
 )
 
 type Config struct {
+	Api        ApiConfig                                         `yaml:"api"`
 	ConfigFile string                                            `yaml:"-"`
 	Version    bool                                              `yaml:"-"`
 	Logging    LoggingConfig                                     `yaml:"logging"`
@@ -38,6 +39,11 @@ type Config struct {
 	Input      string                                            `yaml:"input"   envconfig:"INPUT"`
 	Output     string                                            `yaml:"output"  envconfig:"OUTPUT"`
 	Plugin     map[string]map[string]map[interface{}]interface{} `yaml:"plugins"`
+}
+
+type ApiConfig struct {
+	ListenAddress string `yaml:"address" envconfig:"API_ADDRESS"`
+	ListenPort    uint   `yaml:"port" envconfig:"API_PORT"`
 }
 
 type LoggingConfig struct {
@@ -51,6 +57,10 @@ type DebugConfig struct {
 
 // Singleton config instance with default values
 var globalConfig = &Config{
+	Api: ApiConfig{
+		ListenAddress: "0.0.0.0",
+		ListenPort:    8080,
+	},
 	Logging: LoggingConfig{
 		Level: "info",
 	},

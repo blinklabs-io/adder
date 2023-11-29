@@ -118,7 +118,8 @@ func main() {
 	// Create API instance with debug disabled
 	apiInstance := api.New(false,
 		api.WithGroup("/v1"),
-		api.WithPort("8080"))
+		api.WithHost(cfg.Api.ListenAddress),
+		api.WithPort(cfg.Api.ListenPort))
 
 	// Create pipeline
 	pipe := pipeline.New()

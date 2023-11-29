@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"sync"
 	"time"
@@ -21,7 +22,7 @@ type APIv1 struct {
 	engine   *gin.Engine
 	ApiGroup *gin.RouterGroup
 	Host     string
-	Port     string
+	Port     uint
 }
 
 type APIRouteRegistrar interface {
@@ -43,7 +44,7 @@ func WithHost(host string) APIOption {
 	}
 }
 
-func WithPort(port string) APIOption {
+func WithPort(port uint) APIOption {
 	return func(a *APIv1) {
 		a.Port = port
 	}
@@ -57,7 +58,7 @@ func New(debug bool, options ...APIOption) *APIv1 {
 		apiInstance = &APIv1{
 			engine: ConfigureRouter(debug),
 			Host:   "0.0.0.0",
-			Port:   "8080",
+			Port:   8080,
 		}
 		for _, opt := range options {
 			opt(apiInstance)
@@ -87,7 +88,7 @@ func (a *APIv1) Engine() *gin.Engine {
 // @license.name	Apache 2.0
 // @license.url	http://www.apache.org/licenses/LICENSE-2.0.html
 func (a *APIv1) Start() error {
-	address := a.Host + ":" + a.Port
+	address := fmt.Sprintf("%s:%d", a.Host, a.Port)
 	// Use buffered channel to not block goroutine
 	errChan := make(chan error, 1)
 
