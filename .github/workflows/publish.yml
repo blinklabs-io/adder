@@ -102,7 +102,7 @@ jobs:
             # semver
             type=semver,pattern={{version}}
       - name: Build images
-        uses: docker/build-push-action@v3
+        uses: docker/build-push-action@v5
         with:
           outputs: "type=registry,push=true"
           platforms: linux/amd64,linux/arm64
