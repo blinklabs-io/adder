@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/blinklabs-io/gouroboros/cbor"
 	"github.com/blinklabs-io/snek/event"
 	"github.com/blinklabs-io/snek/fcm"
 	"github.com/blinklabs-io/snek/input/chainsync"
@@ -139,16 +140,42 @@ func (p *PushOutput) Start() error {
 
 				// Create notification message
 				title := "Snek"
-				body := fmt.Sprintf(
-					"New Transaction!\nBlockNumber: %d, SlotNumber: %d\nInputs: %d, Outputs: %d\nFee: %d\nHash: %s",
-					tc.BlockNumber,
-					tc.SlotNumber,
-					len(te.Inputs),
-					len(te.Outputs),
-					te.Fee,
-					tc.TransactionHash,
-				)
 
+				// Get metadata
+				var cip20Message string
+				if te.Metadata != nil {
+					jsonMessage, err := extractCIP20FromMetadata(te.Metadata)
+					if err != nil {
+						fmt.Println("Error:", err)
+					} else {
+						cip20Message = jsonMessage
+						fmt.Println("JSON CIP20 Message:", cip20Message)
+					}
+				}
+
+				var body string
+				if cip20Message != "" {
+					body = fmt.Sprintf(
+						"New Transaction!\nBlockNumber: %d, SlotNumber: %d\nInputs: %d, Outputs: %d\nFee: %d\nHash: %s\nMetadata: %s",
+						tc.BlockNumber,
+						tc.SlotNumber,
+						len(te.Inputs),
+						len(te.Outputs),
+						te.Fee,
+						tc.TransactionHash,
+						cip20Message,
+					)
+				} else {
+					body = fmt.Sprintf(
+						"New Transaction!\nBlockNumber: %d, SlotNumber: %d\nInputs: %d, Outputs: %d\nFee: %d\nHash: %s",
+						tc.BlockNumber,
+						tc.SlotNumber,
+						len(te.Inputs),
+						len(te.Outputs),
+						te.Fee,
+						tc.TransactionHash,
+					)
+				}
 				// Send notification
 				p.processFcmNotifications(title, body)
 
@@ -272,4 +299,48 @@ func (p *PushOutput) InputChan() chan<- event.Event {
 // OutputChan always returns nil
 func (p *PushOutput) OutputChan() <-chan event.Event {
 	return nil
+}
+
+// This should probably go in gouroboros module
+// extractCIP20FromMetadata extracts the CIP20 message from the transaction metadata
+// and returns it as a JSON string.
+func extractCIP20FromMetadata(metadata *cbor.Value) (string, error) {
+	if metadata == nil {
+		return "", fmt.Errorf("metadata is nil")
+	}
+
+	metadataMap, ok := metadata.Value().(map[any]any)
+	if !ok {
+		return "", fmt.Errorf("metadata value is not of the expected map type")
+	}
+
+	// Extract the nested value for key 674
+	nestedValue, found := metadataMap[uint64(674)]
+	if !found {
+		return "", fmt.Errorf("key 674 not found in metadata")
+	}
+
+	// Assert the nested value is a map
+	nestedMap, ok := nestedValue.(map[any]any)
+	if !ok {
+		return "", fmt.Errorf("nested value for key 674 is not a map")
+	}
+
+	msgValue, found := nestedMap["msg"]
+	if !found {
+		return "", fmt.Errorf("key 'msg' not found in nested metadata map")
+	}
+
+	msgStruct := map[string]any{
+		"674": map[string]any{
+			"msg": msgValue,
+		},
+	}
+
+	jsonBytes, err := json.Marshal(msgStruct)
+	if err != nil {
+		return "", fmt.Errorf("error marshalling message to JSON: %v", err)
+	}
+
+	return string(jsonBytes), nil
 }
