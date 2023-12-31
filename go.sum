@@ -4,8 +4,8 @@ cloud.google.com/go/compute/metadata v0.2.3 h1:mg4jlk7mCAj6xXp9UJ4fjI9VUI5rubuGB
 cloud.google.com/go/compute/metadata v0.2.3/go.mod h1:VAV5nSsACxMJvgaAuX6Pk2AawlZn8kiOGuCv6gTkwuA=
 github.com/KyleBanks/depth v1.2.1 h1:5h8fQADFrWtarTdtDudMmGsC7GPbOAu6RVB3ffsVFHc=
 github.com/KyleBanks/depth v1.2.1/go.mod h1:jzSb9d0L43HxTQfT+oSA1EEp2q+ne2uh6XgeJcm8brE=
-github.com/blinklabs-io/gouroboros v0.67.1 h1:SyzxCIEa2rph3KQr1D+PgqsPNFORN/OdwNtrL0h42g8=
-github.com/blinklabs-io/gouroboros v0.67.1/go.mod h1:Q154NJPs7gB93Tggt8ts9RGIlW2kkknr6M90Q3jh0s4=
+github.com/blinklabs-io/gouroboros v0.69.1 h1:wn4RIdX4eSvpmumUUr4+0EAfz/6F95/86EI3wJ7F+p8=
+github.com/blinklabs-io/gouroboros v0.69.1/go.mod h1:ppm97qgdO1ZsfrrziSgmRRChtESfLtGaUcn9UN1Ft5A=
 github.com/bytedance/sonic v1.5.0/go.mod h1:ED5hyg4y6t3/9Ku1R6dU/4KyJ48DZ4jPhfY1O2AihPM=
 github.com/bytedance/sonic v1.10.0-rc/go.mod h1:ElCzW+ufi8qKqNW0FY314xriJhyJhuoJ3gFZdAHF7NM=
 github.com/bytedance/sonic v1.10.2 h1:GQebETVBxYB7JGWJtLBi07OVzWwt+8dWA00gEVW2ZFE=
