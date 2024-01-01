@@ -92,6 +92,7 @@ func (c *ChainSync) Start() error {
 		c.oConn.BlockFetch().Client.Start()
 	}
 	if c.bulkMode && !c.intersectTip && c.oConn.BlockFetch() != nil {
+		// Get available block range between our intersect point(s) and the chain tip
 		var err error
 		c.bulkRangeStart, c.bulkRangeEnd, err = c.oConn.ChainSync().Client.GetAvailableBlockRange(
 			c.intersectPoints,
@@ -99,8 +100,16 @@ func (c *ChainSync) Start() error {
 		if err != nil {
 			return err
 		}
-		if err := c.oConn.BlockFetch().Client.GetBlockRange(c.bulkRangeStart, c.bulkRangeEnd); err != nil {
-			return err
+		if c.bulkRangeStart.Slot == 0 || c.bulkRangeEnd.Slot == 0 {
+			// We're already at chain tip, so start a normal sync
+			if err := c.oConn.ChainSync().Client.Sync(c.intersectPoints); err != nil {
+				return err
+			}
+		} else {
+			// Use BlockFetch to request the entire available block range at once
+			if err := c.oConn.BlockFetch().Client.GetBlockRange(c.bulkRangeStart, c.bulkRangeEnd); err != nil {
+				return err
+			}
 		}
 	} else {
 		if c.intersectTip {
