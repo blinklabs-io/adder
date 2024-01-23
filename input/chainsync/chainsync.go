@@ -231,7 +231,9 @@ func (c *ChainSync) setupConnection() error {
 						}
 					}
 					// Set the intersect points from the cursor cache
-					c.intersectPoints = c.cursorCache[:]
+					if len(c.cursorCache) > 0 {
+						c.intersectPoints = c.cursorCache[:]
+					}
 					// Restart the connection
 					if err := c.Start(); err != nil {
 						if c.logger != nil {
