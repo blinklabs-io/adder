@@ -188,25 +188,19 @@ func (p *PushOutput) Start() error {
 	return nil
 }
 
-// AddNewFcmTokens adds only the new FCM tokens to the fcmTokens slice
-func (p *PushOutput) AddNewFcmTokens() {
+// refreshFcmTokens adds only the new FCM tokens to the fcmTokens slice
+func (p *PushOutput) refreshFcmTokens() {
 	tokenMap := GetFcmTokens()
-	existingTokens := make(map[string]bool, len(p.fcmTokens))
 
-	for _, token := range p.fcmTokens {
-		existingTokens[token] = true
-	}
-
-	for _, newToken := range tokenMap {
-		if _, exists := existingTokens[newToken]; !exists {
-			p.fcmTokens = append(p.fcmTokens, newToken)
-		}
+	p.fcmTokens = p.fcmTokens[:0]
+	for token := range tokenMap {
+		p.fcmTokens = append(p.fcmTokens, token)
 	}
 }
 
 func (p *PushOutput) processFcmNotifications(title, body string) {
 	// Fetch new FCM tokens and add to p.fcmTokens
-	p.AddNewFcmTokens()
+	p.refreshFcmTokens()
 
 	// If no FCM tokens exist, log and exit
 	if len(p.fcmTokens) == 0 {
