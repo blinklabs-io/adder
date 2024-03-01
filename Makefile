@@ -33,7 +33,7 @@ swagger:
 	swag i -g api.go -d api,output
 
 test: mod-tidy
-	go test -v ./...
+	go test -v -race ./...
 
 # Build our program binaries
 # Depends on GO_FILES to determine when rebuild is needed
