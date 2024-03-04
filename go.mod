@@ -3,7 +3,7 @@ module github.com/blinklabs-io/snek
 go 1.20
 
 require (
-	github.com/blinklabs-io/gouroboros v0.71.0
+	github.com/blinklabs-io/gouroboros v0.72.0
 	github.com/gen2brain/beeep v0.0.0-20230602101333-f384c29b62dd
 	github.com/gin-gonic/gin v1.9.1
 	github.com/kelseyhightower/envconfig v1.4.0
@@ -27,7 +27,7 @@ require (
 	github.com/chenzhuoyu/base64x v0.0.0-20230717121745-296ad89f973d // indirect
 	github.com/chenzhuoyu/iasm v0.9.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
-	github.com/fxamacker/cbor/v2 v2.5.0 // indirect
+	github.com/fxamacker/cbor/v2 v2.6.0 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.3 // indirect
 	github.com/gin-contrib/sse v0.1.0 // indirect
 	github.com/go-openapi/jsonpointer v0.20.0 // indirect
@@ -57,6 +57,7 @@ require (
 	github.com/tadvi/systray v0.0.0-20190226123456-11a2b8fa57af // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/ugorji/go/codec v1.2.11 // indirect
+	github.com/utxorpc/go-codegen v0.4.0 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	go.uber.org/multierr v1.10.0 // indirect
 	golang.org/x/arch v0.5.0 // indirect
@@ -66,6 +67,6 @@ require (
 	golang.org/x/text v0.14.0 // indirect
 	golang.org/x/tools v0.14.0 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
-	google.golang.org/protobuf v1.31.0 // indirect
+	google.golang.org/protobuf v1.32.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
