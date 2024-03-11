@@ -3,7 +3,7 @@ module github.com/blinklabs-io/snek
 go 1.20
 
 require (
-	github.com/blinklabs-io/gouroboros v0.72.0
+	github.com/blinklabs-io/gouroboros v0.73.2
 	github.com/gen2brain/beeep v0.0.0-20230602101333-f384c29b62dd
 	github.com/gin-gonic/gin v1.9.1
 	github.com/kelseyhightower/envconfig v1.4.0
@@ -61,7 +61,7 @@ require (
 	github.com/x448/float16 v0.8.4 // indirect
 	go.uber.org/multierr v1.10.0 // indirect
 	golang.org/x/arch v0.5.0 // indirect
-	golang.org/x/crypto v0.19.0 // indirect
+	golang.org/x/crypto v0.20.0 // indirect
 	golang.org/x/net v0.21.0 // indirect
 	golang.org/x/sys v0.17.0 // indirect
 	golang.org/x/text v0.14.0 // indirect
