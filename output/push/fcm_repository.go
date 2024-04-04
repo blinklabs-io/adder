@@ -60,14 +60,14 @@ func getTokenStore() *TokenStore {
 	return fcmStore
 }
 
-// @Summary		Store FCM Token
-// @Description	Store a new FCM token
-// @Accept			json
-// @Produce		json
-// @Param			body	body		TokenRequest	true	"FCM Token Request"
-// @Success		201		{string}	string			"Created"
-// @Failure		400		{object}	ErrorResponse
-// @Router			/fcm [post]
+//	@Summary		Store FCM Token
+//	@Description	Store a new FCM token
+//	@Accept			json
+//	@Produce		json
+//	@Param			body	body		TokenRequest	true	"FCM Token Request"
+//	@Success		201		{string}	string			"Created"
+//	@Failure		400		{object}	ErrorResponse
+//	@Router			/fcm [post]
 func storeFCMToken(c *gin.Context) {
 	var req TokenRequest
 
@@ -81,14 +81,14 @@ func storeFCMToken(c *gin.Context) {
 	c.Status(http.StatusCreated)
 }
 
-// @Summary		Get FCM Token
-// @Description	Get an FCM token by its value
-// @Accept			json
-// @Produce		json
-// @Param			token	path		string	true	"FCM Token"
-// @Success		200		{object}	TokenResponse
-// @Failure		404		{object}	ErrorResponse
-// @Router			/fcm/{token} [get]
+//	@Summary		Get FCM Token
+//	@Description	Get an FCM token by its value
+//	@Accept			json
+//	@Produce		json
+//	@Param			token	path		string	true	"FCM Token"
+//	@Success		200		{object}	TokenResponse
+//	@Failure		404		{object}	ErrorResponse
+//	@Router			/fcm/{token} [get]
 func readFCMToken(c *gin.Context) {
 	token := c.Param("token")
 	store := getTokenStore()
@@ -100,14 +100,14 @@ func readFCMToken(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"fcmToken": storedToken})
 }
 
-// @Summary		Delete FCM Token
-// @Description	Delete an FCM token by its value
-// @Accept			json
-// @Produce		json
-// @Param			token	path		string	true	"FCM Token"
-// @Success		204		{string}	string	"No Content"
-// @Failure		404		{object}	ErrorResponse
-// @Router			/fcm/{token} [delete]
+//	@Summary		Delete FCM Token
+//	@Description	Delete an FCM token by its value
+//	@Accept			json
+//	@Produce		json
+//	@Param			token	path		string	true	"FCM Token"
+//	@Success		204		{string}	string	"No Content"
+//	@Failure		404		{object}	ErrorResponse
+//	@Router			/fcm/{token} [delete]
 func deleteFCMToken(c *gin.Context) {
 	token := c.Param("token")
 	store := getTokenStore()
