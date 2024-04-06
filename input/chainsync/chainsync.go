@@ -25,6 +25,7 @@ import (
 	ouroboros "github.com/blinklabs-io/gouroboros"
 	"github.com/blinklabs-io/gouroboros/ledger"
 	"github.com/blinklabs-io/gouroboros/protocol/blockfetch"
+	"github.com/blinklabs-io/gouroboros/protocol/chainsync"
 	ochainsync "github.com/blinklabs-io/gouroboros/protocol/chainsync"
 	ocommon "github.com/blinklabs-io/gouroboros/protocol/common"
 )
@@ -253,6 +254,7 @@ func (c *ChainSync) setupConnection() error {
 }
 
 func (c *ChainSync) handleRollBackward(
+	ctx chainsync.CallbackContext,
 	point ocommon.Point,
 	tip ochainsync.Tip,
 ) error {
@@ -267,6 +269,7 @@ func (c *ChainSync) handleRollBackward(
 }
 
 func (c *ChainSync) handleRollForward(
+	ctx chainsync.CallbackContext,
 	blockType uint,
 	blockData interface{},
 	tip ochainsync.Tip,
@@ -294,7 +297,7 @@ func (c *ChainSync) handleRollForward(
 	return nil
 }
 
-func (c *ChainSync) handleBlockFetchBlock(block ledger.Block) error {
+func (c *ChainSync) handleBlockFetchBlock(ctx blockfetch.CallbackContext, block ledger.Block) error {
 	blockEvt := event.New(
 		"chainsync.block",
 		time.Now(),
