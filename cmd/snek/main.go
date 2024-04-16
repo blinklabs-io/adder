@@ -19,6 +19,8 @@ import (
 	"net/http"
 	"os"
 
+	_ "go.uber.org/automaxprocs"
+
 	"github.com/blinklabs-io/snek/api"
 	_ "github.com/blinklabs-io/snek/filter"
 	_ "github.com/blinklabs-io/snek/input"
