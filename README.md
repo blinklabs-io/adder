@@ -1,10 +1,10 @@
-# snek
+# Adder
 
 <div align="center">
-    <img src="./assets/snek-logo-with-text-horizontal.png" alt="snek Logo" width="640">
+    <img src="./assets/adder-logo-with-text-horizontal.png" alt="Adder Logo" width="640">
 </div>
 
-snek is a tool for tailing the Cardano blockchain and emitting events for each
+Adder is a tool for tailing the Cardano blockchain and emitting events for each
 block and transaction that it sees.
 
 ## How it works
@@ -101,14 +101,14 @@ using Uber's `Zap` logging library.
 
 ## Configuration
 
-snek supports multiple configuration methods for versatility: commandline arguments, YAML config file,
+Adder supports multiple configuration methods for versatility: commandline arguments, YAML config file,
 and environment variables (in that order).
 
 You can get a list of all available commandline arguments by using the `-h`/`-help` flag.
 
 ```bash
-$ ./snek -h
-Usage of snek:
+$ ./adder -h
+Usage of adder:
   -config string
         path to config file to load
   -input string
@@ -149,15 +149,15 @@ plugins:
 
 ## Filtering
 
-snek supports filtering events before they are output using multiple criteria. An event must match all configured filters to be emitted.
+Adder supports filtering events before they are output using multiple criteria. An event must match all configured filters to be emitted.
 Each filter supports specifying multiple possible values separated by commas. When specifying multiple values for a filter, only one of
 the values specified must match an event.
 
 You can get a list of all available filter options by using the `-h`/`-help` flag.
 
 ```bash
-$ ./snek -h
-Usage of snek:
+$ ./adder -h
+Usage of adder:
 ...
   -filter-address string
         specifies address to filter on
@@ -178,13 +178,13 @@ Multiple filter options can be used together, and only events matching all filte
 
 ```bash
 export INPUT_CHAINSYNC_NETWORK=preview
-./snek 
+./adder 
 ```
 
 Alternatively using equivalent commandline options:
 
 ```bash
-./snek \
+./adder \
   -input-chainsync-network preview
 ```
 
@@ -197,7 +197,7 @@ in Docker.
 ```bash
 docker run --rm -ti \
   -v node-ipc:/node-ipc \
-  ghcr.io/blinklabs-io/snek:main
+  ghcr.io/blinklabs-io/adder:main
 ```
 
 ### Filtering
@@ -207,13 +207,13 @@ docker run --rm -ti \
 Only output `chainsync.transaction` event types
 
 ```bash
-$ snek -filter-type chainsync.transaction
+$ adder -filter-type chainsync.transaction
 ```
 
 Only output `chainsync.rollback` and `chainsync.block` event types
 
 ```bash
-$ snek -filter-type chainsync.transaction,chainsync.block
+$ adder -filter-type chainsync.transaction,chainsync.block
 ```
 
 #### Filtering on asset policy
@@ -221,7 +221,7 @@ $ snek -filter-type chainsync.transaction,chainsync.block
 Only output transactions involving an asset with a particular policy ID
 
 ```bash
-$ snek -filter-type chainsync.transaction -filter-policy 13aa2accf2e1561723aa26871e071fdf32c867cff7e7d50ad470d62f
+$ adder -filter-type chainsync.transaction -filter-policy 13aa2accf2e1561723aa26871e071fdf32c867cff7e7d50ad470d62f
 ```
 
 #### Filtering on asset fingerprint
@@ -229,7 +229,7 @@ $ snek -filter-type chainsync.transaction -filter-policy 13aa2accf2e1561723aa268
 Only output transactions involving a particular asset
 
 ```bash
-$ snek -filter-type chainsync.transaction -filter-asset asset108xu02ckwrfc8qs9d97mgyh4kn8gdu9w8f5sxk
+$ adder -filter-type chainsync.transaction -filter-asset asset108xu02ckwrfc8qs9d97mgyh4kn8gdu9w8f5sxk
 ```
 
 #### Filtering on a policy ID and asset fingerprint
@@ -237,7 +237,7 @@ $ snek -filter-type chainsync.transaction -filter-asset asset108xu02ckwrfc8qs9d9
 Only output transactions involving both a particular policy ID and a particular asset (which do not need to be related)
 
 ```bash
-$ snek -filter-type chainsync.transaction -filter-asset asset108xu02ckwrfc8qs9d97mgyh4kn8gdu9w8f5sxk -filter-policy 13aa2accf2e1561723aa26871e071fdf32c867cff7e7d50ad470d62f
+$ adder -filter-type chainsync.transaction -filter-asset asset108xu02ckwrfc8qs9d97mgyh4kn8gdu9w8f5sxk -filter-policy 13aa2accf2e1561723aa26871e071fdf32c867cff7e7d50ad470d62f
 ```
 
 #### Filtering on an address
@@ -245,7 +245,7 @@ $ snek -filter-type chainsync.transaction -filter-asset asset108xu02ckwrfc8qs9d9
 Only output transactions with outputs matching a particular address
 
 ```bash
-$ snek -filter-type chainsync.transaction -filter-address addr1qyht4ja0zcn45qvyx477qlyp6j5ftu5ng0prt9608dxp6l2j2c79gy9l76sdg0xwhd7r0c0kna0tycz4y5s6mlenh8pq4jxtdy
+$ adder -filter-type chainsync.transaction -filter-address addr1qyht4ja0zcn45qvyx477qlyp6j5ftu5ng0prt9608dxp6l2j2c79gy9l76sdg0xwhd7r0c0kna0tycz4y5s6mlenh8pq4jxtdy
 ```
 
 #### Filtering on a stake address
@@ -253,13 +253,13 @@ $ snek -filter-type chainsync.transaction -filter-address addr1qyht4ja0zcn45qvyx
 Only output transactions with outputs matching a particular stake address
 
 ```bash
-$ snek -filter-type chainsync.transaction -filter-address stake1u9f9v0z5zzlldgx58n8tklphu8mf7h4jvp2j2gddluemnssjfnkzz
+$ adder -filter-type chainsync.transaction -filter-address stake1u9f9v0z5zzlldgx58n8tklphu8mf7h4jvp2j2gddluemnssjfnkzz
 ```
 
 ### Push notifications
 
-The example shows how push notification output can be used with filtering options. In this example, push notifications will be sent to the block events. Push notifications will be sent to the specified project_id in the serviceAccount.json file. Please refer to https://github.com/blinklabs-io/snek-mobile for more details on how to send push notifications to snek-mobile.
+The example shows how push notification output can be used with filtering options. In this example, push notifications will be sent to the block events. Push notifications will be sent to the specified project_id in the serviceAccount.json file. Please refer to https://github.com/blinklabs-io/adder-mobile for more details on how to send push notifications to adder-mobile.
 
 ```bash
-$ snek -filter-type chainsync.block -output push -output-push-serviceAccountFilePath /path/to/serviceAccount.json
+$ adder -filter-type chainsync.block -output push -output-push-serviceAccountFilePath /path/to/serviceAccount.json
 ```

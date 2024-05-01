@@ -19,7 +19,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/blinklabs-io/snek/plugin"
+	"github.com/blinklabs-io/adder/plugin"
 
 	"github.com/kelseyhightower/envconfig"
 	"gopkg.in/yaml.v2"

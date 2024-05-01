@@ -166,8 +166,8 @@ var SwaggerInfo = &swag.Spec{
 	Host:             "",
 	BasePath:         "/v1",
 	Schemes:          []string{"http"},
-	Title:            "Snek API",
-	Description:      "Snek API",
+	Title:            "Adder API",
+	Description:      "Adder API",
 	InfoInstanceName: "swagger",
 	SwaggerTemplate:  docTemplate,
 }

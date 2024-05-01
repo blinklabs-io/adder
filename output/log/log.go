@@ -15,9 +15,9 @@
 package log
 
 import (
-	"github.com/blinklabs-io/snek/event"
-	"github.com/blinklabs-io/snek/internal/logging"
-	"github.com/blinklabs-io/snek/plugin"
+	"github.com/blinklabs-io/adder/event"
+	"github.com/blinklabs-io/adder/internal/logging"
+	"github.com/blinklabs-io/adder/plugin"
 )
 
 type LogOutput struct {

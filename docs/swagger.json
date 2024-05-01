@@ -4,8 +4,8 @@
     ],
     "swagger": "2.0",
     "info": {
-        "description": "Snek API",
-        "title": "Snek API",
+        "description": "Adder API",
+        "title": "Adder API",
         "contact": {
             "name": "Blink Labs",
             "url": "https://blinklabs.io",

@@ -17,7 +17,7 @@ package push
 import (
 	"net/http"
 
-	_ "github.com/blinklabs-io/snek/docs"
+	_ "github.com/blinklabs-io/adder/docs"
 	"github.com/gin-gonic/gin"
 )
 

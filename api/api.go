@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	_ "github.com/blinklabs-io/snek/docs"
+	_ "github.com/blinklabs-io/adder/docs"
 	"github.com/gin-gonic/gin"
 	swaggerFiles "github.com/swaggo/files"     // swagger embed files
 	ginSwagger "github.com/swaggo/gin-swagger" // gin-swagger middleware
@@ -75,9 +75,9 @@ func (a *APIv1) Engine() *gin.Engine {
 	return a.engine
 }
 
-//	@title			Snek API
+//	@title			Adder API
 //	@version		v1
-//	@description	Snek API
+//	@description	Adder API
 //	@Schemes		http
 //	@BasePath		/v1
 

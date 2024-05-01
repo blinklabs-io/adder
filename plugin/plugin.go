@@ -15,7 +15,7 @@
 package plugin
 
 import (
-	"github.com/blinklabs-io/snek/event"
+	"github.com/blinklabs-io/adder/event"
 )
 
 type Plugin interface {

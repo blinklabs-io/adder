@@ -21,19 +21,19 @@ import (
 
 	_ "go.uber.org/automaxprocs"
 
-	"github.com/blinklabs-io/snek/api"
-	_ "github.com/blinklabs-io/snek/filter"
-	_ "github.com/blinklabs-io/snek/input"
-	"github.com/blinklabs-io/snek/internal/config"
-	"github.com/blinklabs-io/snek/internal/logging"
-	"github.com/blinklabs-io/snek/internal/version"
-	_ "github.com/blinklabs-io/snek/output"
-	"github.com/blinklabs-io/snek/pipeline"
-	"github.com/blinklabs-io/snek/plugin"
+	"github.com/blinklabs-io/adder/api"
+	_ "github.com/blinklabs-io/adder/filter"
+	_ "github.com/blinklabs-io/adder/input"
+	"github.com/blinklabs-io/adder/internal/config"
+	"github.com/blinklabs-io/adder/internal/logging"
+	"github.com/blinklabs-io/adder/internal/version"
+	_ "github.com/blinklabs-io/adder/output"
+	"github.com/blinklabs-io/adder/pipeline"
+	"github.com/blinklabs-io/adder/plugin"
 )
 
 const (
-	programName = "snek"
+	programName = "adder"
 )
 
 func main() {

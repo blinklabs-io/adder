@@ -22,11 +22,11 @@ info:
     email: support@blinklabs.io
     name: Blink Labs
     url: https://blinklabs.io
-  description: Snek API
+  description: Adder API
   license:
     name: Apache 2.0
     url: http://www.apache.org/licenses/LICENSE-2.0.html
-  title: Snek API
+  title: Adder API
   version: v1
 paths:
   /fcm:

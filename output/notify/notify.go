@@ -17,9 +17,9 @@ package notify
 import (
 	"fmt"
 
-	"github.com/blinklabs-io/snek/event"
-	"github.com/blinklabs-io/snek/input/chainsync"
-	"github.com/blinklabs-io/snek/plugin"
+	"github.com/blinklabs-io/adder/event"
+	"github.com/blinklabs-io/adder/input/chainsync"
+	"github.com/blinklabs-io/adder/plugin"
 	"github.com/gen2brain/beeep"
 )
 
@@ -34,7 +34,7 @@ func New(options ...NotifyOptionFunc) *NotifyOutput {
 	n := &NotifyOutput{
 		errorChan: make(chan error),
 		eventChan: make(chan event.Event, 10),
-		title:     "Snek",
+		title:     "Adder",
 	}
 	for _, option := range options {
 		option(n)
@@ -73,7 +73,7 @@ func (n *NotifyOutput) Start() error {
 						be.TransactionCount,
 						be.BlockHash,
 					),
-					"assets/snek-icon.png",
+					"assets/adder-icon.png",
 				)
 				if err != nil {
 					panic(err)
@@ -91,7 +91,7 @@ func (n *NotifyOutput) Start() error {
 						re.SlotNumber,
 						re.BlockHash,
 					),
-					"assets/snek-icon.png",
+					"assets/adder-icon.png",
 				)
 				if err != nil {
 					panic(err)
@@ -119,7 +119,7 @@ func (n *NotifyOutput) Start() error {
 						te.Fee,
 						tc.TransactionHash,
 					),
-					"assets/snek-icon.png",
+					"assets/adder-icon.png",
 				)
 				if err != nil {
 					panic(err)
@@ -128,7 +128,7 @@ func (n *NotifyOutput) Start() error {
 				err := beeep.Notify(
 					n.title,
 					fmt.Sprintf("New Event!\nEvent: %v", evt),
-					"assets/snek-icon.png",
+					"assets/adder-icon.png",
 				)
 				if err != nil {
 					panic(err)

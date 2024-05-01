@@ -14,7 +14,7 @@
 
 package push
 
-import "github.com/blinklabs-io/snek/plugin"
+import "github.com/blinklabs-io/adder/plugin"
 
 type PushOptionFunc func(*PushOutput)
 

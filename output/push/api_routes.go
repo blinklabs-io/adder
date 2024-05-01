@@ -15,7 +15,7 @@
 package push
 
 import (
-	"github.com/blinklabs-io/snek/api"
+	"github.com/blinklabs-io/adder/api"
 )
 
 var routesRegistered = false

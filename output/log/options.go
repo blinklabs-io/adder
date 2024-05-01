@@ -14,7 +14,7 @@
 
 package log
 
-import "github.com/blinklabs-io/snek/plugin"
+import "github.com/blinklabs-io/adder/plugin"
 
 type LogOptionFunc func(*LogOutput)
 

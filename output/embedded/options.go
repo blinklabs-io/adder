@@ -14,7 +14,7 @@
 
 package embedded
 
-import "github.com/blinklabs-io/snek/event"
+import "github.com/blinklabs-io/adder/event"
 
 type EmbeddedOptionFunc func(*EmbeddedOutput)
 

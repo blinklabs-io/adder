@@ -15,8 +15,8 @@
 package webhook
 
 import (
-	"github.com/blinklabs-io/snek/internal/logging"
-	"github.com/blinklabs-io/snek/plugin"
+	"github.com/blinklabs-io/adder/internal/logging"
+	"github.com/blinklabs-io/adder/plugin"
 )
 
 var cmdlineOptions struct {
@@ -38,7 +38,7 @@ func init() {
 					Name:         "format",
 					Type:         plugin.PluginOptionTypeString,
 					Description:  "specifies the webhook payload format to use",
-					DefaultValue: "snek",
+					DefaultValue: "adder",
 					Dest:         &(cmdlineOptions.format),
 				},
 				{

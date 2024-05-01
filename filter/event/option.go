@@ -14,7 +14,7 @@
 
 package event
 
-import "github.com/blinklabs-io/snek/plugin"
+import "github.com/blinklabs-io/adder/plugin"
 
 type EventOptionFunc func(*Event)
 

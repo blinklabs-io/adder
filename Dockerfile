@@ -4,6 +4,6 @@ WORKDIR /code
 COPY . .
 RUN make build
 
-FROM cgr.dev/chainguard/glibc-dynamic AS snek
-COPY --from=build /code/snek /bin/
-ENTRYPOINT ["snek"]
+FROM cgr.dev/chainguard/glibc-dynamic AS adder
+COPY --from=build /code/adder /bin/
+ENTRYPOINT ["adder"]
