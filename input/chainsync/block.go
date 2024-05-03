@@ -25,6 +25,7 @@ type BlockContext struct {
 }
 
 type BlockEvent struct {
+	Block            ledger.Block     `json:"-"`
 	BlockBodySize    uint64           `json:"blockBodySize"`
 	IssuerVkey       string           `json:"issuerVkey"`
 	BlockHash        string           `json:"blockHash"`
@@ -51,6 +52,7 @@ func NewBlockHeaderContext(block ledger.BlockHeader) BlockContext {
 
 func NewBlockEvent(block ledger.Block, includeCbor bool) BlockEvent {
 	evt := BlockEvent{
+		Block:            block,
 		BlockBodySize:    block.BlockBodySize(),
 		BlockHash:        block.Hash(),
 		IssuerVkey:       block.IssuerVkey().Hash().String(),

@@ -28,6 +28,7 @@ type TransactionContext struct {
 }
 
 type TransactionEvent struct {
+	Transaction     ledger.Transaction         `json:"-"`
 	BlockHash       string                     `json:"blockHash"`
 	TransactionCbor byteSliceJsonHex           `json:"transactionCbor,omitempty"`
 	Inputs          []ledger.TransactionInput  `json:"inputs"`
@@ -59,11 +60,12 @@ func NewTransactionEvent(
 	includeCbor bool,
 ) TransactionEvent {
 	evt := TransactionEvent{
-		BlockHash: block.Hash(),
-		Inputs:    tx.Inputs(),
-		Outputs:   tx.Outputs(),
-		Fee:       tx.Fee(),
-		TTL:       tx.TTL(),
+		Transaction: tx,
+		BlockHash:   block.Hash(),
+		Inputs:      tx.Inputs(),
+		Outputs:     tx.Outputs(),
+		Fee:         tx.Fee(),
+		TTL:         tx.TTL(),
 	}
 	if includeCbor {
 		evt.TransactionCbor = tx.Cbor()
