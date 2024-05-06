@@ -15,7 +15,7 @@ require (
 	github.com/swaggo/swag v1.16.3
 	go.uber.org/automaxprocs v1.5.3
 	go.uber.org/zap v1.27.0
-	golang.org/x/oauth2 v0.19.0
+	golang.org/x/oauth2 v0.20.0
 	gopkg.in/yaml.v2 v2.4.0
 )
 
@@ -23,8 +23,7 @@ require (
 // replace github.com/blinklabs-io/gouroboros => ../gouroboros
 
 require (
-	cloud.google.com/go/compute v1.20.1 // indirect
-	cloud.google.com/go/compute/metadata v0.2.3 // indirect
+	cloud.google.com/go/compute/metadata v0.3.0 // indirect
 	github.com/KyleBanks/depth v1.2.1 // indirect
 	github.com/bytedance/sonic v1.10.2 // indirect
 	github.com/chenzhuoyu/base64x v0.0.0-20230717121745-296ad89f973d // indirect
