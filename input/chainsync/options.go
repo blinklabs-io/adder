@@ -15,8 +15,8 @@
 package chainsync
 
 import (
+	"github.com/blinklabs-io/adder/plugin"
 	ocommon "github.com/blinklabs-io/gouroboros/protocol/common"
-	"github.com/blinklabs-io/snek/plugin"
 )
 
 type ChainSyncOptionFunc func(*ChainSync)

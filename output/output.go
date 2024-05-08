@@ -16,8 +16,8 @@ package output
 
 // We import the various plugins that we want to be auto-registered
 import (
-	_ "github.com/blinklabs-io/snek/output/log"
-	_ "github.com/blinklabs-io/snek/output/notify"
-	_ "github.com/blinklabs-io/snek/output/push"
-	_ "github.com/blinklabs-io/snek/output/webhook"
+	_ "github.com/blinklabs-io/adder/output/log"
+	_ "github.com/blinklabs-io/adder/output/notify"
+	_ "github.com/blinklabs-io/adder/output/push"
+	_ "github.com/blinklabs-io/adder/output/webhook"
 )

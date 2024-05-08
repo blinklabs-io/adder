@@ -1,4 +1,4 @@
-module github.com/blinklabs-io/snek
+module github.com/blinklabs-io/adder
 
 go 1.21
 

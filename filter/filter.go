@@ -16,6 +16,6 @@ package filter
 
 // We import the various plugins that we want to be auto-registered
 import (
-	_ "github.com/blinklabs-io/snek/filter/chainsync"
-	_ "github.com/blinklabs-io/snek/filter/event"
+	_ "github.com/blinklabs-io/adder/filter/chainsync"
+	_ "github.com/blinklabs-io/adder/filter/event"
 )

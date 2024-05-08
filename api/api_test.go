@@ -5,8 +5,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/blinklabs-io/snek/api"
-	"github.com/blinklabs-io/snek/output/push"
+	"github.com/blinklabs-io/adder/api"
+	"github.com/blinklabs-io/adder/output/push"
 	"github.com/stretchr/testify/assert"
 )
 

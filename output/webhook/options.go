@@ -14,9 +14,9 @@
 
 package webhook
 
-import "github.com/blinklabs-io/snek/plugin"
+import "github.com/blinklabs-io/adder/plugin"
 
-// import "github.com/blinklabs-io/snek/event"
+// import "github.com/blinklabs-io/adder/event"
 
 type WebhookOptionFunc func(*WebhookOutput)
 

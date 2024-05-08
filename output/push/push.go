@@ -20,12 +20,12 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/blinklabs-io/adder/event"
+	"github.com/blinklabs-io/adder/fcm"
+	"github.com/blinklabs-io/adder/input/chainsync"
+	"github.com/blinklabs-io/adder/internal/logging"
+	"github.com/blinklabs-io/adder/plugin"
 	"github.com/blinklabs-io/gouroboros/cbor"
-	"github.com/blinklabs-io/snek/event"
-	"github.com/blinklabs-io/snek/fcm"
-	"github.com/blinklabs-io/snek/input/chainsync"
-	"github.com/blinklabs-io/snek/internal/logging"
-	"github.com/blinklabs-io/snek/plugin"
 	"golang.org/x/oauth2/google"
 )
 
@@ -93,7 +93,7 @@ func (p *PushOutput) Start() error {
 
 				be := payload.(chainsync.BlockEvent)
 				bc := context.(chainsync.BlockContext)
-				fmt.Println("Snek")
+				fmt.Println("Adder")
 				fmt.Printf(
 					"New Block!\nBlockNumber: %d, SlotNumber: %d\nHash: %s",
 					bc.BlockNumber,
@@ -102,7 +102,7 @@ func (p *PushOutput) Start() error {
 				)
 
 				// Create notification message
-				title := "Snek"
+				title := "Adder"
 				body := fmt.Sprintf(
 					"New Block!\nBlockNumber: %d, SlotNumber: %d\nHash: %s",
 					bc.BlockNumber,
@@ -120,7 +120,7 @@ func (p *PushOutput) Start() error {
 				}
 
 				re := payload.(chainsync.RollbackEvent)
-				fmt.Println("Snek")
+				fmt.Println("Adder")
 				fmt.Printf("Rollback!\nSlotNumber: %d\nBlockHash: %s",
 					re.SlotNumber,
 					re.BlockHash,
@@ -139,7 +139,7 @@ func (p *PushOutput) Start() error {
 				tc := context.(chainsync.TransactionContext)
 
 				// Create notification message
-				title := "Snek"
+				title := "Adder"
 
 				// Get metadata
 				var cip20Message string
@@ -180,7 +180,7 @@ func (p *PushOutput) Start() error {
 				p.processFcmNotifications(title, body)
 
 			default:
-				fmt.Println("Snek")
+				fmt.Println("Adder")
 				fmt.Printf("New Event!\nEvent: %v", evt)
 			}
 		}

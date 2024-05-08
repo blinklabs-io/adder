@@ -27,11 +27,11 @@ import (
 
 	// cbor "github.com/fxamacker/cbor/v2"
 
-	"github.com/blinklabs-io/snek/event"
-	"github.com/blinklabs-io/snek/input/chainsync"
-	"github.com/blinklabs-io/snek/internal/logging"
-	"github.com/blinklabs-io/snek/internal/version"
-	"github.com/blinklabs-io/snek/plugin"
+	"github.com/blinklabs-io/adder/event"
+	"github.com/blinklabs-io/adder/input/chainsync"
+	"github.com/blinklabs-io/adder/internal/logging"
+	"github.com/blinklabs-io/adder/internal/version"
+	"github.com/blinklabs-io/adder/plugin"
 )
 
 const (
@@ -54,7 +54,7 @@ func New(options ...WebhookOptionFunc) *WebhookOutput {
 	w := &WebhookOutput{
 		errorChan: make(chan error),
 		eventChan: make(chan event.Event, 10),
-		format:    "snek",
+		format:    "adder",
 		url:       "http://localhost:3000",
 	}
 	for _, option := range options {
@@ -254,7 +254,7 @@ func (w *WebhookOutput) SendWebhook(e *event.Event) error {
 	req.Header.Add("Content-Type", "application/json")
 	req.Header.Add(
 		"User-Agent",
-		fmt.Sprintf("Snek/%s", version.GetVersionString()),
+		fmt.Sprintf("Adder/%s", version.GetVersionString()),
 	)
 
 	// Setup authorization

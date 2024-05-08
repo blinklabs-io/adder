@@ -17,7 +17,7 @@ package embedded
 import (
 	"fmt"
 
-	"github.com/blinklabs-io/snek/event"
+	"github.com/blinklabs-io/adder/event"
 )
 
 type CallbackFunc func(event.Event) error

@@ -41,7 +41,7 @@ func generateQRPage(apiEndpoint string) gin.HandlerFunc {
 	<body class="bg-gray-100 h-screen flex items-center justify-center">
 		<!-- QR Code Container -->
 		<div class="bg-white p-8 rounded-lg shadow-md text-center">
-				<p class="text-xl mb-4">Scan QR code with Snek Mobile to connect to the Snek Server on <span class="font-semibold">%s</span></p>
+				<p class="text-xl mb-4">Scan QR code with Adder Mobile to connect to the Adder Server on <span class="font-semibold">%s</span></p>
 				<canvas id="qrCanvas" class="mx-auto"></canvas>
 		</div>
 	

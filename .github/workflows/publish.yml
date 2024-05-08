@@ -56,16 +56,16 @@ jobs:
       - name: Upload release asset
         if: startsWith(github.ref, 'refs/tags/')
         run: |
-          _filename=snek-${{ env.RELEASE_TAG }}-${{ matrix.os }}-${{ matrix.arch }}
+          _filename=adder-${{ env.RELEASE_TAG }}-${{ matrix.os }}-${{ matrix.arch }}
           if [[ ${{ matrix.os }} == windows ]]; then
             _filename=${_filename}.exe
           fi
-          mv snek ${_filename}
+          mv adder ${_filename}
           curl \
             -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
             -H "Content-Type: application/octet-stream" \
             --data-binary @${_filename} \
-            https://uploads.github.com/repos/${{ github.repository_owner }}/snek/releases/${{ needs.create-draft-release.outputs.RELEASE_ID }}/assets?name=${_filename}
+            https://uploads.github.com/repos/${{ github.repository_owner }}/adder/releases/${{ needs.create-draft-release.outputs.RELEASE_ID }}/assets?name=${_filename}
 
   build-images:
     runs-on: ubuntu-latest
@@ -92,7 +92,7 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: |
-            blinklabs/snek
+            blinklabs/adder
             ghcr.io/${{ github.repository }}
           tags: |
             # Only version, no revision
@@ -114,9 +114,9 @@ jobs:
         with:
           username: blinklabs
           password: ${{ secrets.DOCKER_PASSWORD }}
-          repository: blinklabs/snek
+          repository: blinklabs/adder
           readme-filepath: ./README.md
-          short-description: "Snek is a tool for tailing the Cardano blockchain and emitting events"
+          short-description: "Adder is a tool for tailing the Cardano blockchain and emitting events"
 
   finalize-release:
     runs-on: ubuntu-latest

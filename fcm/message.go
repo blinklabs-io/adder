@@ -8,7 +8,7 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/blinklabs-io/snek/internal/logging"
+	"github.com/blinklabs-io/adder/internal/logging"
 )
 
 type Message struct {

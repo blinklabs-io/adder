@@ -15,8 +15,8 @@
 package notify
 
 import (
-	"github.com/blinklabs-io/snek/internal/logging"
-	"github.com/blinklabs-io/snek/plugin"
+	"github.com/blinklabs-io/adder/internal/logging"
+	"github.com/blinklabs-io/adder/plugin"
 )
 
 var cmdlineOptions struct {
@@ -35,7 +35,7 @@ func init() {
 					Name:         "title",
 					Type:         plugin.PluginOptionTypeString,
 					Description:  "specifies the title to use",
-					DefaultValue: "Snek",
+					DefaultValue: "Adder",
 					Dest:         &(cmdlineOptions.title),
 				},
 			},

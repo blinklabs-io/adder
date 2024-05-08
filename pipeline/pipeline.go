@@ -17,8 +17,8 @@ package pipeline
 import (
 	"fmt"
 
-	"github.com/blinklabs-io/snek/event"
-	"github.com/blinklabs-io/snek/plugin"
+	"github.com/blinklabs-io/adder/event"
+	"github.com/blinklabs-io/adder/plugin"
 )
 
 type Pipeline struct {

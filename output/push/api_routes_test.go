@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/blinklabs-io/snek/api"
-	"github.com/blinklabs-io/snek/output/push"
+	"github.com/blinklabs-io/adder/api"
+	"github.com/blinklabs-io/adder/output/push"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 )

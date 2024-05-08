@@ -18,7 +18,7 @@ import (
 	"log"
 	"time"
 
-	"github.com/blinklabs-io/snek/internal/config"
+	"github.com/blinklabs-io/adder/internal/config"
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
