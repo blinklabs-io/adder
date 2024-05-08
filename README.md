@@ -84,7 +84,7 @@ transaction:
             }
         ],
         "metadata": {
-            674: {
+            "674": {
                 "msg": [
                     "Test message"
                 ]
@@ -101,10 +101,11 @@ using Uber's `Zap` logging library.
 
 ## Configuration
 
-Adder supports multiple configuration methods for versatility: commandline arguments, YAML config file,
-and environment variables (in that order).
+Adder supports multiple configuration methods for versatility: commandline
+arguments, YAML config file, and environment variables (in that order).
 
-You can get a list of all available commandline arguments by using the `-h`/`-help` flag.
+You can get a list of all available commandline arguments by using the
+`-h`/`-help` flag.
 
 ```bash
 $ ./adder -h
@@ -122,9 +123,10 @@ Usage of adder:
         specifies the log level to use (default "info")
 ```
 
-Each commandline argument (other than `-config`) has a corresponding environment variable. For example,
-the `-input` option has the `INPUT` environment variable, the `-input-chainsync-address` option has the
-`INPUT_CHAINSYNC_ADDRESS` environment variable, and `-output` has `OUTPUT`.
+Each commandline argument (other than `-config`) has a corresponding environment
+variable. For example, the `-input` option has the `INPUT` environment variable,
+the `-input-chainsync-address` option has the `INPUT_CHAINSYNC_ADDRESS`
+environment variable, and `-output` has `OUTPUT`.
 
 You can also specify each option in the config file.
 
@@ -134,7 +136,8 @@ input: chainsync
 output: log
 ```
 
-Plugin arguments can be specified under a special top-level key in the config file.
+Plugin arguments can be specified under a special top-level key in the config
+file.
 
 ```yaml
 plugins:
@@ -149,11 +152,14 @@ plugins:
 
 ## Filtering
 
-Adder supports filtering events before they are output using multiple criteria. An event must match all configured filters to be emitted.
-Each filter supports specifying multiple possible values separated by commas. When specifying multiple values for a filter, only one of
-the values specified must match an event.
+Adder supports filtering events before they are output using multiple criteria.
+An event must match all configured filters to be emitted. Each filter supports
+specifying multiple possible values separated by commas. When specifying
+multiple values for a filter, only one of the values specified must match an
+event.
 
-You can get a list of all available filter options by using the `-h`/`-help` flag.
+You can get a list of all available filter options by using the `-h`/`-help`
+flag.
 
 ```bash
 $ ./adder -h
@@ -170,7 +176,8 @@ Usage of adder:
 ...
 ```
 
-Multiple filter options can be used together, and only events matching all filters will be output.
+Multiple filter options can be used together, and only events matching all
+filters will be output.
 
 ## Example usage
 
@@ -207,13 +214,13 @@ docker run --rm -ti \
 Only output `chainsync.transaction` event types
 
 ```bash
-$ adder -filter-type chainsync.transaction
+adder -filter-type chainsync.transaction
 ```
 
 Only output `chainsync.rollback` and `chainsync.block` event types
 
 ```bash
-$ adder -filter-type chainsync.transaction,chainsync.block
+adder -filter-type chainsync.transaction,chainsync.block
 ```
 
 #### Filtering on asset policy
@@ -221,7 +228,8 @@ $ adder -filter-type chainsync.transaction,chainsync.block
 Only output transactions involving an asset with a particular policy ID
 
 ```bash
-$ adder -filter-type chainsync.transaction -filter-policy 13aa2accf2e1561723aa26871e071fdf32c867cff7e7d50ad470d62f
+adder -filter-type chainsync.transaction \
+  -filter-policy 13aa2accf2e1561723aa26871e071fdf32c867cff7e7d50ad470d62f
 ```
 
 #### Filtering on asset fingerprint
@@ -229,15 +237,19 @@ $ adder -filter-type chainsync.transaction -filter-policy 13aa2accf2e1561723aa26
 Only output transactions involving a particular asset
 
 ```bash
-$ adder -filter-type chainsync.transaction -filter-asset asset108xu02ckwrfc8qs9d97mgyh4kn8gdu9w8f5sxk
+adder -filter-type chainsync.transaction \
+  -filter-asset asset108xu02ckwrfc8qs9d97mgyh4kn8gdu9w8f5sxk
 ```
 
 #### Filtering on a policy ID and asset fingerprint
 
-Only output transactions involving both a particular policy ID and a particular asset (which do not need to be related)
+Only output transactions involving both a particular policy ID and a particular
+asset (which do not need to be related)
 
 ```bash
-$ adder -filter-type chainsync.transaction -filter-asset asset108xu02ckwrfc8qs9d97mgyh4kn8gdu9w8f5sxk -filter-policy 13aa2accf2e1561723aa26871e071fdf32c867cff7e7d50ad470d62f
+adder -filter-type chainsync.transaction \
+  -filter-asset asset108xu02ckwrfc8qs9d97mgyh4kn8gdu9w8f5sxk \
+  -filter-policy 13aa2accf2e1561723aa26871e071fdf32c867cff7e7d50ad470d62f
 ```
 
 #### Filtering on an address
@@ -245,7 +257,8 @@ $ adder -filter-type chainsync.transaction -filter-asset asset108xu02ckwrfc8qs9d
 Only output transactions with outputs matching a particular address
 
 ```bash
-$ adder -filter-type chainsync.transaction -filter-address addr1qyht4ja0zcn45qvyx477qlyp6j5ftu5ng0prt9608dxp6l2j2c79gy9l76sdg0xwhd7r0c0kna0tycz4y5s6mlenh8pq4jxtdy
+adder -filter-type chainsync.transaction \
+  -filter-address addr1qyht4ja0zcn45qvyx477qlyp6j5ftu5ng0prt9608dxp6l2j2c79gy9l76sdg0xwhd7r0c0kna0tycz4y5s6mlenh8pq4jxtdy
 ```
 
 #### Filtering on a stake address
@@ -253,13 +266,21 @@ $ adder -filter-type chainsync.transaction -filter-address addr1qyht4ja0zcn45qvy
 Only output transactions with outputs matching a particular stake address
 
 ```bash
-$ adder -filter-type chainsync.transaction -filter-address stake1u9f9v0z5zzlldgx58n8tklphu8mf7h4jvp2j2gddluemnssjfnkzz
+adder -filter-type chainsync.transaction \
+  -filter-address stake1u9f9v0z5zzlldgx58n8tklphu8mf7h4jvp2j2gddluemnssjfnkzz
 ```
 
 ### Push notifications
 
-The example shows how push notification output can be used with filtering options. In this example, push notifications will be sent to the block events. Push notifications will be sent to the specified project_id in the serviceAccount.json file. Please refer to https://github.com/blinklabs-io/adder-mobile for more details on how to send push notifications to adder-mobile.
+The example shows how push notification output can be used with filtering
+options. In this example, push notifications will be sent for the block events.
+Push notifications will be sent to the FCM `project_id` specified in the
+`serviceAccount.json` file. Please refer to the
+[adder-mobile README](https://github.com/blinklabs-io/adder-mobile) for more
+details on how to send push notifications to mobile.
 
 ```bash
-$ adder -filter-type chainsync.block -output push -output-push-serviceAccountFilePath /path/to/serviceAccount.json
+adder -filter-type chainsync.block \
+  -output push \
+  -output-push-serviceAccountFilePath /path/to/serviceAccount.json
 ```
