@@ -1,4 +1,4 @@
-// Copyright 2023 Blink Labs Software
+// Copyright 2024 Blink Labs Software
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -18,11 +18,12 @@ import (
 	"encoding/hex"
 	"strings"
 
+	"github.com/blinklabs-io/gouroboros/bech32"
+	"github.com/blinklabs-io/gouroboros/ledger"
+
 	"github.com/blinklabs-io/adder/event"
 	"github.com/blinklabs-io/adder/input/chainsync"
 	"github.com/blinklabs-io/adder/plugin"
-	"github.com/blinklabs-io/gouroboros/bech32"
-	"github.com/blinklabs-io/gouroboros/ledger"
 )
 
 type ChainSync struct {
@@ -179,6 +180,53 @@ func (c *ChainSync) Start() error {
 									}
 								}
 								if foundMatch {
+									break
+								}
+							}
+						}
+						if foundMatch {
+							filterMatched = true
+							break
+						}
+					}
+					// Skip the event if none of the filter values matched
+					if !filterMatched {
+						continue
+					}
+				}
+				// Check pool filter
+				if len(c.filterPoolIds) > 0 {
+					filterMatched := false
+					for _, filterPoolId := range c.filterPoolIds {
+						if filterMatched {
+							break
+						}
+						isPoolBech32 := strings.HasPrefix(filterPoolId, "pool")
+						foundMatch := false
+						for _, certificate := range v.Certificates {
+							switch certificate.(type) {
+							case *ledger.StakeDelegationCertificate:
+								cert := &ledger.StakeDelegationCertificate{}
+								b := &ledger.Blake2b224{}
+								copy(b[:], cert.PoolKeyHash[:])
+								if b.String() == filterPoolId {
+									foundMatch = true
+								} else if isPoolBech32 {
+									// lifted from gouroboros/ledger
+									convData, err := bech32.ConvertBits(certificate.Cbor(), 8, 5, true)
+									if err != nil {
+										continue
+									}
+									encoded, err := bech32.Encode("pool", convData)
+									if err != nil {
+										continue
+									}
+									if encoded == filterPoolId {
+										foundMatch = true
+									}
+								}
+								if foundMatch {
+									filterMatched = true
 									break
 								}
 							}
