@@ -204,11 +204,56 @@ func (c *ChainSync) Start() error {
 						isPoolBech32 := strings.HasPrefix(filterPoolId, "pool")
 						foundMatch := false
 						for _, certificate := range v.Certificates {
-							switch certificate.(type) {
+							switch cert := certificate.(type) {
 							case *ledger.StakeDelegationCertificate:
-								cert := &ledger.StakeDelegationCertificate{}
 								b := &ledger.Blake2b224{}
 								copy(b[:], cert.PoolKeyHash[:])
+								if b.String() == filterPoolId {
+									foundMatch = true
+								} else if isPoolBech32 {
+									// lifted from gouroboros/ledger
+									convData, err := bech32.ConvertBits(certificate.Cbor(), 8, 5, true)
+									if err != nil {
+										continue
+									}
+									encoded, err := bech32.Encode("pool", convData)
+									if err != nil {
+										continue
+									}
+									if encoded == filterPoolId {
+										foundMatch = true
+									}
+								}
+								if foundMatch {
+									filterMatched = true
+									break
+								}
+							case *ledger.PoolRetirementCertificate:
+								b := &ledger.Blake2b224{}
+								copy(b[:], cert.PoolKeyHash[:])
+								if b.String() == filterPoolId {
+									foundMatch = true
+								} else if isPoolBech32 {
+									// lifted from gouroboros/ledger
+									convData, err := bech32.ConvertBits(certificate.Cbor(), 8, 5, true)
+									if err != nil {
+										continue
+									}
+									encoded, err := bech32.Encode("pool", convData)
+									if err != nil {
+										continue
+									}
+									if encoded == filterPoolId {
+										foundMatch = true
+									}
+								}
+								if foundMatch {
+									filterMatched = true
+									break
+								}
+							case *ledger.PoolRegistrationCertificate:
+								b := &ledger.Blake2b224{}
+								copy(b[:], cert.Operator[:])
 								if b.String() == filterPoolId {
 									foundMatch = true
 								} else if isPoolBech32 {
