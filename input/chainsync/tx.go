@@ -34,7 +34,7 @@ type TransactionEvent struct {
 	Inputs          []ledger.TransactionInput  `json:"inputs"`
 	Outputs         []ledger.TransactionOutput `json:"outputs"`
 	Certificates    []ledger.Certificate       `json:"certificates"`
-	Metadata        *cbor.Value                `json:"metadata,omitempty"`
+	Metadata        *cbor.LazyValue            `json:"metadata,omitempty"`
 	Fee             uint64                     `json:"fee"`
 	TTL             uint64                     `json:"ttl,omitempty"`
 }
