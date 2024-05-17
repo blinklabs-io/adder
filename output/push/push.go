@@ -298,9 +298,13 @@ func (p *PushOutput) OutputChan() <-chan event.Event {
 // This should probably go in gouroboros module
 // extractCIP20FromMetadata extracts the CIP20 message from the transaction metadata
 // and returns it as a JSON string.
-func extractCIP20FromMetadata(metadata *cbor.Value) (string, error) {
+func extractCIP20FromMetadata(metadata *cbor.LazyValue) (string, error) {
 	if metadata == nil {
 		return "", fmt.Errorf("metadata is nil")
+	}
+
+	if _, err := metadata.Decode(); err != nil {
+		return "", fmt.Errorf("could not decode metadata: %w", err)
 	}
 
 	metadataMap, ok := metadata.Value().(map[any]any)
