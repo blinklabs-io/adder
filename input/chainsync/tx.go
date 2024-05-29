@@ -34,6 +34,7 @@ type TransactionEvent struct {
 	Inputs          []ledger.TransactionInput  `json:"inputs"`
 	Outputs         []ledger.TransactionOutput `json:"outputs"`
 	Certificates    []ledger.Certificate       `json:"certificates,omitempty"`
+	ReferenceInputs []ledger.TransactionInput  `json:"referenceInputs,omitempty"`
 	Metadata        *cbor.LazyValue            `json:"metadata,omitempty"`
 	Fee             uint64                     `json:"fee"`
 	TTL             uint64                     `json:"ttl,omitempty"`
@@ -75,6 +76,9 @@ func NewTransactionEvent(
 	}
 	if tx.Metadata() != nil {
 		evt.Metadata = tx.Metadata()
+	}
+	if tx.ReferenceInputs() != nil {
+		evt.ReferenceInputs = tx.ReferenceInputs()
 	}
 	if tx.TTL() != 0 {
 		evt.TTL = tx.TTL()
