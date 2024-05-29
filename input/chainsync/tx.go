@@ -33,7 +33,7 @@ type TransactionEvent struct {
 	TransactionCbor byteSliceJsonHex           `json:"transactionCbor,omitempty"`
 	Inputs          []ledger.TransactionInput  `json:"inputs"`
 	Outputs         []ledger.TransactionOutput `json:"outputs"`
-	Certificates    []ledger.Certificate       `json:"certificates"`
+	Certificates    []ledger.Certificate       `json:"certificates,omitempty"`
 	Metadata        *cbor.LazyValue            `json:"metadata,omitempty"`
 	Fee             uint64                     `json:"fee"`
 	TTL             uint64                     `json:"ttl,omitempty"`
@@ -65,15 +65,19 @@ func NewTransactionEvent(
 		BlockHash:    block.Hash(),
 		Inputs:       tx.Inputs(),
 		Outputs:      tx.Outputs(),
-		Certificates: tx.Certificates(),
 		Fee:          tx.Fee(),
-		TTL:          tx.TTL(),
 	}
 	if includeCbor {
 		evt.TransactionCbor = tx.Cbor()
 	}
+	if tx.Certificates() != nil {
+		evt.Certificates = tx.Certificates()
+	}
 	if tx.Metadata() != nil {
 		evt.Metadata = tx.Metadata()
+	}
+	if tx.TTL() != 0 {
+		evt.TTL = tx.TTL()
 	}
 	return evt
 }
