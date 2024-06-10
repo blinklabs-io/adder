@@ -41,21 +41,23 @@ const (
 )
 
 type WebhookOutput struct {
-	errorChan chan error
-	eventChan chan event.Event
-	logger    plugin.Logger
-	format    string
-	url       string
-	username  string
-	password  string
+	errorChan  chan error
+	eventChan  chan event.Event
+	logger     plugin.Logger
+	format     string
+	url        string
+	username   string
+	password   string
+	skipVerify bool
 }
 
 func New(options ...WebhookOptionFunc) *WebhookOutput {
 	w := &WebhookOutput{
-		errorChan: make(chan error),
-		eventChan: make(chan event.Event, 10),
-		format:    "adder",
-		url:       "http://localhost:3000",
+		errorChan:  make(chan error),
+		eventChan:  make(chan event.Event, 10),
+		format:     "adder",
+		url:        "http://localhost:3000",
+		skipVerify: false,
 	}
 	for _, option := range options {
 		option(w)
@@ -270,7 +272,7 @@ func (w *WebhookOutput) SendWebhook(e *event.Event) error {
 		IdleConnTimeout:       defaultTransport.IdleConnTimeout,
 		ExpectContinueTimeout: defaultTransport.ExpectContinueTimeout,
 		TLSHandshakeTimeout:   defaultTransport.TLSHandshakeTimeout,
-		TLSClientConfig:       &tls.Config{InsecureSkipVerify: true},
+		TLSClientConfig:       &tls.Config{InsecureSkipVerify: w.skipVerify},
 	}
 	client := &http.Client{Transport: customTransport}
 	// Send payload
