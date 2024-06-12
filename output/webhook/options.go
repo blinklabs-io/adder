@@ -28,9 +28,10 @@ func WithLogger(logger plugin.Logger) WebhookOptionFunc {
 }
 
 // WithUrl specifies the webhook URL
-func WithUrl(url string) WebhookOptionFunc {
+func WithUrl(url string, skipVerify bool) WebhookOptionFunc {
 	return func(o *WebhookOutput) {
 		o.url = url
+		o.skipVerify = skipVerify
 	}
 }
 

@@ -20,10 +20,11 @@ import (
 )
 
 var cmdlineOptions struct {
-	format   string
-	url      string
-	username string
-	password string
+	format     string
+	url        string
+	username   string
+	password   string
+	skipVerify bool
 }
 
 func init() {
@@ -49,6 +50,13 @@ func init() {
 					Dest:         &(cmdlineOptions.url),
 				},
 				{
+					Name:         "tls-skip-verify",
+					Type:         plugin.PluginOptionTypeBool,
+					Description:  "skip tls verification (for self-signed certs)",
+					DefaultValue: false,
+					Dest:         &(cmdlineOptions.skipVerify),
+				},
+				{
 					Name:         "username",
 					Type:         plugin.PluginOptionTypeString,
 					Description:  "specifies the username for basic auth",
@@ -72,7 +80,7 @@ func NewFromCmdlineOptions() plugin.Plugin {
 		WithLogger(
 			logging.GetLogger().With("plugin", "output.webhook"),
 		),
-		WithUrl(cmdlineOptions.url),
+		WithUrl(cmdlineOptions.url, cmdlineOptions.skipVerify),
 		WithBasicAuth(cmdlineOptions.username, cmdlineOptions.password),
 		WithFormat(cmdlineOptions.format),
 	)
