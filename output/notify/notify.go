@@ -1,4 +1,4 @@
-// Copyright 2023 Blink Labs Software
+// Copyright 2024 Blink Labs Software
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -15,13 +15,19 @@
 package notify
 
 import (
+	_ "embed"
 	"fmt"
+	"os"
+
+	"github.com/gen2brain/beeep"
 
 	"github.com/blinklabs-io/adder/event"
 	"github.com/blinklabs-io/adder/input/chainsync"
 	"github.com/blinklabs-io/adder/plugin"
-	"github.com/gen2brain/beeep"
 )
+
+//go:embed icon.png
+var icon []byte
 
 type NotifyOutput struct {
 	errorChan chan error
@@ -44,6 +50,21 @@ func New(options ...NotifyOptionFunc) *NotifyOutput {
 
 // Start the notify output
 func (n *NotifyOutput) Start() error {
+	// Write our icon asset
+	userCacheDir, err := os.UserCacheDir()
+	if err != nil {
+		return err
+	}
+	if _, err := os.Stat(fmt.Sprintf("%s/%s", userCacheDir, "adder")); os.IsNotExist(err) {
+		err = os.MkdirAll(fmt.Sprintf("%s/%s", userCacheDir, "adder"), os.ModePerm)
+		if err != nil {
+			panic(err)
+		}
+	}
+	filename := fmt.Sprintf("%s/%s/%s", userCacheDir, "adder", "icon.png")
+	if err := os.WriteFile(filename, icon, 0666); err != nil {
+		panic(err)
+	}
 	go func() {
 		for {
 			evt, ok := <-n.eventChan
@@ -73,7 +94,7 @@ func (n *NotifyOutput) Start() error {
 						be.TransactionCount,
 						be.BlockHash,
 					),
-					"assets/adder-icon.png",
+					filename,
 				)
 				if err != nil {
 					panic(err)
@@ -91,7 +112,7 @@ func (n *NotifyOutput) Start() error {
 						re.SlotNumber,
 						re.BlockHash,
 					),
-					"assets/adder-icon.png",
+					filename,
 				)
 				if err != nil {
 					panic(err)
@@ -119,7 +140,7 @@ func (n *NotifyOutput) Start() error {
 						te.Fee,
 						tc.TransactionHash,
 					),
-					"assets/adder-icon.png",
+					filename,
 				)
 				if err != nil {
 					panic(err)
@@ -128,7 +149,7 @@ func (n *NotifyOutput) Start() error {
 				err := beeep.Notify(
 					n.title,
 					fmt.Sprintf("New Event!\nEvent: %v", evt),
-					"assets/adder-icon.png",
+					filename,
 				)
 				if err != nil {
 					panic(err)
