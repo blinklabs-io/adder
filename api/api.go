@@ -85,8 +85,8 @@ func (a *APIv1) Engine() *gin.Engine {
 //	@contact.url	https://blinklabs.io
 //	@contact.email	support@blinklabs.io
 
-//	@license.name	Apache 2.0
-//	@license.url	http://www.apache.org/licenses/LICENSE-2.0.html
+// @license.name	Apache 2.0
+// @license.url	http://www.apache.org/licenses/LICENSE-2.0.html
 func (a *APIv1) Start() error {
 	address := fmt.Sprintf("%s:%d", a.Host, a.Port)
 	// Use buffered channel to not block goroutine
