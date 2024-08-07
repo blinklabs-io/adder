@@ -32,30 +32,33 @@ import (
 const (
 	// Size of cache for recent chainsync cursors
 	cursorCacheSize = 20
+
+	maxAutoReconnectDelay = 60 * time.Second
 )
 
 type ChainSync struct {
-	oConn            *ouroboros.Connection
-	logger           plugin.Logger
-	network          string
-	networkMagic     uint32
-	address          string
-	socketPath       string
-	ntcTcp           bool
-	bulkMode         bool
-	intersectTip     bool
-	intersectPoints  []ocommon.Point
-	includeCbor      bool
-	autoReconnect    bool
-	statusUpdateFunc StatusUpdateFunc
-	status           *ChainSyncStatus
-	errorChan        chan error
-	eventChan        chan event.Event
-	bulkRangeStart   ocommon.Point
-	bulkRangeEnd     ocommon.Point
-	cursorCache      []ocommon.Point
-	dialAddress      string
-	dialFamily       string
+	oConn              *ouroboros.Connection
+	logger             plugin.Logger
+	network            string
+	networkMagic       uint32
+	address            string
+	socketPath         string
+	ntcTcp             bool
+	bulkMode           bool
+	intersectTip       bool
+	intersectPoints    []ocommon.Point
+	includeCbor        bool
+	autoReconnect      bool
+	autoReconnectDelay time.Duration
+	statusUpdateFunc   StatusUpdateFunc
+	status             *ChainSyncStatus
+	errorChan          chan error
+	eventChan          chan event.Event
+	bulkRangeStart     ocommon.Point
+	bulkRangeEnd       ocommon.Point
+	cursorCache        []ocommon.Point
+	dialAddress        string
+	dialFamily         string
 }
 
 type ChainSyncStatus struct {
@@ -220,10 +223,20 @@ func (c *ChainSync) setupConnection() error {
 		err, ok := <-c.oConn.ErrorChan()
 		if ok {
 			if c.autoReconnect {
+				c.autoReconnectDelay = 0
 				if c.logger != nil {
 					c.logger.Infof("reconnecting to %s due to error: %s", c.dialAddress, err)
 				}
 				for {
+					if c.autoReconnectDelay > 0 {
+						c.logger.Infof("waiting %s to reconnect", c.autoReconnectDelay)
+						time.Sleep(c.autoReconnectDelay)
+						// Double current reconnect delay up to maximum
+						c.autoReconnectDelay = min(c.autoReconnectDelay*2, maxAutoReconnectDelay)
+					} else {
+						// Set initial reconnect delay
+						c.autoReconnectDelay = 1 * time.Second
+					}
 					// Shutdown current connection
 					if err := c.oConn.Close(); err != nil {
 						if c.logger != nil {
