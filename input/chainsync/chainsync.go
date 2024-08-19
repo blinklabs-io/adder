@@ -309,7 +309,7 @@ func (c *ChainSync) handleRollForward(
 	return nil
 }
 
-func (c *ChainSync) handleBlockFetchBlock(ctx blockfetch.CallbackContext, block ledger.Block) error {
+func (c *ChainSync) handleBlockFetchBlock(ctx blockfetch.CallbackContext, blockType uint, block ledger.Block) error {
 	blockEvt := event.New(
 		"chainsync.block",
 		time.Now(),
