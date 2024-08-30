@@ -62,11 +62,11 @@ func NewTransactionEvent(
 	includeCbor bool,
 ) TransactionEvent {
 	evt := TransactionEvent{
-		Transaction:  tx,
-		BlockHash:    block.Hash(),
-		Inputs:       tx.Inputs(),
-		Outputs:      tx.Outputs(),
-		Fee:          tx.Fee(),
+		Transaction: tx,
+		BlockHash:   block.Hash(),
+		Inputs:      tx.Inputs(),
+		Outputs:     tx.Outputs(),
+		Fee:         tx.Fee(),
 	}
 	if includeCbor {
 		evt.TransactionCbor = tx.Cbor()

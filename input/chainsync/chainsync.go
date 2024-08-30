@@ -225,14 +225,24 @@ func (c *ChainSync) setupConnection() error {
 			if c.autoReconnect {
 				c.autoReconnectDelay = 0
 				if c.logger != nil {
-					c.logger.Infof("reconnecting to %s due to error: %s", c.dialAddress, err)
+					c.logger.Infof(
+						"reconnecting to %s due to error: %s",
+						c.dialAddress,
+						err,
+					)
 				}
 				for {
 					if c.autoReconnectDelay > 0 {
-						c.logger.Infof("waiting %s to reconnect", c.autoReconnectDelay)
+						c.logger.Infof(
+							"waiting %s to reconnect",
+							c.autoReconnectDelay,
+						)
 						time.Sleep(c.autoReconnectDelay)
 						// Double current reconnect delay up to maximum
-						c.autoReconnectDelay = min(c.autoReconnectDelay*2, maxAutoReconnectDelay)
+						c.autoReconnectDelay = min(
+							c.autoReconnectDelay*2,
+							maxAutoReconnectDelay,
+						)
 					} else {
 						// Set initial reconnect delay
 						c.autoReconnectDelay = 1 * time.Second
@@ -240,7 +250,10 @@ func (c *ChainSync) setupConnection() error {
 					// Shutdown current connection
 					if err := c.oConn.Close(); err != nil {
 						if c.logger != nil {
-							c.logger.Warnf("failed to properly close connection: %s", err)
+							c.logger.Warnf(
+								"failed to properly close connection: %s",
+								err,
+							)
 						}
 					}
 					// Set the intersect points from the cursor cache
@@ -250,7 +263,11 @@ func (c *ChainSync) setupConnection() error {
 					// Restart the connection
 					if err := c.Start(); err != nil {
 						if c.logger != nil {
-							c.logger.Infof("reconnecting to %s due to error: %s", c.dialAddress, err)
+							c.logger.Infof(
+								"reconnecting to %s due to error: %s",
+								c.dialAddress,
+								err,
+							)
 						}
 						continue
 					}
@@ -309,7 +326,11 @@ func (c *ChainSync) handleRollForward(
 	return nil
 }
 
-func (c *ChainSync) handleBlockFetchBlock(ctx blockfetch.CallbackContext, blockType uint, block ledger.Block) error {
+func (c *ChainSync) handleBlockFetchBlock(
+	ctx blockfetch.CallbackContext,
+	blockType uint,
+	block ledger.Block,
+) error {
 	blockEvt := event.New(
 		"chainsync.block",
 		time.Now(),
@@ -356,7 +377,10 @@ func (c *ChainSync) updateStatus(
 ) {
 	// Update cursor cache
 	blockHashBytes, _ := hex.DecodeString(blockHash)
-	c.cursorCache = append(c.cursorCache, ocommon.Point{Slot: slotNumber, Hash: blockHashBytes})
+	c.cursorCache = append(
+		c.cursorCache,
+		ocommon.Point{Slot: slotNumber, Hash: blockHashBytes},
+	)
 	if len(c.cursorCache) > cursorCacheSize {
 		c.cursorCache = c.cursorCache[len(c.cursorCache)-cursorCacheSize:]
 	}

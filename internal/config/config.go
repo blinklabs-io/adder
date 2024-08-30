@@ -43,7 +43,7 @@ type Config struct {
 
 type ApiConfig struct {
 	ListenAddress string `yaml:"address" envconfig:"API_ADDRESS"`
-	ListenPort    uint   `yaml:"port" envconfig:"API_PORT"`
+	ListenPort    uint   `yaml:"port"    envconfig:"API_PORT"`
 }
 
 type LoggingConfig struct {
