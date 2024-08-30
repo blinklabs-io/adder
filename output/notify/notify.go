@@ -55,8 +55,13 @@ func (n *NotifyOutput) Start() error {
 	if err != nil {
 		return err
 	}
-	if _, err := os.Stat(fmt.Sprintf("%s/%s", userCacheDir, "adder")); os.IsNotExist(err) {
-		err = os.MkdirAll(fmt.Sprintf("%s/%s", userCacheDir, "adder"), os.ModePerm)
+	if _, err := os.Stat(fmt.Sprintf("%s/%s", userCacheDir, "adder")); os.IsNotExist(
+		err,
+	) {
+		err = os.MkdirAll(
+			fmt.Sprintf("%s/%s", userCacheDir, "adder"),
+			os.ModePerm,
+		)
 		if err != nil {
 			panic(err)
 		}

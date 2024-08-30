@@ -28,6 +28,9 @@ clean:
 format: mod-tidy
 	go fmt ./...
 
+golines:
+	golines -w --ignore-generated --chain-split-dots --max-len=80 --reformat-tags .
+
 swagger:
 	swag f -g api.go -d api,output
 	swag i -g api.go -d api,output
