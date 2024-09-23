@@ -60,14 +60,15 @@ func New(options ...PushOptionFunc) *PushOutput {
 	}
 
 	if err := p.GetProjectId(); err != nil {
-		logging.GetLogger().Fatalf("Failed to get project ID: %v", err)
+		logging.GetLogger().Error(fmt.Sprintf("Failed to get project ID: %v", err))
+		os.Exit(1)
 	}
 	return p
 }
 
 func (p *PushOutput) Start() error {
 	logger := logging.GetLogger()
-	logger.Infof("starting push notification server")
+	logger.Info("starting push notification server")
 	go func() {
 		for {
 			evt, ok := <-p.eventChan
@@ -93,13 +94,13 @@ func (p *PushOutput) Start() error {
 
 				be := payload.(chainsync.BlockEvent)
 				bc := context.(chainsync.BlockContext)
-				fmt.Println("Adder")
-				fmt.Printf(
+				logger.Debug("Adder")
+				logger.Debug(fmt.Sprintf(
 					"New Block!\nBlockNumber: %d, SlotNumber: %d\nHash: %s",
 					bc.BlockNumber,
 					bc.SlotNumber,
 					be.BlockHash,
-				)
+				))
 
 				// Create notification message
 				title := "Adder"
@@ -120,11 +121,11 @@ func (p *PushOutput) Start() error {
 				}
 
 				re := payload.(chainsync.RollbackEvent)
-				fmt.Println("Adder")
-				fmt.Printf("Rollback!\nSlotNumber: %d\nBlockHash: %s",
+				logger.Debug("Adder")
+				logger.Debug(fmt.Sprintf("Rollback!\nSlotNumber: %d\nBlockHash: %s",
 					re.SlotNumber,
 					re.BlockHash,
-				)
+				))
 			case "chainsync.transaction":
 				payload := evt.Payload
 				if payload == nil {
@@ -204,8 +205,7 @@ func (p *PushOutput) processFcmNotifications(title, body string) {
 
 	// If no FCM tokens exist, log and exit
 	if len(p.fcmTokens) == 0 {
-		logging.GetLogger().
-			Warnln("No FCM tokens found. Skipping notification.")
+		logging.GetLogger().Info("No FCM tokens found. Skipping notification.")
 		return
 	}
 
@@ -217,33 +217,32 @@ func (p *PushOutput) processFcmNotifications(title, body string) {
 		)
 
 		if err := fcm.Send(p.accessToken, p.projectID, msg); err != nil {
-			logging.GetLogger().
-				Errorf("Failed to send message to token %s: %v", fcmToken, err)
+			logging.GetLogger().Error(fmt.Sprintf("Failed to send message to token %s: %v", fcmToken, err))
 			continue
 		}
-		logging.GetLogger().
-			Infof("Message sent successfully to token %s!", fcmToken)
+		logging.GetLogger().Info(fmt.Sprintf("Message sent successfully to token %s!", fcmToken))
 	}
 }
 
 func (p *PushOutput) GetAccessToken() error {
 	data, err := os.ReadFile(p.serviceAccountFilePath)
 	if err != nil {
-		logging.GetLogger().
-			Fatalf("Failed to read the credential file: %v", err)
+		logging.GetLogger().Error(fmt.Sprintf("Failed to read the credential file: %v", err))
+		os.Exit(1)
 		return err
 	}
 
 	conf, err := google.JWTConfigFromJSON(data, p.accessTokenUrl)
 	if err != nil {
-		logging.GetLogger().
-			Fatalf("Failed to parse the credential file: %v", err)
+		logging.GetLogger().Error(fmt.Sprintf("Failed to parse the credential file: %v", err))
+		os.Exit(1)
 		return err
 	}
 
 	token, err := conf.TokenSource(context.Background()).Token()
 	if err != nil {
-		logging.GetLogger().Fatalf("Failed to get token: %v", err)
+		logging.GetLogger().Error(fmt.Sprintf("Failed to get token: %v", err))
+		os.Exit(1)
 		return err
 	}
 
@@ -257,15 +256,16 @@ func (p *PushOutput) GetProjectId() error {
 	data, err := os.ReadFile(p.serviceAccountFilePath)
 	if err != nil {
 		logging.GetLogger().
-			Fatalf("Failed to read the credential file: %v", err)
+			Error(fmt.Sprintf("Failed to read the credential file: %v", err))
+		os.Exit(1)
 		return err
 	}
 
 	// Get project ID from file
 	var v map[string]any
 	if err := json.Unmarshal(data, &v); err != nil {
-		logging.GetLogger().
-			Fatalf("Failed to parse the credential file: %v", err)
+		logging.GetLogger().Error(fmt.Sprintf("Failed to parse the credential file: %v", err))
+		os.Exit(1)
 		return err
 	}
 	p.projectID = v["project_id"].(string)

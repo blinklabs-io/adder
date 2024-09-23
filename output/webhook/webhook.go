@@ -68,7 +68,7 @@ func New(options ...WebhookOptionFunc) *WebhookOutput {
 // Start the webhook output
 func (w *WebhookOutput) Start() error {
 	logger := logging.GetLogger()
-	logger.Infof("starting webhook server")
+	logger.Info("starting webhook server")
 	go func() {
 		for {
 			evt, ok := <-w.eventChan
@@ -97,13 +97,13 @@ func (w *WebhookOutput) Start() error {
 				te := payload.(chainsync.TransactionEvent)
 				evt.Payload = te
 			default:
-				logger.Errorf("unknown event type: %s", evt.Type)
+				logger.Error(fmt.Sprintf("unknown event type: %s", evt.Type))
 				return
 			}
 			// TODO: error handle
 			err := w.SendWebhook(&evt)
 			if err != nil {
-				logger.Errorf("ERROR: %s", err)
+				logger.Error(fmt.Sprintf("ERROR: %s", err))
 			}
 		}
 	}()
@@ -239,7 +239,7 @@ func getBaseURL(networkMagic uint32) string {
 
 func (w *WebhookOutput) SendWebhook(e *event.Event) error {
 	logger := logging.GetLogger()
-	logger.Infof("sending event %s to %s", e.Type, w.url)
+	logger.Info(fmt.Sprintf("sending event %s to %s", e.Type, w.url))
 	data := formatWebhook(e, w.format)
 	// Setup request
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -286,13 +286,13 @@ func (w *WebhookOutput) SendWebhook(e *event.Event) error {
 	}
 	defer resp.Body.Close()
 
-	logger.Infof("sent: %s, payload: %s, body: %s, response: %s, status: %d",
+	logger.Info(fmt.Sprintf("sent: %s, payload: %s, body: %s, response: %s, status: %d",
 		w.url,
 		string(data),
 		string(respBody),
 		resp.Status,
 		resp.StatusCode,
-	)
+	))
 	return nil
 }
 

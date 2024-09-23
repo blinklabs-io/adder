@@ -3,6 +3,7 @@ package api_test
 import (
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 
 	"github.com/blinklabs-io/adder/api"
@@ -20,13 +21,15 @@ func TestRouteRegistration(t *testing.T) {
 	if registrar, ok := interface{}(pushPlugin).(api.APIRouteRegistrar); ok {
 		registrar.RegisterRoutes()
 	} else {
-		t.Fatal("pushPlugin does NOT implement APIRouteRegistrar")
+		t.Error("pushPlugin does NOT implement APIRouteRegistrar")
+		os.Exit(1)
 	}
 
 	// Create a test request to one of the registered routes
 	req, err := http.NewRequest(http.MethodGet, "/v1/fcm/someToken", nil)
 	if err != nil {
-		t.Fatal(err)
+		t.Error(err)
+		os.Exit(1)
 	}
 
 	// Record the response

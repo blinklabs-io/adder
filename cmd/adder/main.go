@@ -86,18 +86,10 @@ func main() {
 	// Configure logging
 	logging.Configure()
 	logger := logging.GetLogger()
-	// Sync logger on exit
-	defer func() {
-		if err := logger.Sync(); err != nil {
-			// We don't actually care about the error here, but we have to do something
-			// to appease the linter
-			return
-		}
-	}()
 
 	// Start debug listener
 	if cfg.Debug.ListenPort > 0 {
-		logger.Infof(
+		logger.Info(
 			"starting debug listener on %s:%d",
 			cfg.Debug.ListenAddress,
 			cfg.Debug.ListenPort,
@@ -112,7 +104,8 @@ func main() {
 				nil,
 			)
 			if err != nil {
-				logger.Fatalf("failed to start debug listener: %s", err)
+				logger.Error(fmt.Sprintf("failed to start debug listener: %s", err))
+				os.Exit(1)
 			}
 		}()
 	}
@@ -129,7 +122,8 @@ func main() {
 	// Configure input
 	input := plugin.GetPlugin(plugin.PluginTypeInput, cfg.Input)
 	if input == nil {
-		logger.Fatalf("unknown input: %s", cfg.Input)
+		logger.Error(fmt.Sprintf("unknown input: %s", cfg.Input))
+		os.Exit(1)
 	}
 	pipe.AddInput(input)
 
@@ -142,7 +136,8 @@ func main() {
 	// Configure output
 	output := plugin.GetPlugin(plugin.PluginTypeOutput, cfg.Output)
 	if output == nil {
-		logger.Fatalf("unknown output: %s", cfg.Output)
+		logger.Error(fmt.Sprintf("unknown output: %s", cfg.Output))
+		os.Exit(1)
 	}
 	// Check if output plugin implements APIRouteRegistrar
 	if registrar, ok := interface{}(output).(api.APIRouteRegistrar); ok {
@@ -152,15 +147,18 @@ func main() {
 
 	// Start API after plugins are configured
 	if err := apiInstance.Start(); err != nil {
-		logger.Fatalf("failed to start API: %s", err)
+		logger.Error(fmt.Sprintf("failed to start API: %s", err))
+		os.Exit(1)
 	}
 
 	// Start pipeline and wait for error
 	if err := pipe.Start(); err != nil {
-		logger.Fatalf("failed to start pipeline: %s", err)
+		logger.Error(fmt.Sprintf("failed to start pipeline: %s", err))
+		os.Exit(1)
 	}
 	err, ok := <-pipe.ErrorChan()
 	if ok {
-		logger.Fatalf("pipeline failed: %s", err)
+		logger.Error(fmt.Sprintf("pipeline failed: %s", err))
+		os.Exit(1)
 	}
 }
