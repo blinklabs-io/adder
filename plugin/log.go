@@ -1,10 +1,13 @@
 package plugin
 
-// Logger provides a logging interface for plugins. This happens to match the interface of uber-go/zap
+// Logger provides a logging interface for plugins.
 type Logger interface {
-	Infof(string, ...any)
-	Warnf(string, ...any)
-	Debugf(string, ...any)
-	Errorf(string, ...any)
-	Fatalf(string, ...any)
+	Info(string, ...any)
+	Warn(string, ...any)
+	Debug(string, ...any)
+	Error(string, ...any)
+
+	// Deprecated
+	// Fatal(string, ...any) in favor of Error
+	// With slog Fatal is replaced with Error and os.Exit(1)
 }

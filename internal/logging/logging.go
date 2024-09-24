@@ -15,59 +15,49 @@
 package logging
 
 import (
-	"log"
+	"log/slog"
+	"os"
 	"time"
 
 	"github.com/blinklabs-io/adder/internal/config"
-
-	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
 )
 
-type Logger = zap.SugaredLogger
-
-var globalLogger *Logger
+var globalLogger *slog.Logger
 
 func Configure() {
 	cfg := config.GetConfig()
-	// Build our custom logging config
-	loggerConfig := zap.NewProductionConfig()
-	// Change timestamp key name
-	loggerConfig.EncoderConfig.TimeKey = "timestamp"
-	// Use a human readable time format
-	loggerConfig.EncoderConfig.EncodeTime = zapcore.TimeEncoderOfLayout(
-		time.RFC3339,
-	)
-
-	// Set level
-	if cfg.Logging.Level != "" {
-		level, err := zapcore.ParseLevel(cfg.Logging.Level)
-		if err != nil {
-			log.Fatalf("error configuring logger: %s", err)
-		}
-		loggerConfig.Level.SetLevel(level)
+	var level slog.Level
+	switch cfg.Logging.Level {
+	case "debug":
+		level = slog.LevelDebug
+	case "info":
+		level = slog.LevelInfo
+	case "warn":
+		level = slog.LevelWarn
+	case "error":
+		level = slog.LevelError
+	default:
+		level = slog.LevelInfo
 	}
 
-	// Create the logger
-	l, err := loggerConfig.Build()
-	if err != nil {
-		log.Fatal(err)
-	}
+	handler := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+		ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
+			if a.Key == slog.TimeKey {
+				// Format the time attribute to use RFC3339 or your custom format
+				// Rename the time key to timestamp
+				return slog.String("timestamp", a.Value.Time().Format(time.RFC3339))
+			}
+			return a
+		},
+		Level: level,
+	})
+	globalLogger = slog.New(handler).With("component", "main")
 
-	// Store the "sugared" version of the logger
-	globalLogger = l.Sugar()
 }
 
-func GetLogger() *zap.SugaredLogger {
+func GetLogger() *slog.Logger {
+	if globalLogger == nil {
+		Configure()
+	}
 	return globalLogger
-}
-
-func GetDesugaredLogger() *zap.Logger {
-	return globalLogger.Desugar()
-}
-
-func GetAccessLogger() *zap.Logger {
-	return globalLogger.Desugar().
-		With(zap.String("type", "access")).
-		WithOptions(zap.WithCaller(false))
 }

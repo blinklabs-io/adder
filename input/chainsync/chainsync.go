@@ -216,7 +216,7 @@ func (c *ChainSync) setupConnection() error {
 		return err
 	}
 	if c.logger != nil {
-		c.logger.Infof("connected to node at %s", c.dialAddress)
+		c.logger.Info(fmt.Sprintf("connected to node at %s", c.dialAddress))
 	}
 	// Start async error handler
 	go func() {
@@ -225,18 +225,18 @@ func (c *ChainSync) setupConnection() error {
 			if c.autoReconnect {
 				c.autoReconnectDelay = 0
 				if c.logger != nil {
-					c.logger.Infof(
+					c.logger.Info(fmt.Sprintf(
 						"reconnecting to %s due to error: %s",
 						c.dialAddress,
 						err,
-					)
+					))
 				}
 				for {
 					if c.autoReconnectDelay > 0 {
-						c.logger.Infof(
+						c.logger.Info(fmt.Sprintf(
 							"waiting %s to reconnect",
 							c.autoReconnectDelay,
-						)
+						))
 						time.Sleep(c.autoReconnectDelay)
 						// Double current reconnect delay up to maximum
 						c.autoReconnectDelay = min(
@@ -250,10 +250,10 @@ func (c *ChainSync) setupConnection() error {
 					// Shutdown current connection
 					if err := c.oConn.Close(); err != nil {
 						if c.logger != nil {
-							c.logger.Warnf(
+							c.logger.Warn(fmt.Sprintf(
 								"failed to properly close connection: %s",
 								err,
-							)
+							))
 						}
 					}
 					// Set the intersect points from the cursor cache
@@ -263,11 +263,11 @@ func (c *ChainSync) setupConnection() error {
 					// Restart the connection
 					if err := c.Start(); err != nil {
 						if c.logger != nil {
-							c.logger.Infof(
+							c.logger.Info(fmt.Sprintf(
 								"reconnecting to %s due to error: %s",
 								c.dialAddress,
 								err,
-							)
+							))
 						}
 						continue
 					}

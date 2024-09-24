@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 
 	"github.com/blinklabs-io/adder/internal/logging"
 )
@@ -45,7 +46,8 @@ func WithNotification(title string, body string) MessageOption {
 
 func NewMessage(token string, opts ...MessageOption) *Message {
 	if token == "" {
-		logging.GetLogger().Fatalf("Token is mandatory for FCM message")
+		logging.GetLogger().Error("Token is mandatory for FCM message")
+		os.Exit(1)
 	}
 
 	msg := &Message{

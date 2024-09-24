@@ -15,6 +15,8 @@
 package log
 
 import (
+	"log/slog"
+
 	"github.com/blinklabs-io/adder/event"
 	"github.com/blinklabs-io/adder/internal/logging"
 	"github.com/blinklabs-io/adder/plugin"
@@ -24,7 +26,7 @@ type LogOutput struct {
 	errorChan    chan error
 	eventChan    chan event.Event
 	logger       plugin.Logger
-	outputLogger *logging.Logger
+	outputLogger *slog.Logger
 	level        string
 }
 
@@ -40,16 +42,13 @@ func New(options ...LogOptionFunc) *LogOutput {
 	if l.logger == nil {
 		l.logger = logging.GetLogger()
 	}
-	// Determine if we can use the provided logger or need our own
-	// This is necessary because this plugin uses logger functions that aren't part
-	// of the plugin.Logger interface
-	switch v := l.logger.(type) {
-	case *logging.Logger:
-		l.outputLogger = v
-	default:
-		l.outputLogger = logging.GetLogger()
+
+	// Use the provided *slog.Logger if available, otherwise fall back to global logger
+	if providedLogger, ok := l.logger.(*slog.Logger); ok {
+		l.outputLogger = providedLogger.With("type", "event")
+	} else {
+		l.outputLogger = logging.GetLogger().With("type", "event")
 	}
-	l.outputLogger = l.outputLogger.With("type", "event")
 	return l
 }
 
@@ -64,14 +63,14 @@ func (l *LogOutput) Start() error {
 			}
 			switch l.level {
 			case "info":
-				l.outputLogger.Infow("", "event", evt)
+				l.outputLogger.Info("", "event", evt)
 			case "warn":
-				l.outputLogger.Warnw("", "event", evt)
+				l.outputLogger.Warn("", "event", evt)
 			case "error":
-				l.outputLogger.Errorw("", "event", evt)
+				l.outputLogger.Error("", "event", evt)
 			default:
 				// Use INFO level if log level isn't recognized
-				l.outputLogger.Infow("", "event", evt)
+				l.outputLogger.Info("", "event", evt)
 			}
 		}
 	}()
