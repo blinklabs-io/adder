@@ -38,6 +38,7 @@ type TransactionEvent struct {
 	Metadata        *cbor.LazyValue            `json:"metadata,omitempty"`
 	Fee             uint64                     `json:"fee"`
 	TTL             uint64                     `json:"ttl,omitempty"`
+	ResolvedInputs  []ledger.TransactionOutput `json:"resolved_inputs,omitempty"`
 }
 
 func NewTransactionContext(
@@ -60,13 +61,15 @@ func NewTransactionEvent(
 	block ledger.Block,
 	tx ledger.Transaction,
 	includeCbor bool,
+	resolvedInputs []ledger.TransactionOutput,
 ) TransactionEvent {
 	evt := TransactionEvent{
-		Transaction: tx,
-		BlockHash:   block.Hash(),
-		Inputs:      tx.Inputs(),
-		Outputs:     tx.Outputs(),
-		Fee:         tx.Fee(),
+		Transaction:    tx,
+		BlockHash:      block.Hash(),
+		Inputs:         tx.Inputs(),
+		Outputs:        tx.Outputs(),
+		Fee:            tx.Fee(),
+		ResolvedInputs: resolvedInputs,
 	}
 	if includeCbor {
 		evt.TransactionCbor = tx.Cbor()
