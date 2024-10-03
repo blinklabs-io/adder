@@ -36,6 +36,7 @@ var cmdlineOptions struct {
 	intersectPoint string
 	includeCbor    bool
 	autoReconnect  bool
+	kupoUrl        string
 }
 
 func init() {
@@ -118,6 +119,13 @@ func init() {
 					DefaultValue: true,
 					Dest:         &(cmdlineOptions.autoReconnect),
 				},
+				{
+					Name:         "kupo-url",
+					Type:         plugin.PluginOptionTypeString,
+					Description:  "kupo-url address",
+					DefaultValue: "",
+					Dest:         &(cmdlineOptions.kupoUrl),
+				},
 			},
 		},
 	)
@@ -136,6 +144,7 @@ func NewFromCmdlineOptions() plugin.Plugin {
 		WithBulkMode(cmdlineOptions.bulkMode),
 		WithIncludeCbor(cmdlineOptions.includeCbor),
 		WithAutoReconnect(cmdlineOptions.autoReconnect),
+		WithKupoUrl(cmdlineOptions.kupoUrl),
 	}
 	if cmdlineOptions.intersectPoint != "" {
 		intersectPoints := []ocommon.Point{}
