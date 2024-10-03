@@ -15,13 +15,21 @@
 package chainsync
 
 import (
+	"context"
 	"encoding/hex"
 	"fmt"
 	"time"
 
+	"github.com/Salvionied/apollo/serialization/MultiAsset"
+	"github.com/Salvionied/apollo/serialization/TransactionInput"
+	"github.com/Salvionied/apollo/serialization/TransactionOutput"
+	"github.com/Salvionied/apollo/serialization/UTxO"
+	"github.com/Salvionied/apollo/serialization/Value"
+	"github.com/SundaeSwap-finance/kugo"
 	"github.com/blinklabs-io/adder/event"
 	"github.com/blinklabs-io/adder/plugin"
 
+	serAddress "github.com/Salvionied/apollo/serialization/Address"
 	ouroboros "github.com/blinklabs-io/gouroboros"
 	"github.com/blinklabs-io/gouroboros/ledger"
 	"github.com/blinklabs-io/gouroboros/protocol/blockfetch"
@@ -59,6 +67,7 @@ type ChainSync struct {
 	cursorCache        []ocommon.Point
 	dialAddress        string
 	dialFamily         string
+	kupoUrl            string
 }
 
 type ChainSyncStatus struct {
@@ -318,6 +327,32 @@ func (c *ChainSync) handleRollForward(
 		blockEvt := event.New("chainsync.block", time.Now(), NewBlockHeaderContext(v), NewBlockEvent(block, c.includeCbor))
 		c.eventChan <- blockEvt
 		for t, transaction := range block.Transactions() {
+			// Use Kupo client to resolve inputs if it is available
+			if c.kupoUrl != "" {
+				k, err := getKupoClient(c)
+				if err != nil {
+					return fmt.Errorf("failed to get Kupo client: %w", err)
+				}
+				matches, err := k.Matches(
+					context.Background(),
+					kugo.Pattern(c.address),
+				)
+				if err != nil {
+					return fmt.Errorf("failed to resolve inputs with Kupo: %w", err)
+				}
+
+				resolvedInputs := []UTxO.UTxO{}
+				for _, match := range matches {
+					// TODO - finish kupoMatchToApolloUtxo
+					tmpUtxo, err := kupoMatchToApolloUtxo(match)
+					if err != nil {
+						return fmt.Errorf("failed to convert Kupo match to Apollo UTxO: %w", err)
+					}
+					// TODO - add resolvedInputs to the transaction
+					resolvedInputs = append(resolvedInputs, tmpUtxo)
+				}
+
+			}
 			txEvt := event.New("chainsync.transaction", time.Now(), NewTransactionContext(block, transaction, uint32(t), c.networkMagic), NewTransactionEvent(block, transaction, c.includeCbor))
 			c.eventChan <- txEvt
 		}
@@ -402,4 +437,40 @@ func (c *ChainSync) updateStatus(
 	if c.statusUpdateFunc != nil {
 		c.statusUpdateFunc(*(c.status))
 	}
+}
+
+func getKupoClient(c *ChainSync) (*kugo.Client, error) {
+	k := kugo.New(kugo.WithEndpoint(c.kupoUrl))
+	return k, nil
+}
+
+func kupoMatchToApolloUtxo(match kugo.Match) (UTxO.UTxO, error) {
+	serAddr, _ := serAddress.DecodeAddress(match.Address)
+	txIdBytes, _ := hex.DecodeString(match.TransactionID)
+	assets := make(MultiAsset.MultiAsset[int64])
+	// TODO - find how to get Assets or replacment
+	// for assetId, assetAmount := range match.Value.Assets {
+	// 	tmpPolicyId := Policy.PolicyId{Value: assetId.PolicyID()}
+	// 	tmpAssetName := AssetName.NewAssetNameFromString(assetId.AssetName())
+	// 	if _, ok := assets[tmpPolicyId]; !ok {
+	// 		assets[tmpPolicyId] = Asset.Asset[int64]{}
+	// 	}
+	// 	assets[tmpPolicyId][tmpAssetName] = assetAmount.Int64()
+	// }
+	val := Value.SimpleValue(
+		// TODO - Dummy value missing coins
+		123,
+		assets,
+	)
+	ret := UTxO.UTxO{
+		Input: TransactionInput.TransactionInput{
+			TransactionId: txIdBytes,
+			Index:         match.OutputIndex,
+		},
+		Output: TransactionOutput.SimpleTransactionOutput(
+			serAddr,
+			val,
+		),
+	}
+	return ret, nil
 }

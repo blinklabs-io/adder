@@ -107,3 +107,9 @@ func WithBulkMode(bulkMode bool) ChainSyncOptionFunc {
 		c.bulkMode = bulkMode
 	}
 }
+
+func WithKupoUrl(kupoUrl string) ChainSyncOptionFunc {
+	return func(c *ChainSync) {
+		c.kupoUrl = kupoUrl
+	}
+}
