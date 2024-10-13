@@ -15,10 +15,17 @@
 package chainsync
 
 import (
+	"context"
 	"encoding/hex"
 	"fmt"
+	"log/slog"
+	"net/http"
+	"strings"
 	"time"
 
+	"github.com/SundaeSwap-finance/kugo"
+
+	"github.com/SundaeSwap-finance/ogmigo/v6/ouroboros/chainsync"
 	"github.com/blinklabs-io/adder/event"
 	"github.com/blinklabs-io/adder/plugin"
 
@@ -59,6 +66,8 @@ type ChainSync struct {
 	cursorCache        []ocommon.Point
 	dialAddress        string
 	dialFamily         string
+	kupoUrl            string
+	kupoClient         *kugo.Client
 }
 
 type ChainSyncStatus struct {
@@ -318,7 +327,12 @@ func (c *ChainSync) handleRollForward(
 		blockEvt := event.New("chainsync.block", time.Now(), NewBlockHeaderContext(v), NewBlockEvent(block, c.includeCbor))
 		c.eventChan <- blockEvt
 		for t, transaction := range block.Transactions() {
-			txEvt := event.New("chainsync.transaction", time.Now(), NewTransactionContext(block, transaction, uint32(t), c.networkMagic), NewTransactionEvent(block, transaction, c.includeCbor))
+			resolvedInputs, err := resolveTransactionInputs(transaction, c)
+			if err != nil {
+				return err
+			}
+			txEvt := event.New("chainsync.transaction", time.Now(), NewTransactionContext(block, transaction, uint32(t), c.networkMagic),
+				NewTransactionEvent(block, transaction, c.includeCbor, resolvedInputs))
 			c.eventChan <- txEvt
 		}
 		c.updateStatus(v.SlotNumber(), v.BlockNumber(), v.Hash(), tip.Point.Slot, hex.EncodeToString(tip.Point.Hash))
@@ -339,6 +353,10 @@ func (c *ChainSync) handleBlockFetchBlock(
 	)
 	c.eventChan <- blockEvt
 	for t, transaction := range block.Transactions() {
+		resolvedInputs, err := resolveTransactionInputs(transaction, c)
+		if err != nil {
+			return err
+		}
 		txEvt := event.New(
 			"chainsync.transaction",
 			time.Now(),
@@ -348,7 +366,7 @@ func (c *ChainSync) handleBlockFetchBlock(
 				uint32(t),
 				c.networkMagic,
 			),
-			NewTransactionEvent(block, transaction, c.includeCbor),
+			NewTransactionEvent(block, transaction, c.includeCbor, resolvedInputs),
 		)
 		c.eventChan <- txEvt
 	}
@@ -402,4 +420,77 @@ func (c *ChainSync) updateStatus(
 	if c.statusUpdateFunc != nil {
 		c.statusUpdateFunc(*(c.status))
 	}
+}
+
+func getKupoClient(c *ChainSync) (*kugo.Client, error) {
+	if c.kupoClient != nil {
+		return c.kupoClient, nil
+	}
+
+	k := kugo.New(kugo.WithEndpoint(c.kupoUrl))
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	healthUrl := strings.TrimRight(c.kupoUrl, "/") + "/v1/health"
+	req, err := http.NewRequestWithContext(ctx, "GET", healthUrl, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create health check request: %w", err)
+	}
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to perform health check: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("health check failed with status code: %d", resp.StatusCode)
+	}
+
+	c.kupoClient = k
+
+	return k, nil
+}
+
+// resolveTransactionInputs resolves the transaction inputs by using the
+// Kupo client and fetching the corresponding transaction outputs.
+func resolveTransactionInputs(transaction ledger.Transaction, c *ChainSync) ([]ledger.TransactionOutput, error) {
+	var resolvedInputs []ledger.TransactionOutput
+
+	// Use Kupo client to resolve inputs if available
+	if c.kupoUrl != "" {
+		k, err := getKupoClient(c)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get Kupo client: %w", err)
+		}
+
+		for _, input := range transaction.Inputs() {
+			// Extract transaction ID and index from the input
+			txId := input.Id().String()
+			txIndex := int(input.Index())
+			matches, err := k.Matches(context.Background(),
+				kugo.TxOut(chainsync.NewTxID(txId, txIndex)),
+			)
+			if err != nil {
+				return nil, fmt.Errorf("Error fetching matches for input TxId: %s, Index: %d. Error: %w\n", txId, txIndex, err)
+			}
+
+			if len(matches) == 0 {
+				slog.Info("No matches found for input TxId: %s, Index: %d, could be due to Kupo not in sync\n", txId, txIndex)
+			} else {
+				slog.Debug(fmt.Sprintf("Found matches %d for input TxId: %s, Index: %d\n", len(matches), txId, txIndex))
+				for _, match := range matches {
+					slog.Debug(fmt.Sprintf("Match: %#v\n", match))
+					transactionOutput, err := NewResolvedTransactionOutput(match)
+					if err != nil {
+						return nil, err
+					}
+					resolvedInputs = append(resolvedInputs, transactionOutput)
+				}
+			}
+		}
+	}
+	return resolvedInputs, nil
 }
