@@ -20,6 +20,8 @@ import (
 	"log/slog"
 
 	"github.com/SundaeSwap-finance/kugo"
+	"github.com/blinklabs-io/gouroboros/base58"
+	"github.com/blinklabs-io/gouroboros/bech32"
 	"github.com/blinklabs-io/gouroboros/cbor"
 	"github.com/blinklabs-io/gouroboros/ledger"
 	"github.com/blinklabs-io/gouroboros/ledger/common"
@@ -78,9 +80,21 @@ func ExtractAssetDetailsFromMatch(match kugo.Match) (common.MultiAsset[uint64], 
 }
 
 func NewResolvedTransactionOutput(match kugo.Match) (ledger.TransactionOutput, error) {
+	// FIXME - This is a patch to fix the issue with the address
+	// Attempt to create an address using Bech32
 	addr, err := common.NewAddress(match.Address)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create address from match.Address: %w", err)
+		// If Bech32 fails, try to convert from Base58 to Bech32
+		bech32addr, err := ConvertBase58ToBech32(match.Address, "addr")
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert base58 to bech32: %w", err)
+		}
+
+		// Try to create the address again with the converted Bech32 address
+		addr, err = common.NewAddress(bech32addr)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create address from base58-converted bech32 address: %w", err)
+		}
 	}
 
 	assets, amount, err := ExtractAssetDetailsFromMatch(match)
@@ -132,4 +146,20 @@ func (txOut ResolvedTransactionOutput) Cbor() []byte {
 func (txOut ResolvedTransactionOutput) Utxorpc() *utxorpc.TxOutput {
 	// Placeholder for UTXO RPC representation
 	return &utxorpc.TxOutput{}
+}
+
+// ConvertBase58ToBech32 converts a Base58 string to a Bech32 string
+// using the given human-readable part (hrp) required for Bech32 encoding
+func ConvertBase58ToBech32(base58Str, hrp string) (string, error) {
+	data := base58.Decode(base58Str)
+	converted, err := bech32.ConvertBits(data, 8, 5, true)
+	if err != nil {
+		return "", fmt.Errorf("failed to convert bits: %w", err)
+	}
+	bech32Str, err := bech32.Encode(hrp, converted)
+	if err != nil {
+		return "", fmt.Errorf("failed to encode Bech32: %w", err)
+	}
+
+	return bech32Str, nil
 }
