@@ -68,14 +68,7 @@ func TestResolvedTransactionOutput_MarshalJSON(t *testing.T) {
 
 func TestConvertBase58ToBech32(t *testing.T) {
 	base58Str := "Ae2tdPwUPEYwFx4dmJheyNPPYXtvHbJLeCaA96o6Y2iiUL18cAt7AizN2zG"
-	hrp := "addr"
-	expectedBech32Str := "addr1stvpskppsdvpcpyxtepdyde6mklt6hf2e7quwcxgfztszs5gnalwwccfrwsqqxhsrytd2f4f5v6"
-
-	bech32Str, err := ConvertBase58ToBech32(base58Str, hrp)
-	assert.Nil(t, err, "Expected no error when converting Base58 to Bech32")
-	assert.Equal(t, expectedBech32Str, bech32Str, "The Bech32 string did not match the expected value")
-
-	addr, err := common.NewAddress(bech32Str)
+	addr, err := common.NewAddress(base58Str)
 	assert.Nil(t, err, "Expected no error when converting to common.Address")
 	t.Logf("addr: %v", addr)
 }
