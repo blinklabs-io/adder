@@ -27,6 +27,7 @@ import (
 
 	"github.com/SundaeSwap-finance/ogmigo/v6/ouroboros/chainsync"
 	"github.com/blinklabs-io/adder/event"
+	"github.com/blinklabs-io/adder/internal/logging"
 	"github.com/blinklabs-io/adder/plugin"
 
 	ouroboros "github.com/blinklabs-io/gouroboros"
@@ -427,7 +428,12 @@ func getKupoClient(c *ChainSync) (*kugo.Client, error) {
 		return c.kupoClient, nil
 	}
 
-	k := kugo.New(kugo.WithEndpoint(c.kupoUrl))
+	KugoCustomLogger := logging.NewKugoCustomLogger(logging.LevelInfo)
+
+	k := kugo.New(
+		kugo.WithEndpoint(c.kupoUrl),
+		kugo.WithLogger(KugoCustomLogger),
+	)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
