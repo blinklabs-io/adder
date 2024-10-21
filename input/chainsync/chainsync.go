@@ -169,18 +169,19 @@ func (c *ChainSync) setupConnection() error {
 	var useNtn bool
 	// Lookup network by name, if provided
 	if c.network != "" {
-		network := ouroboros.NetworkByName(c.network)
-		if network == ouroboros.NetworkInvalid {
+		network, ok := ouroboros.NetworkByName(c.network)
+		if !ok {
 			return fmt.Errorf("unknown network: %s", c.network)
 		}
 		c.networkMagic = network.NetworkMagic
 		// If network has well-known public root address/port, use those as our dial default
-		if network.PublicRootAddress != "" && network.PublicRootPort > 0 {
+		if len(network.BootstrapPeers) > 0 {
+			peer := network.BootstrapPeers[0]
 			c.dialFamily = "tcp"
 			c.dialAddress = fmt.Sprintf(
 				"%s:%d",
-				network.PublicRootAddress,
-				network.PublicRootPort,
+				peer.Address,
+				peer.Port,
 			)
 			useNtn = true
 		}
