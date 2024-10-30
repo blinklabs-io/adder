@@ -450,6 +450,9 @@ func getKupoClient(c *ChainSync) (*kugo.Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to perform health check: %w", err)
 	}
+	if resp == nil {
+		return nil, fmt.Errorf("health check response empty, aborting")
+	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
