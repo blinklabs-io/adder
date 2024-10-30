@@ -1,4 +1,4 @@
-// Copyright 2023 Blink Labs Software
+// Copyright 2024 Blink Labs Software
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -16,10 +16,11 @@ package main
 
 import (
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 
-	_ "go.uber.org/automaxprocs"
+	"go.uber.org/automaxprocs/maxprocs"
 
 	"github.com/blinklabs-io/adder/api"
 	_ "github.com/blinklabs-io/adder/filter"
@@ -35,6 +36,10 @@ import (
 const (
 	programName = "adder"
 )
+
+func slogPrintf(format string, v ...any) {
+	slog.Info(fmt.Sprintf(format, v...))
+}
 
 func main() {
 	cfg := config.GetConfig()
@@ -86,6 +91,15 @@ func main() {
 	// Configure logging
 	logging.Configure()
 	logger := logging.GetLogger()
+	slog.SetDefault(logger)
+
+	// Configure max processes with our logger wrapper, toss undo func
+	_, err := maxprocs.Set(maxprocs.Logger(slogPrintf))
+	if err != nil {
+		// If we hit this, something really wrong happened
+		logger.Error(err.Error())
+		os.Exit(1)
+	}
 
 	// Start debug listener
 	if cfg.Debug.ListenPort > 0 {
