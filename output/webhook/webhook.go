@@ -1,4 +1,4 @@
-// Copyright 2023 Blink Labs Software
+// Copyright 2024 Blink Labs Software
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -24,8 +24,6 @@ import (
 	"io"
 	"net/http"
 	"time"
-
-	// cbor "github.com/fxamacker/cbor/v2"
 
 	"github.com/blinklabs-io/adder/event"
 	"github.com/blinklabs-io/adder/input/chainsync"
@@ -279,6 +277,9 @@ func (w *WebhookOutput) SendWebhook(e *event.Event) error {
 	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("%s", err)
+	}
+	if resp == nil {
+		return fmt.Errorf("failed to send payload: %s", data)
 	}
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
