@@ -50,7 +50,13 @@ func WithPort(port uint) APIOption {
 	}
 }
 
-var apiInstance *APIv1
+// Initialize singleton API instance
+var apiInstance = &APIv1{
+	engine: ConfigureRouter(true),
+	Host:   "0.0.0.0",
+	Port:   8080,
+}
+
 var once sync.Once
 
 func New(debug bool, options ...APIOption) *APIv1 {
