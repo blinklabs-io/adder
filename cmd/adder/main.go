@@ -44,6 +44,11 @@ func slogPrintf(format string, v ...any) {
 func main() {
 	cfg := config.GetConfig()
 
+	if os.Args == nil {
+		fmt.Println("Failed to detect arguments, aborting")
+		os.Exit(1)
+	}
+
 	if err := cfg.ParseCmdlineArgs(programName, os.Args[1:]); err != nil {
 		fmt.Printf("Failed to parse commandline: %s\n", err)
 		os.Exit(1)
