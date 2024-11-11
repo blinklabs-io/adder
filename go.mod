@@ -15,7 +15,7 @@ require (
 	github.com/swaggo/files v1.0.1
 	github.com/swaggo/gin-swagger v1.6.0
 	github.com/swaggo/swag v1.16.4
-	github.com/utxorpc/go-codegen v0.11.0
+	github.com/utxorpc/go-codegen v0.12.0
 	go.uber.org/automaxprocs v1.6.0
 	golang.org/x/oauth2 v0.23.0
 	gopkg.in/yaml.v2 v2.4.0
