@@ -1,7 +1,7 @@
 # Adder
 
 <div align="center">
-    <img src="./assets/adder-logo-with-text-horizontal.png" alt="Adder Logo" width="640">
+    <img src="./.github/assets/adder-logo-with-text-horizontal.png" alt="Adder Logo" width="640">
 </div>
 
 Adder is a tool for tailing the Cardano blockchain and emitting events for each
