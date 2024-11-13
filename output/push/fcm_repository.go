@@ -77,6 +77,10 @@ func storeFCMToken(c *gin.Context) {
 	}
 
 	store := getTokenStore()
+	if store == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed getting token store"})
+		return
+	}
 	store.FCMTokens[req.FCMToken] = req.FCMToken
 	c.Status(http.StatusCreated)
 }
@@ -92,6 +96,10 @@ func storeFCMToken(c *gin.Context) {
 func readFCMToken(c *gin.Context) {
 	token := c.Param("token")
 	store := getTokenStore()
+	if store == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed getting token store"})
+		return
+	}
 	storedToken, exists := store.FCMTokens[token]
 	if !exists {
 		c.Status(http.StatusNotFound)
@@ -111,6 +119,10 @@ func readFCMToken(c *gin.Context) {
 func deleteFCMToken(c *gin.Context) {
 	token := c.Param("token")
 	store := getTokenStore()
+	if store == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed getting token store"})
+		return
+	}
 	_, exists := store.FCMTokens[token]
 	if exists {
 		delete(store.FCMTokens, token)
@@ -123,5 +135,8 @@ func deleteFCMToken(c *gin.Context) {
 // GetFcmTokens returns the current in-memory FCM tokens
 func GetFcmTokens() map[string]string {
 	store := getTokenStore()
+	if store == nil {
+		return make(map[string]string)
+	}
 	return store.FCMTokens
 }
