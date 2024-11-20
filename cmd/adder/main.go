@@ -123,7 +123,9 @@ func main() {
 				nil,
 			)
 			if err != nil {
-				logger.Error(fmt.Sprintf("failed to start debug listener: %s", err))
+				logger.Error(
+					fmt.Sprintf("failed to start debug listener: %s", err),
+				)
 				os.Exit(1)
 			}
 		}()

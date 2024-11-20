@@ -25,15 +25,21 @@ import (
 
 func TestResolvedTransactionOutput_MarshalJSON(t *testing.T) {
 	// Create the address, handle the error properly
-	addr, err := common.NewAddress("addr_test1wq5yehcpw4e3r32rltrww40e6ezdckr9v9l0ehptsxeynlg630pts")
+	addr, err := common.NewAddress(
+		"addr_test1wq5yehcpw4e3r32rltrww40e6ezdckr9v9l0ehptsxeynlg630pts",
+	)
 	if err != nil {
 		t.Fatalf("Failed to create address: %v", err)
 	}
 
 	// Create assets for the resolved output
-	assets := common.NewMultiAsset(map[common.Blake2b224]map[cbor.ByteString]uint64{
-		common.NewBlake2b224([]byte("policy1")): {cbor.NewByteString([]byte("TokenA")): 100},
-	})
+	assets := common.NewMultiAsset(
+		map[common.Blake2b224]map[cbor.ByteString]uint64{
+			common.NewBlake2b224([]byte("policy1")): {
+				cbor.NewByteString([]byte("TokenA")): 100,
+			},
+		},
+	)
 
 	// Create the resolved transaction output
 	resolvedOutput := ResolvedTransactionOutput{

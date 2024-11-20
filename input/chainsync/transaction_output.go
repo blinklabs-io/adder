@@ -33,7 +33,9 @@ type ResolvedTransactionOutput struct {
 	AssetsField  *common.MultiAsset[uint64] `json:"assets,omitempty"`
 }
 
-func ExtractAssetDetailsFromMatch(match kugo.Match) (common.MultiAsset[uint64], uint64, error) {
+func ExtractAssetDetailsFromMatch(
+	match kugo.Match,
+) (common.MultiAsset[uint64], uint64, error) {
 	// Initialize the map that will store the assets
 	assetsMap := map[common.Blake2b224]map[cbor.ByteString]uint64{}
 	totalLovelace := uint64(0)
@@ -43,7 +45,12 @@ func ExtractAssetDetailsFromMatch(match kugo.Match) (common.MultiAsset[uint64], 
 		// Decode policyId if not ADA
 		policyIdBytes, err := hex.DecodeString(policyId)
 		if err != nil {
-			slog.Debug(fmt.Sprintf("PolicyId %s is not a valid hex string\n", policyId))
+			slog.Debug(
+				fmt.Sprintf(
+					"PolicyId %s is not a valid hex string\n",
+					policyId,
+				),
+			)
 			policyIdBytes = []byte(policyId)
 		}
 		policyBlake := common.NewBlake2b224(policyIdBytes)
@@ -56,7 +63,9 @@ func ExtractAssetDetailsFromMatch(match kugo.Match) (common.MultiAsset[uint64], 
 			// Check if this is the ADA (lovelace) asset
 			if policyId == "ada" && assetName == "lovelace" {
 				totalLovelace = amount.Uint64()
-				slog.Debug(fmt.Sprintf("Found ADA (lovelace): %d\n", totalLovelace))
+				slog.Debug(
+					fmt.Sprintf("Found ADA (lovelace): %d\n", totalLovelace),
+				)
 				continue // Skip adding "lovelace" to assetsMap, as it is handled separately
 			}
 
@@ -64,7 +73,14 @@ func ExtractAssetDetailsFromMatch(match kugo.Match) (common.MultiAsset[uint64], 
 			assetAmount := amount.Uint64()
 			policyAssets[byteStringAssetName] = assetAmount
 			slog.Debug("Get policyId, assetName, assetAmount from match.Value")
-			slog.Debug(fmt.Sprintf("policyId: %s, assetName: %s, amount: %d\n", policyId, assetName, assetAmount))
+			slog.Debug(
+				fmt.Sprintf(
+					"policyId: %s, assetName: %s, amount: %d\n",
+					policyId,
+					assetName,
+					assetAmount,
+				),
+			)
 		}
 
 		// Only add non-empty policyAssets to the assetsMap
@@ -77,7 +93,9 @@ func ExtractAssetDetailsFromMatch(match kugo.Match) (common.MultiAsset[uint64], 
 	return assets, totalLovelace, nil
 }
 
-func NewResolvedTransactionOutput(match kugo.Match) (ledger.TransactionOutput, error) {
+func NewResolvedTransactionOutput(
+	match kugo.Match,
+) (ledger.TransactionOutput, error) {
 	// Get common.Address from base58 or bech32 string
 	addr, err := common.NewAddress(match.Address)
 	if err != nil {
@@ -86,10 +104,20 @@ func NewResolvedTransactionOutput(match kugo.Match) (ledger.TransactionOutput, e
 
 	assets, amount, err := ExtractAssetDetailsFromMatch(match)
 	if err != nil {
-		return nil, fmt.Errorf("failed to extract asset details from match: %w", err)
+		return nil, fmt.Errorf(
+			"failed to extract asset details from match: %w",
+			err,
+		)
 	}
 
-	slog.Debug(fmt.Sprintf("ResolvedTransactionOutput: address: %s, amount: %d, assets: %#v\n", addr, amount, assets))
+	slog.Debug(
+		fmt.Sprintf(
+			"ResolvedTransactionOutput: address: %s, amount: %d, assets: %#v\n",
+			addr,
+			amount,
+			assets,
+		),
+	)
 	return &ResolvedTransactionOutput{
 		AddressField: addr,
 		AmountField:  amount,
