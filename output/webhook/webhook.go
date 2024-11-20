@@ -287,13 +287,15 @@ func (w *WebhookOutput) SendWebhook(e *event.Event) error {
 	}
 	defer resp.Body.Close()
 
-	logger.Info(fmt.Sprintf("sent: %s, payload: %s, body: %s, response: %s, status: %d",
-		w.url,
-		string(data),
-		string(respBody),
-		resp.Status,
-		resp.StatusCode,
-	))
+	logger.Info(
+		fmt.Sprintf("sent: %s, payload: %s, body: %s, response: %s, status: %d",
+			w.url,
+			string(data),
+			string(respBody),
+			resp.Status,
+			resp.StatusCode,
+		),
+	)
 	return nil
 }
 

@@ -368,7 +368,12 @@ func (c *ChainSync) handleBlockFetchBlock(
 				uint32(t),
 				c.networkMagic,
 			),
-			NewTransactionEvent(block, transaction, c.includeCbor, resolvedInputs),
+			NewTransactionEvent(
+				block,
+				transaction,
+				c.includeCbor,
+				resolvedInputs,
+			),
 		)
 		c.eventChan <- txEvt
 	}
@@ -456,7 +461,10 @@ func getKupoClient(c *ChainSync) (*kugo.Client, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("health check failed with status code: %d", resp.StatusCode)
+		return nil, fmt.Errorf(
+			"health check failed with status code: %d",
+			resp.StatusCode,
+		)
 	}
 
 	c.kupoClient = k
@@ -466,7 +474,10 @@ func getKupoClient(c *ChainSync) (*kugo.Client, error) {
 
 // resolveTransactionInputs resolves the transaction inputs by using the
 // Kupo client and fetching the corresponding transaction outputs.
-func resolveTransactionInputs(transaction ledger.Transaction, c *ChainSync) ([]ledger.TransactionOutput, error) {
+func resolveTransactionInputs(
+	transaction ledger.Transaction,
+	c *ChainSync,
+) ([]ledger.TransactionOutput, error) {
 	var resolvedInputs []ledger.TransactionOutput
 
 	// Use Kupo client to resolve inputs if available
@@ -484,11 +495,20 @@ func resolveTransactionInputs(transaction ledger.Transaction, c *ChainSync) ([]l
 				kugo.TxOut(chainsync.NewTxID(txId, txIndex)),
 			)
 			if err != nil {
-				return nil, fmt.Errorf("Error fetching matches for input TxId: %s, Index: %d. Error: %w\n", txId, txIndex, err)
+				return nil, fmt.Errorf(
+					"Error fetching matches for input TxId: %s, Index: %d. Error: %w\n",
+					txId,
+					txIndex,
+					err,
+				)
 			}
 
 			if len(matches) == 0 {
-				slog.Info("No matches found for input TxId: %s, Index: %d, could be due to Kupo not in sync\n", txId, txIndex)
+				slog.Info(
+					"No matches found for input TxId: %s, Index: %d, could be due to Kupo not in sync\n",
+					txId,
+					txIndex,
+				)
 			} else {
 				slog.Debug(fmt.Sprintf("Found matches %d for input TxId: %s, Index: %d\n", len(matches), txId, txIndex))
 				for _, match := range matches {

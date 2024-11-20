@@ -45,7 +45,10 @@ func Configure() {
 			if a.Key == slog.TimeKey {
 				// Format the time attribute to use RFC3339 or your custom format
 				// Rename the time key to timestamp
-				return slog.String("timestamp", a.Value.Time().Format(time.RFC3339))
+				return slog.String(
+					"timestamp",
+					a.Value.Time().Format(time.RFC3339),
+				)
 			}
 			return a
 		},

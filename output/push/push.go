@@ -60,7 +60,8 @@ func New(options ...PushOptionFunc) *PushOutput {
 	}
 
 	if err := p.GetProjectId(); err != nil {
-		logging.GetLogger().Error(fmt.Sprintf("Failed to get project ID: %v", err))
+		logging.GetLogger().
+			Error(fmt.Sprintf("Failed to get project ID: %v", err))
 		os.Exit(1)
 	}
 	return p
@@ -122,10 +123,12 @@ func (p *PushOutput) Start() error {
 
 				re := payload.(chainsync.RollbackEvent)
 				logger.Debug("Adder")
-				logger.Debug(fmt.Sprintf("Rollback!\nSlotNumber: %d\nBlockHash: %s",
-					re.SlotNumber,
-					re.BlockHash,
-				))
+				logger.Debug(
+					fmt.Sprintf("Rollback!\nSlotNumber: %d\nBlockHash: %s",
+						re.SlotNumber,
+						re.BlockHash,
+					),
+				)
 			case "chainsync.transaction":
 				payload := evt.Payload
 				if payload == nil {
@@ -217,24 +220,28 @@ func (p *PushOutput) processFcmNotifications(title, body string) {
 		)
 
 		if err := fcm.Send(p.accessToken, p.projectID, msg); err != nil {
-			logging.GetLogger().Error(fmt.Sprintf("Failed to send message to token %s: %v", fcmToken, err))
+			logging.GetLogger().
+				Error(fmt.Sprintf("Failed to send message to token %s: %v", fcmToken, err))
 			continue
 		}
-		logging.GetLogger().Info(fmt.Sprintf("Message sent successfully to token %s!", fcmToken))
+		logging.GetLogger().
+			Info(fmt.Sprintf("Message sent successfully to token %s!", fcmToken))
 	}
 }
 
 func (p *PushOutput) GetAccessToken() error {
 	data, err := os.ReadFile(p.serviceAccountFilePath)
 	if err != nil {
-		logging.GetLogger().Error(fmt.Sprintf("Failed to read the credential file: %v", err))
+		logging.GetLogger().
+			Error(fmt.Sprintf("Failed to read the credential file: %v", err))
 		os.Exit(1)
 		return err
 	}
 
 	conf, err := google.JWTConfigFromJSON(data, p.accessTokenUrl)
 	if err != nil {
-		logging.GetLogger().Error(fmt.Sprintf("Failed to parse the credential file: %v", err))
+		logging.GetLogger().
+			Error(fmt.Sprintf("Failed to parse the credential file: %v", err))
 		os.Exit(1)
 		return err
 	}
@@ -264,7 +271,8 @@ func (p *PushOutput) GetProjectId() error {
 	// Get project ID from file
 	var v map[string]any
 	if err := json.Unmarshal(data, &v); err != nil {
-		logging.GetLogger().Error(fmt.Sprintf("Failed to parse the credential file: %v", err))
+		logging.GetLogger().
+			Error(fmt.Sprintf("Failed to parse the credential file: %v", err))
 		os.Exit(1)
 		return err
 	}
