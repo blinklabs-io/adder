@@ -1,8 +1,6 @@
 module github.com/blinklabs-io/adder
 
-go 1.22
-
-toolchain go1.22.8
+go 1.22.9
 
 require (
 	github.com/SundaeSwap-finance/kugo v1.0.5
