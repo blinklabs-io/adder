@@ -5,7 +5,7 @@ go 1.22.9
 require (
 	github.com/SundaeSwap-finance/kugo v1.0.5
 	github.com/SundaeSwap-finance/ogmigo/v6 v6.0.0-20231128043329-e8ced51013a1
-	github.com/blinklabs-io/gouroboros v0.106.0
+	github.com/blinklabs-io/gouroboros v0.106.2
 	github.com/gen2brain/beeep v0.0.0-20230602101333-f384c29b62dd
 	github.com/gin-gonic/gin v1.10.0
 	github.com/kelseyhightower/envconfig v1.4.0
