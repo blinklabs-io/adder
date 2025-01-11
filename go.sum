@@ -6,8 +6,10 @@ github.com/KyleBanks/depth v1.2.1 h1:5h8fQADFrWtarTdtDudMmGsC7GPbOAu6RVB3ffsVFHc
 github.com/KyleBanks/depth v1.2.1/go.mod h1:jzSb9d0L43HxTQfT+oSA1EEp2q+ne2uh6XgeJcm8brE=
 github.com/SundaeSwap-finance/kugo v1.0.5 h1:GWUbHkAIIMh1SmGMCw5r0rpOvriRsEoLpp5ofufWRvs=
 github.com/SundaeSwap-finance/kugo v1.0.5/go.mod h1:jkNGTmwLRdUPKVzkOOQjxqkpPTDw5gJ2hkJi3zUF9tA=
-github.com/SundaeSwap-finance/ogmigo/v6 v6.0.0-20231128043329-e8ced51013a1 h1:Lfw4vCNhm5Ik5wdbPsCK8k4gphhCB2/jtLxY5s/EifA=
-github.com/SundaeSwap-finance/ogmigo/v6 v6.0.0-20231128043329-e8ced51013a1/go.mod h1:CsDGcgbkKoz6S4h0RJ30go7oXG+KhGE2KLhBpRFnEqA=
+github.com/SundaeSwap-finance/ogmigo v0.8.1 h1:+oMCEorlqkcFj9XR9wPxJzzm7NfGa4RqI8TgzR14Qy0=
+github.com/SundaeSwap-finance/ogmigo v0.8.1/go.mod h1:Zuywifig7DQb5sEBrXsE44tv7fIm3fa9izKihtaez1I=
+github.com/SundaeSwap-finance/ogmigo/v6 v6.0.0 h1:f+BDYFKDFD574LbjCQspFryJc165DGLDCs6CLf1U0Ek=
+github.com/SundaeSwap-finance/ogmigo/v6 v6.0.0/go.mod h1:CsDGcgbkKoz6S4h0RJ30go7oXG+KhGE2KLhBpRFnEqA=
 github.com/aws/aws-sdk-go v1.48.7 h1:gDcOhmkohlNk20j0uWpko5cLBbwSkB+xpkshQO45F7Y=
 github.com/aws/aws-sdk-go v1.48.7/go.mod h1:LF8svs817+Nz+DmiMQKTO3ubZ/6IaTpq3TjupRn3Eqk=
 github.com/blinklabs-io/gouroboros v0.106.2 h1:4J87NAdpBvQrkZWNrYs1GOkcDgK5YxdlNvqsEDa/tgM=
