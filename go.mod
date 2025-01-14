@@ -3,8 +3,8 @@ module github.com/blinklabs-io/adder
 go 1.22.9
 
 require (
-	github.com/SundaeSwap-finance/kugo v1.0.5
-	github.com/SundaeSwap-finance/ogmigo/v6 v6.0.0-20231128043329-e8ced51013a1
+	github.com/SundaeSwap-finance/kugo v1.0.6-0.20250113214905-5e85003d6383
+	github.com/SundaeSwap-finance/ogmigo v0.8.2-0.20250113211512-19cbb328b538
 	github.com/blinklabs-io/gouroboros v0.107.1
 	github.com/gen2brain/beeep v0.0.0-20230602101333-f384c29b62dd
 	github.com/gin-gonic/gin v1.10.0
@@ -26,7 +26,7 @@ require (
 	cloud.google.com/go/compute/metadata v0.3.0 // indirect
 	filippo.io/edwards25519 v1.1.0 // indirect
 	github.com/KyleBanks/depth v1.2.1 // indirect
-	github.com/aws/aws-sdk-go v1.48.7 // indirect
+	github.com/aws/aws-sdk-go v1.55.5 // indirect
 	github.com/buger/jsonparser v1.1.1 // indirect
 	github.com/bytedance/sonic v1.11.6 // indirect
 	github.com/bytedance/sonic/loader v0.1.1 // indirect
@@ -46,7 +46,7 @@ require (
 	github.com/go-toast/toast v0.0.0-20190211030409-01e6764cf0a4 // indirect
 	github.com/goccy/go-json v0.10.2 // indirect
 	github.com/godbus/dbus/v5 v5.1.0 // indirect
-	github.com/gorilla/websocket v1.5.1 // indirect
+	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/jinzhu/copier v0.4.0 // indirect
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
@@ -66,10 +66,10 @@ require (
 	github.com/ugorji/go/codec v1.2.12 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	golang.org/x/arch v0.8.0 // indirect
-	golang.org/x/crypto v0.31.0 // indirect
+	golang.org/x/crypto v0.32.0 // indirect
 	golang.org/x/net v0.25.0 // indirect
 	golang.org/x/sync v0.10.0 // indirect
-	golang.org/x/sys v0.28.0 // indirect
+	golang.org/x/sys v0.29.0 // indirect
 	golang.org/x/text v0.21.0 // indirect
 	golang.org/x/tools v0.21.1-0.20240508182429-e35e4ccd0d2d // indirect
 	google.golang.org/protobuf v1.36.1 // indirect

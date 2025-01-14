@@ -25,7 +25,7 @@ import (
 
 	"github.com/SundaeSwap-finance/kugo"
 
-	"github.com/SundaeSwap-finance/ogmigo/v6/ouroboros/chainsync"
+	"github.com/SundaeSwap-finance/ogmigo/ouroboros/chainsync"
 	"github.com/blinklabs-io/adder/event"
 	"github.com/blinklabs-io/adder/internal/logging"
 	"github.com/blinklabs-io/adder/plugin"
