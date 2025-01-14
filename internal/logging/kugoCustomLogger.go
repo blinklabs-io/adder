@@ -18,7 +18,7 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/SundaeSwap-finance/ogmigo/v6"
+	"github.com/SundaeSwap-finance/ogmigo"
 )
 
 // LogLevel represents the logging level (either INFO or DEBUG)
