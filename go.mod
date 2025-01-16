@@ -3,7 +3,7 @@ module github.com/blinklabs-io/adder
 go 1.22.9
 
 require (
-	github.com/SundaeSwap-finance/kugo v1.0.6-0.20250113214905-5e85003d6383
+	github.com/SundaeSwap-finance/kugo v1.0.6-0.20250116035512-6686234216f0
 	github.com/SundaeSwap-finance/ogmigo v0.8.2-0.20250113211512-19cbb328b538
 	github.com/blinklabs-io/gouroboros v0.107.1
 	github.com/gen2brain/beeep v0.0.0-20230602101333-f384c29b62dd
