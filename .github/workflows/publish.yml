@@ -86,7 +86,7 @@ jobs:
           echo '05ca18d4ab7b8c2183289b5378d32860f0ea0f3bdab1f1b8cae5894fb225fa8a  jsign.jar' | sha256sum -c
           echo "${{ secrets.CERTIFICATE_CHAIN }}" | base64 --decode > codesign-chain.pem
           set +x
-          _filename=adder.exe
+          _filename=adder
           ACCESS_TOKEN=$(gcloud auth print-access-token)
           echo "::add-mask::$ACCESS_TOKEN"
           java -jar jsign.jar \
