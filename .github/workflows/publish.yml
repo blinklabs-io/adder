@@ -68,32 +68,25 @@ jobs:
           distribution: 'temurin'
       - name: Build binary
         run: GOOS=${{ matrix.os }} GOARCH=${{ matrix.arch }} make build
-      - name: Download jsign.jar
-        if: matrix.os == 'windows'
-        run: |
-          curl -L -o jsign.jar https://github.com/ebourg/jsign/releases/download/6.0/jsign-6.0.jar
-      - name: Verify jsign.jar
-        if: matrix.os == 'windows'
-        run: |
-          echo '05ca18d4ab7b8c2183289b5378d32860f0ea0f3bdab1f1b8cae5894fb225fa8a  jsign.jar' | sha256sum -c
-      - name: Prepare certificate chain
-        if: matrix.os == 'windows'
-        run: |
-          echo "${{ secrets.CERTIFICATE_CHAIN }}" | base64 --decode > codesign-chain.pem
       - id: 'auth'
         name: Authenticate with Google Cloud
-        if: matrix.os == 'windows'
-        uses: 'google-github-actions/auth@6fc4af4b145ae7821d527454aa9bd537d1f2dc5f'
+        if: ${{ startsWith(github.ref, 'refs/tags/') && matrix.os == 'windows'
+        uses: 'google-github-actions/auth@v2'
         with:
           credentials_json: '${{ secrets.CERTIFICATE_SA_CREDENTIALS }}'
       - name: Set up Cloud SDK
-        if: matrix.os == 'windows'
-        uses: 'google-github-actions/setup-gcloud@6189d56e4096ee891640bb02ac264be376592d6a'
-      - name: Sign binary (Windows)
-        if: matrix.os == 'windows'
+        if: ${{ startsWith(github.ref, 'refs/tags/') && matrix.os == 'windows'
+        uses: 'google-github-actions/setup-gcloud@v2'
+      - name: Sign windows binary
+        if: ${{ startsWith(github.ref, 'refs/tags/') && matrix.os == 'windows'
         run: |
+          echo "Downloading jsign.jar"
+          curl -L -o jsign.jar https://github.com/ebourg/jsign/releases/download/6.0/jsign-6.0.jar
+          echo "Verifying jsign.jar checksum"
+          echo '05ca18d4ab7b8c2183289b5378d32860f0ea0f3bdab1f1b8cae5894fb225fa8a  jsign.jar' | sha256sum -c
+          echo "${{ secrets.CERTIFICATE_CHAIN }}" | base64 --decode > codesign-chain.pem
           set +x
-          _filename=adder-${{ env.RELEASE_TAG }}-${{ matrix.os }}-${{ matrix.arch }}.exe
+          _filename=adder.exe
           ACCESS_TOKEN=$(gcloud auth print-access-token)
           echo "::add-mask::$ACCESS_TOKEN"
           java -jar jsign.jar \
@@ -108,9 +101,8 @@ jobs:
           unset ACCESS_TOKEN
           set -x
           echo "Signed Windows binary: ${_filename}"
-      - name: Clean up certificate chain
-        if: matrix.os == 'windows'
-        run: rm -f codesign-chain.pem
+          echo "Cleaning up certificate chain"
+          rm -f codesign-chain.pem
       - name: Upload release asset
         if: startsWith(github.ref, 'refs/tags/')
         run: |
