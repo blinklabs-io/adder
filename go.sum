@@ -10,10 +10,10 @@ github.com/SundaeSwap-finance/ogmigo v0.8.2-0.20250114155009-fc7e2fd98604 h1:Qdo
 github.com/SundaeSwap-finance/ogmigo v0.8.2-0.20250114155009-fc7e2fd98604/go.mod h1:io/H+NvaSomJKmh4mbhjgT0RX4AdTTSxbImeRNZCCKs=
 github.com/aws/aws-sdk-go v1.55.6 h1:cSg4pvZ3m8dgYcgqB97MrcdjUmZ1BeMYKUxMMB89IPk=
 github.com/aws/aws-sdk-go v1.55.6/go.mod h1:eRwEWoyTWFMVYVQzKMNHWP5/RV4xIUGMQfXQHfHkpNU=
-github.com/blinklabs-io/gouroboros v0.107.1 h1:BOHByzGwkGCrAkXAxaH3hPiXOPPxyYV1WrB7crJEaUE=
-github.com/blinklabs-io/gouroboros v0.107.1/go.mod h1:Igd/hQ3pIhX3/KRM5js3Jz6CF8M8oKN9aO9d9NR7wGo=
-github.com/blinklabs-io/ouroboros-mock v0.3.5 h1:/KWbSoH8Pjrd9uxOH7mVbI7XFsDCNW/O9FtLlvJDUpQ=
-github.com/blinklabs-io/ouroboros-mock v0.3.5/go.mod h1:JtUQ3Luo22hCnGBxuxNp6JaUx63VxidxWwmcaVMremw=
+github.com/blinklabs-io/gouroboros v0.108.0 h1:ys4A3Mnnr7pZTWjUYGkkVolNKBVUOIqm9bz8DEcUA9c=
+github.com/blinklabs-io/gouroboros v0.108.0/go.mod h1:10k4zsSu1Xykvh+J2Vfdz49ul1kfNH+zlnuCmlBcop4=
+github.com/blinklabs-io/ouroboros-mock v0.3.6 h1:m/iK4l1EJbiz9kU0u5uzWNEwlskazWuwbJHysr2hhP4=
+github.com/blinklabs-io/ouroboros-mock v0.3.6/go.mod h1:S++j/dBxNYG3AlcRaeZvok4X2ih7GrK+VWV1s0SLN3M=
 github.com/buger/jsonparser v1.1.1 h1:2PnMjfWD7wBILjqQbt530v576A/cAbQvEW9gGIpYMUs=
 github.com/buger/jsonparser v1.1.1/go.mod h1:6RYKKt7H4d4+iWqouImQ9R2FZql3VbhNgx27UK13J/0=
 github.com/bytedance/sonic v1.11.6 h1:oUp34TzMlL+OY1OUWxHqsdkgC/Zfc85zGqw9siXjrc0=
