@@ -1,6 +1,6 @@
 module github.com/blinklabs-io/adder
 
-go 1.22.9
+go 1.22.11
 
 require (
 	github.com/SundaeSwap-finance/kugo v1.0.6-0.20250116035512-6686234216f0
