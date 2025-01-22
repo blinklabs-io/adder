@@ -39,6 +39,7 @@ type TransactionEvent struct {
 	Fee             uint64                     `json:"fee"`
 	TTL             uint64                     `json:"ttl,omitempty"`
 	ResolvedInputs  []ledger.TransactionOutput `json:"resolvedInputs,omitempty"`
+	Withdrawals     map[string]uint64          `json:"withdrawals,omitempty"`
 }
 
 func NewTransactionContext(
@@ -87,6 +88,12 @@ func NewTransactionEvent(
 	}
 	if len(resolvedInputs) > 0 {
 		evt.ResolvedInputs = resolvedInputs
+	}
+	if withdrawals := tx.Withdrawals(); len(withdrawals) > 0{
+		evt.Withdrawals = make(map[string]uint64)
+		for addr, amount := range withdrawals {
+			evt.Withdrawals[addr.String()] = amount
+		}
 	}
 	return evt
 }
