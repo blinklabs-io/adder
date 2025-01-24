@@ -107,7 +107,9 @@ func (c *ChainSync) Start() error {
 					for _, filterAddress := range c.filterAddresses {
 						isStakeAddress := strings.HasPrefix(filterAddress, "stake")
 						foundMatch := false
-						for _, output := range v.Outputs {
+						// Include resolved inputs as outputs for matching
+						allOutputs := append(v.Outputs, v.ResolvedInputs...)
+						for _, output := range allOutputs {
 							if output.Address().String() == filterAddress {
 								foundMatch = true
 								break
@@ -138,7 +140,9 @@ func (c *ChainSync) Start() error {
 					filterMatched := false
 					for _, filterPolicyId := range c.filterPolicyIds {
 						foundMatch := false
-						for _, output := range v.Outputs {
+						// Include resolved inputs as outputs for matching
+						allOutputs := append(v.Outputs, v.ResolvedInputs...)
+						for _, output := range allOutputs {
 							if output.Assets() != nil {
 								for _, policyId := range output.Assets().Policies() {
 									if policyId.String() == filterPolicyId {
@@ -166,7 +170,9 @@ func (c *ChainSync) Start() error {
 					filterMatched := false
 					for _, filterAssetFingerprint := range c.filterAssetFingerprints {
 						foundMatch := false
-						for _, output := range v.Outputs {
+						// Include resolved inputs as outputs for matching
+						allOutputs := append(v.Outputs, v.ResolvedInputs...)
+						for _, output := range allOutputs {
 							if output.Assets() != nil {
 								for _, policyId := range output.Assets().Policies() {
 									for _, assetName := range output.Assets().Assets(policyId) {
