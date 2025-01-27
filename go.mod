@@ -5,7 +5,7 @@ go 1.22.11
 require (
 	github.com/SundaeSwap-finance/kugo v1.0.6-0.20250116035512-6686234216f0
 	github.com/SundaeSwap-finance/ogmigo v0.8.2-0.20250114155009-fc7e2fd98604
-	github.com/blinklabs-io/gouroboros v0.108.0
+	github.com/blinklabs-io/gouroboros v0.108.1
 	github.com/gen2brain/beeep v0.0.0-20230602101333-f384c29b62dd
 	github.com/gin-gonic/gin v1.10.0
 	github.com/kelseyhightower/envconfig v1.4.0
@@ -27,6 +27,7 @@ require (
 	filippo.io/edwards25519 v1.1.0 // indirect
 	github.com/KyleBanks/depth v1.2.1 // indirect
 	github.com/aws/aws-sdk-go v1.55.6 // indirect
+	github.com/btcsuite/btcd/btcutil v1.1.3 // indirect
 	github.com/buger/jsonparser v1.1.1 // indirect
 	github.com/bytedance/sonic v1.11.6 // indirect
 	github.com/bytedance/sonic/loader v0.1.1 // indirect
