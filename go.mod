@@ -5,7 +5,8 @@ go 1.22.11
 require (
 	github.com/SundaeSwap-finance/kugo v1.0.6-0.20250116035512-6686234216f0
 	github.com/SundaeSwap-finance/ogmigo v0.8.2-0.20250114155009-fc7e2fd98604
-	github.com/blinklabs-io/gouroboros v0.108.0
+	github.com/blinklabs-io/gouroboros v0.108.2
+	github.com/btcsuite/btcd/btcutil v1.1.6
 	github.com/gen2brain/beeep v0.0.0-20230602101333-f384c29b62dd
 	github.com/gin-gonic/gin v1.10.0
 	github.com/kelseyhightower/envconfig v1.4.0
@@ -13,7 +14,7 @@ require (
 	github.com/swaggo/files v1.0.1
 	github.com/swaggo/gin-swagger v1.6.0
 	github.com/swaggo/swag v1.16.4
-	github.com/utxorpc/go-codegen v0.15.0
+	github.com/utxorpc/go-codegen v0.16.0
 	go.uber.org/automaxprocs v1.6.0
 	golang.org/x/oauth2 v0.25.0
 	gopkg.in/yaml.v2 v2.4.0
@@ -72,6 +73,6 @@ require (
 	golang.org/x/sys v0.29.0 // indirect
 	golang.org/x/text v0.21.0 // indirect
 	golang.org/x/tools v0.21.1-0.20240508182429-e35e4ccd0d2d // indirect
-	google.golang.org/protobuf v1.36.1 // indirect
+	google.golang.org/protobuf v1.36.3 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
