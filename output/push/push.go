@@ -1,4 +1,4 @@
-// Copyright 2023 Blink Labs Software
+// Copyright 2025 Blink Labs Software
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -20,13 +20,14 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/blinklabs-io/adder/event"
-	"github.com/blinklabs-io/adder/fcm"
-	"github.com/blinklabs-io/adder/input/chainsync"
-	"github.com/blinklabs-io/adder/internal/logging"
-	"github.com/blinklabs-io/adder/plugin"
 	"github.com/blinklabs-io/gouroboros/cbor"
 	"golang.org/x/oauth2/google"
+
+	"github.com/blinklabs-io/adder/event"
+	"github.com/blinklabs-io/adder/input/chainsync"
+	"github.com/blinklabs-io/adder/internal/logging"
+	"github.com/blinklabs-io/adder/output/push/fcm"
+	"github.com/blinklabs-io/adder/plugin"
 )
 
 type PushOutput struct {
