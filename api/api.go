@@ -52,7 +52,7 @@ func WithPort(port uint) APIOption {
 
 // Initialize singleton API instance
 var apiInstance = &APIv1{
-	engine: ConfigureRouter(true),
+	engine: ConfigureRouter(false),
 	Host:   "0.0.0.0",
 	Port:   8080,
 }
