@@ -41,8 +41,29 @@ jobs:
   build-binaries:
     strategy:
       matrix:
-        os: [linux, darwin, freebsd, windows]
-        arch: [amd64, arm64]
+        include:
+          - runner: macos-latest
+            os: darwin
+            arch: arm64
+          - runner: ubuntu-latest
+            os: freebsd
+            arch: amd64
+          - runner: ubuntu-latest
+            os: freebsd
+            arch: arm64
+          - runner: ubuntu-latest
+            os: linux
+            arch: amd64
+          - runner: ubuntu-latest
+            os: linux
+            arch: arm64
+          - runner: ubuntu-latest
+            os: windows
+            arch: amd64
+          - runner: ubuntu-latest
+            os: windows
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
     runs-on: ubuntu-latest
     needs: [create-draft-release]
     permissions:
@@ -61,24 +82,27 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: 1.22.x
+      - name: Build binary
+        run: GOOS=${{ matrix.os }} GOARCH=${{ matrix.arch }} make build
+
+      # Sign Windows build
       - name: Set up Java
         uses: actions/setup-java@v4
+        if: ${{ startsWith(github.ref, 'refs/tags/') && matrix.os == 'windows' }}
         with:
           java-version: 17
           distribution: 'temurin'
-      - name: Build binary
-        run: GOOS=${{ matrix.os }} GOARCH=${{ matrix.arch }} make build
       - id: 'auth'
         name: Authenticate with Google Cloud
-        if: ${{ startsWith(github.ref, 'refs/tags/') && matrix.os == 'windows'
+        if: ${{ startsWith(github.ref, 'refs/tags/') && matrix.os == 'windows' }}
         uses: 'google-github-actions/auth@v2'
         with:
           credentials_json: '${{ secrets.CERTIFICATE_SA_CREDENTIALS }}'
       - name: Set up Cloud SDK
-        if: ${{ startsWith(github.ref, 'refs/tags/') && matrix.os == 'windows'
+        if: ${{ startsWith(github.ref, 'refs/tags/') && matrix.os == 'windows' }}
         uses: 'google-github-actions/setup-gcloud@v2'
       - name: Sign windows binary
-        if: ${{ startsWith(github.ref, 'refs/tags/') && matrix.os == 'windows'
+        if: ${{ startsWith(github.ref, 'refs/tags/') && matrix.os == 'windows' }}
         run: |
           echo "Downloading jsign.jar"
           curl -L -o jsign.jar https://github.com/ebourg/jsign/releases/download/6.0/jsign-6.0.jar
@@ -103,19 +127,68 @@ jobs:
           echo "Signed Windows binary: ${_filename}"
           echo "Cleaning up certificate chain"
           rm -f codesign-chain.pem
+
+      # Sign MacOS build
+
+      - name: Create .app package and sign macos binary
+        if: ${{ startsWith(github.ref, 'refs/tags/') && matrix.os == 'darwin' }}
+        run: |
+          echo "Decoding and importing Apple certificate..."
+          echo -n "${{ secrets.APPLE_CERTIFICATE }}" | base64 --decode -o apple_certificate.p12
+          security create-keychain -p "${{ secrets.APPLE_KEYCHAIN_PASSWORD }}" build.keychain
+          security default-keychain -s build.keychain
+          security set-keychain-settings -lut 21600 build.keychain
+          security unlock-keychain -p "${{ secrets.APPLE_KEYCHAIN_PASSWORD }}" build.keychain
+          security import apple_certificate.p12 -k build.keychain -P "${{ secrets.APPLE_CERTIFICATE_PASSWORD }}" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "${{ secrets.APPLE_KEYCHAIN_PASSWORD }}" build.keychain
+          echo "Packaging adder..."
+          mkdir -p Adder.app/Contents/MacOS
+          mkdir -p Adder.app/Contents/Resources
+          cp adder Adder.app/Contents/MacOS/adder
+          chmod +x Adder.app/Contents/MacOS/adder
+          cat <<EOF > Adder.app/Contents/Info.plist
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>CFBundleExecutable</key>
+              <string>adder</string>
+              <key>CFBundleIdentifier</key>
+              <string>com.blinklabssoftware.adder</string>
+              <key>CFBundleName</key>
+              <string>Adder</string>
+              <key>CFBundleVersion</key>
+              <string>${{ env.RELEASE_TAG }}</string>
+              <key>CFBundleShortVersionString</key>
+              <string>${{ env.RELEASE_TAG }}</string>
+          </dict>
+          </plist>
+          EOF
+          /usr/bin/codesign --force -s "Developer ID Application: Blink Labs Software (${{ secrets.APPLE_TEAM_ID }})" --options runtime Adder.app -v
+          xcrun notarytool store-credentials "notarytool-profile" --apple-id "${{ secrets.APPLE_ID }}" --team-id "${{ secrets.APPLE_TEAM_ID }}" --password "${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}"
+          ditto -c -k --keepParent "Adder.app" "notarization.zip"
+          xcrun notarytool submit "notarization.zip" --keychain-profile "notarytool-profile" --wait
+          xcrun stapler staple "Adder.app"
       - name: Upload release asset
         if: startsWith(github.ref, 'refs/tags/')
         run: |
           _filename=adder-${{ env.RELEASE_TAG }}-${{ matrix.os }}-${{ matrix.arch }}
-          if [[ ${{ matrix.os }} == windows ]]; then
+          if [[ "${{ matrix.os }}" == "windows" ]]; then
             _filename=${_filename}.exe
           fi
-          cp adder ${_filename}
+          if [[ "${{ matrix.os }}" == "windows" || "${{ matrix.os }}" == "linux" ]]; then
+            cp adder ${_filename}
+          fi
+          if [[ "${{ matrix.os }}" == "darwin" ]]; then
+            _filename=adder-${{ env.RELEASE_TAG }}-${{ matrix.os }}-${{ matrix.arch }}.zip
+            zip -r ${_filename} Adder.app
+          fi
           curl \
             -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
             -H "Content-Type: application/octet-stream" \
             --data-binary @${_filename} \
             https://uploads.github.com/repos/${{ github.repository_owner }}/adder/releases/${{ needs.create-draft-release.outputs.RELEASE_ID }}/assets?name=${_filename}
+
       - name: Attest binary
         uses: actions/attest-build-provenance@v2
         with:
