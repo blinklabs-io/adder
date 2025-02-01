@@ -64,7 +64,6 @@ jobs:
             os: windows
             arch: arm64
     runs-on: ${{ matrix.runner }}
-    runs-on: ubuntu-latest
     needs: [create-draft-release]
     permissions:
       actions: write
