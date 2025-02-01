@@ -145,6 +145,7 @@ jobs:
           mkdir -p Adder.app/Contents/Resources
           cp adder Adder.app/Contents/MacOS/adder
           chmod +x Adder.app/Contents/MacOS/adder
+          cp .github/assets/Adder.icns Adder.app/Contents/Resources
           cat <<EOF > Adder.app/Contents/Info.plist
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -155,6 +156,8 @@ jobs:
               <key>CFBundleIdentifier</key>
               <string>com.blinklabssoftware.adder</string>
               <key>CFBundleName</key>
+              <string>Adder</string>
+              <key>CFBundleIconFile</key>
               <string>Adder</string>
               <key>CFBundleVersion</key>
               <string>${{ env.RELEASE_TAG }}</string>
