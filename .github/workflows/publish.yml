@@ -175,7 +175,7 @@ jobs:
           if [[ "${{ matrix.os }}" == "windows" ]]; then
             _filename=${_filename}.exe
           fi
-          if [[ "${{ matrix.os }}" == "windows" || "${{ matrix.os }}" == "linux" ]]; then
+          if [[ "${{ matrix.os }}" == "windows" || "${{ matrix.os }}" == "linux" || "${{ matrix.os }}" == "freebsd" ]]; then
             cp adder ${_filename}
           fi
           if [[ "${{ matrix.os }}" == "darwin" ]]; then
