@@ -89,7 +89,7 @@ func NewTransactionEvent(
 	if len(resolvedInputs) > 0 {
 		evt.ResolvedInputs = resolvedInputs
 	}
-	if withdrawals := tx.Withdrawals(); len(withdrawals) > 0{
+	if withdrawals := tx.Withdrawals(); len(withdrawals) > 0 {
 		evt.Withdrawals = make(map[string]uint64)
 		for addr, amount := range withdrawals {
 			evt.Withdrawals[addr.String()] = amount
