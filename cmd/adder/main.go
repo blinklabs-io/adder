@@ -19,6 +19,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+        "syscall"
 
 	"go.uber.org/automaxprocs/maxprocs"
 
@@ -36,6 +37,13 @@ import (
 const (
 	programName = "adder"
 )
+
+func init() {
+	// Windows-specific: allocate a new console when launched by double-click
+	kernel32 := syscall.NewLazyDLL("kernel32.dll")
+	procAllocConsole := kernel32.NewProc("AllocConsole")
+	procAllocConsole.Call()
+}
 
 func slogPrintf(format string, v ...any) {
 	slog.Info(fmt.Sprintf(format, v...))
