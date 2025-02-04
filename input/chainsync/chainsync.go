@@ -326,6 +326,9 @@ func (c *ChainSync) handleRollForward(
 		if err != nil {
 			return err
 		}
+		if block == nil {
+			return fmt.Errorf("blockfetch returned empty")
+		}
 		blockEvt := event.New("chainsync.block", time.Now(), NewBlockHeaderContext(v), NewBlockEvent(block, c.includeCbor))
 		c.eventChan <- blockEvt
 		for t, transaction := range block.Transactions() {
