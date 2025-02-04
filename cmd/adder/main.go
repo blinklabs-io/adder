@@ -1,4 +1,4 @@
-// Copyright 2024 Blink Labs Software
+// Copyright 2025 Blink Labs Software
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -19,7 +19,10 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"runtime"
+	"time"
 
+	"github.com/inconshreveable/mousetrap"
 	"go.uber.org/automaxprocs/maxprocs"
 
 	"github.com/blinklabs-io/adder/api"
@@ -33,12 +36,33 @@ import (
 	"github.com/blinklabs-io/adder/plugin"
 )
 
-const (
-	programName = "adder"
-)
+var programName string = "adder"
 
 func slogPrintf(format string, v ...any) {
 	slog.Info(fmt.Sprintf(format, v...))
+}
+
+func init() {
+	if os.Args != nil && os.Args[0] != programName {
+		programName = os.Args[0]
+	}
+
+	// Bail if we were run via double click on Windows, borrowed from ngrok
+	if runtime.GOOS == "windows" {
+		if mousetrap.StartedByExplorer() {
+			fmt.Println("Adder is a command line program.")
+			fmt.Printf(
+				"You need to open cmd.exe and run %s from the command line.\n",
+				programName,
+			)
+			fmt.Printf(
+				"Try %s --help to get program usage information.\n",
+				programName,
+			)
+			time.Sleep(30 * time.Second)
+			os.Exit(1)
+		}
+	}
 }
 
 func main() {
