@@ -73,6 +73,8 @@ jobs:
       id-token: write
       packages: write
       statuses: write
+    env:
+      APPLICATION_NAME: 'adder'
     steps:
       - run: "echo \"RELEASE_TAG=${GITHUB_REF#refs/tags/}\" >> $GITHUB_ENV"
       - uses: actions/checkout@v4
@@ -109,7 +111,7 @@ jobs:
           echo '05ca18d4ab7b8c2183289b5378d32860f0ea0f3bdab1f1b8cae5894fb225fa8a  jsign.jar' | sha256sum -c
           echo "${{ secrets.CERTIFICATE_CHAIN }}" | base64 --decode > codesign-chain.pem
           set +x
-          _filename=adder
+          _filename=${{ env.APPLICATION_NAME }}
           ACCESS_TOKEN=$(gcloud auth print-access-token)
           echo "::add-mask::$ACCESS_TOKEN"
           java -jar jsign.jar \
@@ -140,50 +142,52 @@ jobs:
           security unlock-keychain -p "${{ secrets.APPLE_KEYCHAIN_PASSWORD }}" build.keychain
           security import apple_certificate.p12 -k build.keychain -P "${{ secrets.APPLE_CERTIFICATE_PASSWORD }}" -T /usr/bin/codesign
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "${{ secrets.APPLE_KEYCHAIN_PASSWORD }}" build.keychain
-          echo "Packaging adder..."
-          mkdir -p Adder.app/Contents/MacOS
-          mkdir -p Adder.app/Contents/Resources
-          cp adder Adder.app/Contents/MacOS/adder
-          chmod +x Adder.app/Contents/MacOS/adder
-          cp .github/assets/Adder.icns Adder.app/Contents/Resources
-          cat <<EOF > Adder.app/Contents/Info.plist
+          echo "Packaging ${{ env.APPLICATION_NAME }}..."
+          mkdir -p ${{ env.APPLICATION_NAME }}.app/Contents/MacOS
+          mkdir -p ${{ env.APPLICATION_NAME }}.app/Contents/Resources
+          cp ${{ env.APPLICATION_NAME }} ${{ env.APPLICATION_NAME }}.app/Contents/MacOS/${{ env.APPLICATION_NAME }}
+          chmod +x ${{ env.APPLICATION_NAME }}.app/Contents/MacOS/${{ env.APPLICATION_NAME }}
+          cp .github/assets/${{ env.APPLICATION_NAME }}.icns ${{ env.APPLICATION_NAME }}.app/Contents/Resources
+          export RELEASE_TAG="${{ env.RELEASE_TAG }}"
+          CLEAN_VERSION="${RELEASE_TAG#v}"
+          cat <<EOF > ${{ env.APPLICATION_NAME }}.app/Contents/Info.plist
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
           <plist version="1.0">
           <dict>
               <key>CFBundleExecutable</key>
-              <string>adder</string>
+              <string>${{ env.APPLICATION_NAME }}</string>
               <key>CFBundleIdentifier</key>
-              <string>com.blinklabssoftware.adder</string>
+              <string>com.blinklabssoftware.${{ env.APPLICATION_NAME }}</string>
               <key>CFBundleName</key>
-              <string>Adder</string>
+              <string>${{ env.APPLICATION_NAME }}</string>
               <key>CFBundleIconFile</key>
-              <string>Adder</string>
+              <string>${{ env.APPLICATION_NAME }}</string>
               <key>CFBundleVersion</key>
-              <string>${{ env.RELEASE_TAG }}</string>
+              <string>${CLEAN_VERSION}</string>
               <key>CFBundleShortVersionString</key>
-              <string>${{ env.RELEASE_TAG }}</string>
+              <string>${CLEAN_VERSION}</string>
           </dict>
           </plist>
           EOF
-          /usr/bin/codesign --force -s "Developer ID Application: Blink Labs Software (${{ secrets.APPLE_TEAM_ID }})" --options runtime Adder.app -v
+          /usr/bin/codesign --force -s "Developer ID Application: Blink Labs Software (${{ secrets.APPLE_TEAM_ID }})" --options runtime ${{ env.APPLICATION_NAME }}.app -v
           xcrun notarytool store-credentials "notarytool-profile" --apple-id "${{ secrets.APPLE_ID }}" --team-id "${{ secrets.APPLE_TEAM_ID }}" --password "${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}"
-          ditto -c -k --keepParent "Adder.app" "notarization.zip"
+          ditto -c -k --keepParent "${{ env.APPLICATION_NAME }}.app" "notarization.zip"
           xcrun notarytool submit "notarization.zip" --keychain-profile "notarytool-profile" --wait
-          xcrun stapler staple "Adder.app"
+          xcrun stapler staple "${{ env.APPLICATION_NAME }}.app"
       - name: Upload release asset
         if: startsWith(github.ref, 'refs/tags/')
         run: |
-          _filename=adder-${{ env.RELEASE_TAG }}-${{ matrix.os }}-${{ matrix.arch }}
+          _filename=${{ env.APPLICATION_NAME }}-${{ env.RELEASE_TAG }}-${{ matrix.os }}-${{ matrix.arch }}
           if [[ "${{ matrix.os }}" == "windows" ]]; then
             _filename=${_filename}.exe
           fi
           if [[ "${{ matrix.os }}" == "windows" || "${{ matrix.os }}" == "linux" || "${{ matrix.os }}" == "freebsd" ]]; then
-            cp adder ${_filename}
+            cp ${{ env.APPLICATION_NAME }} ${_filename}
           fi
           if [[ "${{ matrix.os }}" == "darwin" ]]; then
-            _filename=adder-${{ env.RELEASE_TAG }}-${{ matrix.os }}-${{ matrix.arch }}.zip
-            zip -r ${_filename} Adder.app
+            _filename=${{ env.APPLICATION_NAME }}-${{ env.RELEASE_TAG }}-${{ matrix.os }}-${{ matrix.arch }}.zip
+            zip -r ${_filename} ${{ env.APPLICATION_NAME }}.app
           fi
           curl \
             -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
@@ -194,7 +198,7 @@ jobs:
       - name: Attest binary
         uses: actions/attest-build-provenance@v2
         with:
-          subject-path: 'adder'
+          subject-path: '${{ env.APPLICATION_NAME }}'
 
   build-images:
     runs-on: ubuntu-latest
