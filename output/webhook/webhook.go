@@ -98,7 +98,7 @@ func (w *WebhookOutput) Start() error {
 				logger.Error(fmt.Sprintf("unknown event type: %s", evt.Type))
 				return
 			}
-			// TODO: error handle
+			// TODO: error handle (#334)
 			err := w.SendWebhook(&evt)
 			if err != nil {
 				logger.Error(fmt.Sprintf("ERROR: %s", err))

@@ -184,6 +184,6 @@ func accessLogger(param gin.LogFormatterParams) string {
 }
 
 func handleHealthcheck(c *gin.Context) {
-	// TODO: add some actual health checking here
+	// TODO: add some actual health checking here (#337)
 	c.JSON(200, gin.H{"failed": false})
 }

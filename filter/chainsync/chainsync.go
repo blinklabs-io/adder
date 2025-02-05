@@ -53,7 +53,7 @@ func New(options ...ChainSyncOptionFunc) *ChainSync {
 // Start the chain sync filter
 func (c *ChainSync) Start() error {
 	go func() {
-		// TODO: pre-process filter params to be more useful for direct comparison
+		// TODO: pre-process filter params to be more useful for direct comparison (#336)
 		for {
 			evt, ok := <-c.inputChan
 			// Channel has been closed, which means we're shutting down
