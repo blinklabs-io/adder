@@ -97,7 +97,7 @@ transaction:
 ```
 
 Each event is output individually. The log output prints each event to stdout
-using Uber's `Zap` logging library.
+using Go's standard `slog` logging library.
 
 ## Configuration
 
