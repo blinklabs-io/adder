@@ -43,7 +43,7 @@ type ErrorResponse struct {
 	Error string `json:"error"`
 }
 
-// TODO add support for persistence
+// TODO add support for persistence (#335)
 var fcmStore *TokenStore
 
 func init() {

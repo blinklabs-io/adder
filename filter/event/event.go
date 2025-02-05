@@ -43,7 +43,6 @@ func New(options ...EventOptionFunc) *Event {
 // Start the event filter
 func (e *Event) Start() error {
 	go func() {
-		// TODO: pre-process filter params to be more useful for direct comparison
 		for {
 			evt, ok := <-e.inputChan
 			// Channel has been closed, which means we're shutting down

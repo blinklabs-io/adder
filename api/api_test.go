@@ -37,6 +37,6 @@ func TestRouteRegistration(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, rr.Code, "Expected status not found")
 
 	// You can also check the response body, headers, etc.
-	// TODO check for JSON response
+	// TODO check for JSON response (#338)
 	// assert.Equal(t, `{"fcmToken":"someToken"}`, rr.Body.String())
 }
