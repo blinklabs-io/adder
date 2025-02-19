@@ -1,0 +1,12 @@
+issues:
+  exclude-dirs:
+    - docs
+  max-issues-per-linter: 0
+  max-same-issues: 0
+linters:
+  enable:
+    - gosec #(gas): Inspects source code for security problems
+run:
+  issues-exit-code: 1
+  tests: false
+  timeout: 10m
