@@ -172,6 +172,9 @@ func (p *PluginOption) ProcessConfig(
 		case PluginOptionTypeUint:
 			switch value := optionData.(type) {
 			case int:
+				if value < 0 {
+					return fmt.Errorf("invalid value for option '%s': negative value: %T", p.Name, optionData)
+				}
 				*(p.Dest.(*uint)) = uint(value)
 			default:
 				return fmt.Errorf("invalid value for option '%s': expected uint and got %T", p.Name, optionData)

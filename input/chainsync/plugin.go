@@ -1,4 +1,4 @@
-// Copyright 2023 Blink Labs Software
+// Copyright 2025 Blink Labs Software
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@ package chainsync
 
 import (
 	"encoding/hex"
+	"math"
 	"strconv"
 	"strings"
 
@@ -132,12 +133,18 @@ func init() {
 }
 
 func NewFromCmdlineOptions() plugin.Plugin {
+	var nm uint32
+	// Use the default network magic if it falls outside uint32 range
+	if cmdlineOptions.networkMagic > 0 &&
+		cmdlineOptions.networkMagic < math.MaxUint32 {
+		nm = uint32(cmdlineOptions.networkMagic)
+	}
 	opts := []ChainSyncOptionFunc{
 		WithLogger(
 			logging.GetLogger().With("plugin", "input.chainsync"),
 		),
 		WithNetwork(cmdlineOptions.network),
-		WithNetworkMagic(uint32(cmdlineOptions.networkMagic)),
+		WithNetworkMagic(nm),
 		WithAddress(cmdlineOptions.address),
 		WithSocketPath(cmdlineOptions.socketPath),
 		WithNtcTcp(cmdlineOptions.ntcTcp),
