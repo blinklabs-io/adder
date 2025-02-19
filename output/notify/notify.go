@@ -67,7 +67,7 @@ func (n *NotifyOutput) Start() error {
 		}
 	}
 	filename := fmt.Sprintf("%s/%s/%s", userCacheDir, "adder", "icon.png")
-	if err := os.WriteFile(filename, icon, 0666); err != nil {
+	if err := os.WriteFile(filename, icon, 0600); err != nil {
 		panic(err)
 	}
 	go func() {
