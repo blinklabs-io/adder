@@ -138,14 +138,15 @@ func main() {
 			cfg.Debug.ListenPort,
 		))
 		go func() {
-			err := http.ListenAndServe(
-				fmt.Sprintf(
+			debugger := &http.Server{
+				Addr: fmt.Sprintf(
 					"%s:%d",
 					cfg.Debug.ListenAddress,
 					cfg.Debug.ListenPort,
 				),
-				nil,
-			)
+				ReadHeaderTimeout: 60 * time.Second,
+			}
+			err := debugger.ListenAndServe()
 			if err != nil {
 				logger.Error(
 					fmt.Sprintf("failed to start debug listener: %s", err),
