@@ -1,4 +1,4 @@
-// Copyright 2023 Blink Labs Software
+// Copyright 2024 Blink Labs Software
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log/slog"
+	"math"
 	"net/http"
 	"strings"
 	"time"
@@ -336,6 +337,9 @@ func (c *ChainSync) handleRollForward(
 			if err != nil {
 				return err
 			}
+			if t < 0 || t > math.MaxUint32 {
+				return fmt.Errorf("invalid number of transactions")
+			}
 			txEvt := event.New("chainsync.transaction", time.Now(), NewTransactionContext(block, transaction, uint32(t), c.networkMagic),
 				NewTransactionEvent(block, transaction, c.includeCbor, resolvedInputs))
 			c.eventChan <- txEvt
@@ -361,6 +365,9 @@ func (c *ChainSync) handleBlockFetchBlock(
 		resolvedInputs, err := resolveTransactionInputs(transaction, c)
 		if err != nil {
 			return err
+		}
+		if t < 0 || t > math.MaxUint32 {
+			return fmt.Errorf("invalid number of transactions")
 		}
 		txEvt := event.New(
 			"chainsync.transaction",
