@@ -261,8 +261,9 @@ func (w *WebhookOutput) SendWebhook(e *event.Event) error {
 	if w.username != "" && w.password != "" {
 		req.Header.Add("Authorization", basicAuth(w.username, w.password))
 	}
-	// Setup custom transport to ignore self-signed SSL
+	// Setup custom transport to allow self-signed SSL
 	defaultTransport := http.DefaultTransport.(*http.Transport)
+	// #nosec G402
 	customTransport := &http.Transport{
 		Proxy:                 defaultTransport.Proxy,
 		DialContext:           defaultTransport.DialContext,
