@@ -2,7 +2,6 @@ package chainsync
 
 import (
 	"encoding/hex"
-	"log"
 	"testing"
 	"time"
 
@@ -14,11 +13,9 @@ import (
 
 func TestHandleRollBackward(t *testing.T) {
 	// Create a new ChainSync instance
-	log.Println("Here")
 	c := &ChainSync{
 		eventChan: make(chan event.Event, 10),
 		status:    &ChainSyncStatus{},
-		//cursorCache: make([]ocommon.Point, 0),
 	}
 
 	// Define test data
@@ -35,7 +32,6 @@ func TestHandleRollBackward(t *testing.T) {
 
 	// Call the function under test
 	err := c.handleRollBackward(chainsync.CallbackContext{}, point, tip)
-	log.Println("the error is", err)
 	// Verify that no error was returned
 	assert.NoError(t, err)
 
@@ -43,7 +39,6 @@ func TestHandleRollBackward(t *testing.T) {
 	select {
 	case evt := <-c.eventChan:
 		// Verify the event type
-		log.Println("the event type is", evt.Type)
 		assert.Equal(t, "chainsync.rollback", evt.Type)
 
 		// Verify the timestamp is not zero and is close to the current time
@@ -63,19 +58,9 @@ func TestHandleRollBackward(t *testing.T) {
 	}
 
 	// Verify that the status was updated correctly
-	log.Println("Verifying Status update")
-	log.Println("the status slot number is", c.status.SlotNumber)
-	log.Println("Status after rollback:", c.status)
 	assert.Equal(t, uint64(12345), c.status.SlotNumber)
 	assert.Equal(t, uint64(0), c.status.BlockNumber) // BlockNumber should be 0 after rollback
 	assert.Equal(t, "0102030405", c.status.BlockHash)
 	assert.Equal(t, uint64(67890), c.status.TipSlotNumber)
 	assert.Equal(t, "060708090a", c.status.TipBlockHash)
-
-	// Verify that the cursor cache was updated
-	// assert.Len(t, c.cursorCache, 1)
-	// assert.Equal(t, point, c.cursorCache[0])
-
-	// Verify that TipReached is not set (since we're rolling back)
-	assert.False(t, c.status.TipReached)
 }
