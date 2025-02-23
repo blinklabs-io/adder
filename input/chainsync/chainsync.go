@@ -307,7 +307,7 @@ func (c *ChainSync) handleRollBackward(
 	)
 	c.eventChan <- evt
 
-	// updating status
+	// updating status after roll backward
 	c.updateStatus(
 		point.Slot,                         // SlotNumber
 		0,                                  // BlockNumber (unknown after rollback)
