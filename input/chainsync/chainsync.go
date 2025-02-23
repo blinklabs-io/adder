@@ -18,6 +18,7 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"log"
 	"log/slog"
 	"math"
 	"net/http"
@@ -299,6 +300,7 @@ func (c *ChainSync) handleRollBackward(
 	point ocommon.Point,
 	tip ochainsync.Tip,
 ) error {
+	log.Println("handleRollBackward before update:", c.status)
 	evt := event.New(
 		"chainsync.rollback",
 		time.Now(),
@@ -306,6 +308,16 @@ func (c *ChainSync) handleRollBackward(
 		NewRollbackEvent(point),
 	)
 	c.eventChan <- evt
+
+	// Update the status to reflect the rollback
+	c.updateStatus(
+		point.Slot,                         // SlotNumber
+		0,                                  // BlockNumber (unknown after rollback)
+		hex.EncodeToString(point.Hash),     // BlockHash
+		tip.Point.Slot,                     // TipSlotNumber
+		hex.EncodeToString(tip.Point.Hash), // TipBlockHash
+	)
+	log.Println("handleRollBackward after update:", c.status)
 	return nil
 }
 
@@ -319,7 +331,11 @@ func (c *ChainSync) handleRollForward(
 	case ledger.Block:
 		evt := event.New("chainsync.block", time.Now(), NewBlockContext(v, c.networkMagic), NewBlockEvent(v, c.includeCbor))
 		c.eventChan <- evt
-		c.updateStatus(v.SlotNumber(), v.BlockNumber(), v.Hash(), tip.Point.Slot, hex.EncodeToString(tip.Point.Hash))
+		c.updateStatus(v.SlotNumber(),
+			v.BlockNumber(),
+			v.Hash(),
+			tip.Point.Slot,
+			hex.EncodeToString(tip.Point.Hash))
 	case ledger.BlockHeader:
 		blockSlot := v.SlotNumber()
 		blockHash, _ := hex.DecodeString(v.Hash())
@@ -410,8 +426,15 @@ func (c *ChainSync) updateStatus(
 	tipSlotNumber uint64,
 	tipBlockHash string,
 ) {
+
+	// Initialize status if it is nil
+	// if c.status == nil {
+	// 	c.status = &ChainSyncStatus{}
+	// }
+
 	// Update cursor cache
-	blockHashBytes, _ := hex.DecodeString(blockHash)
+	blockHashBytes, error := hex.DecodeString(blockHash)
+	log.Println("the error is", error)
 	c.cursorCache = append(
 		c.cursorCache,
 		ocommon.Point{Slot: slotNumber, Hash: blockHashBytes},
@@ -429,6 +452,7 @@ func (c *ChainSync) updateStatus(
 			}
 		}
 	}
+	log.Println("the slot number is", c.status.SlotNumber)
 	c.status.SlotNumber = slotNumber
 	c.status.BlockNumber = blockNumber
 	c.status.BlockHash = blockHash
