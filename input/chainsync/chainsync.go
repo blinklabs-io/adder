@@ -306,6 +306,15 @@ func (c *ChainSync) handleRollBackward(
 		NewRollbackEvent(point),
 	)
 	c.eventChan <- evt
+
+	// updating status after roll backward
+	c.updateStatus(
+		point.Slot,                         // SlotNumber
+		0,                                  // BlockNumber (unknown after rollback)
+		hex.EncodeToString(point.Hash),     // BlockHash
+		tip.Point.Slot,                     // TipSlotNumber
+		hex.EncodeToString(tip.Point.Hash), // TipBlockHash
+	)
 	return nil
 }
 
