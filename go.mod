@@ -5,7 +5,7 @@ go 1.22.11
 require (
 	github.com/SundaeSwap-finance/kugo v1.1.0
 	github.com/SundaeSwap-finance/ogmigo v0.9.0
-	github.com/blinklabs-io/gouroboros v0.109.0
+	github.com/blinklabs-io/gouroboros v0.110.0
 	github.com/btcsuite/btcd/btcutil v1.1.6
 	github.com/gen2brain/beeep v0.0.0-20230602101333-f384c29b62dd
 	github.com/gin-gonic/gin v1.10.0
