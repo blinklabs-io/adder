@@ -91,7 +91,7 @@ func Send(accessToken string, projectId string, msg *Message) error {
 	fmt.Println(string(payload))
 
 	// Create a new HTTP request
-	req, err := http.NewRequest("POST", fcmEndpoint, bytes.NewBuffer(payload))
+	req, err := http.NewRequest(http.MethodPost, fcmEndpoint, bytes.NewBuffer(payload))
 	if err != nil {
 		return err
 	}
