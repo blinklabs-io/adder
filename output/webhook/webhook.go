@@ -249,7 +249,7 @@ func (w *WebhookOutput) SendWebhook(e *event.Event) error {
 		bytes.NewReader(data),
 	)
 	if err != nil {
-		return fmt.Errorf("%s", err)
+		return fmt.Errorf("%w", err)
 	}
 	req.Header.Add("Content-Type", "application/json")
 	req.Header.Add(
@@ -277,14 +277,14 @@ func (w *WebhookOutput) SendWebhook(e *event.Event) error {
 	// Send payload
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("%s", err)
+		return fmt.Errorf("%w", err)
 	}
 	if resp == nil {
 		return fmt.Errorf("failed to send payload: %s", data)
 	}
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return fmt.Errorf("%s", err)
+		return fmt.Errorf("%w", err)
 	}
 	defer resp.Body.Close()
 

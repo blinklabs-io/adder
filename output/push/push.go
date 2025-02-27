@@ -346,7 +346,7 @@ func extractCIP20FromMetadata(metadata *cbor.LazyValue) (string, error) {
 
 	jsonBytes, err := json.Marshal(msgStruct)
 	if err != nil {
-		return "", fmt.Errorf("error marshalling message to JSON: %v", err)
+		return "", fmt.Errorf("error marshalling message to JSON: %w", err)
 	}
 
 	return string(jsonBytes), nil

@@ -77,11 +77,11 @@ func (c *Config) Load(configFile string) error {
 	if configFile != "" {
 		buf, err := os.ReadFile(configFile)
 		if err != nil {
-			return fmt.Errorf("error reading config file: %s", err)
+			return fmt.Errorf("error reading config file: %w", err)
 		}
 		err = yaml.Unmarshal(buf, c)
 		if err != nil {
-			return fmt.Errorf("error parsing config file: %s", err)
+			return fmt.Errorf("error parsing config file: %w", err)
 		}
 	}
 	// Load config values from environment variables
@@ -89,7 +89,7 @@ func (c *Config) Load(configFile string) error {
 	// vars that we hadn't explicitly specified in annotations above
 	err := envconfig.Process("dummy", c)
 	if err != nil {
-		return fmt.Errorf("error processing environment: %s", err)
+		return fmt.Errorf("error processing environment: %w", err)
 	}
 	return nil
 }
