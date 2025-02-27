@@ -1,4 +1,4 @@
-// Copyright 2024 Blink Labs Software
+// Copyright 2025 Blink Labs Software
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@ package fcm
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -91,7 +92,13 @@ func Send(accessToken string, projectId string, msg *Message) error {
 	fmt.Println(string(payload))
 
 	// Create a new HTTP request
-	req, err := http.NewRequest(http.MethodPost, fcmEndpoint, bytes.NewBuffer(payload))
+	ctx := context.Background()
+	req, err := http.NewRequestWithContext(
+		ctx,
+		http.MethodPost,
+		fcmEndpoint,
+		bytes.NewBuffer(payload),
+	)
 	if err != nil {
 		return err
 	}
