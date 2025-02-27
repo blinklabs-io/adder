@@ -11,7 +11,6 @@ import (
 )
 
 func TestRouteRegistration(t *testing.T) {
-
 	// Initialize the API and set it to debug mode for testing
 	apiInstance := api.New(true)
 
@@ -35,7 +34,6 @@ func TestRouteRegistration(t *testing.T) {
 
 	// Check the status code
 	assert.Equal(t, http.StatusNotFound, rr.Code, "Expected status not found")
-
 	// You can also check the response body, headers, etc.
 	// TODO check for JSON response (#338)
 	// assert.Equal(t, `{"fcmToken":"someToken"}`, rr.Body.String())
