@@ -1,4 +1,4 @@
-// Copyright 2023 Blink Labs Software
+// Copyright 2025 Blink Labs Software
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -25,7 +25,6 @@ import (
 type PluginOptionType int
 
 const (
-	PluginOptionTypeNone   PluginOptionType = 0
 	PluginOptionTypeString PluginOptionType = 1
 	PluginOptionTypeBool   PluginOptionType = 2
 	PluginOptionTypeInt    PluginOptionType = 3
