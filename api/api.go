@@ -50,7 +50,7 @@ func WithPort(port uint) APIOption {
 	}
 }
 
-// Initialize singleton API instance
+// Initialize singleton API instance.
 var apiInstance = &APIv1{
 	engine: ConfigureRouter(false),
 	Host:   "0.0.0.0",
@@ -70,6 +70,7 @@ func New(debug bool, options ...APIOption) *APIv1 {
 			opt(apiInstance)
 		}
 	})
+
 	return apiInstance
 }
 
@@ -115,7 +116,7 @@ func (a *APIv1) Start() error {
 
 func (a *APIv1) AddRoute(method, path string, handler gin.HandlerFunc) {
 	// Inner function to add routes to a given target
-	//(either gin.Engine or gin.RouterGroup)
+	// (either gin.Engine or gin.RouterGroup)
 	addRouteToTarget := func(target gin.IRoutes) {
 		switch method {
 		case "GET":
@@ -150,6 +151,7 @@ func ConfigureRouter(debug bool) *gin.Engine {
 	if !debug {
 		gin.SetMode(gin.ReleaseMode)
 	}
+
 	gin.DisableConsoleColor()
 	g := gin.New()
 	g.Use(gin.Recovery())
@@ -163,6 +165,7 @@ func ConfigureRouter(debug bool) *gin.Engine {
 	})
 	// Swagger UI
 	g.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+
 	return g
 }
 
@@ -179,7 +182,12 @@ func accessLogger(param gin.LogFormatterParams) string {
 		"user_agent":    param.Request.UserAgent(),
 		"error_message": param.ErrorMessage,
 	}
-	ret, _ := json.Marshal(logEntry)
+
+	ret, err := json.Marshal(logEntry)
+	if err != nil {
+		return ""
+	}
+
 	return string(ret) + "\n"
 }
 
