@@ -51,7 +51,7 @@ func (e *EmbeddedOutput) Start() error {
 			}
 			if e.callbackFunc != nil {
 				if err := e.callbackFunc(evt); err != nil {
-					e.errorChan <- fmt.Errorf("callback function error: %s", err)
+					e.errorChan <- fmt.Errorf("callback function error: %w", err)
 					return
 				}
 			}

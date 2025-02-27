@@ -62,7 +62,7 @@ func (p *Pipeline) Start() error {
 	// Start inputs
 	for _, input := range p.inputs {
 		if err := input.Start(); err != nil {
-			return fmt.Errorf("failed to start input: %s", err)
+			return fmt.Errorf("failed to start input: %w", err)
 		}
 		// Start background process to send input events to combined filter channel
 		go p.chanCopyLoop(input.OutputChan(), p.filterChan)
@@ -72,7 +72,7 @@ func (p *Pipeline) Start() error {
 	// Start filters
 	for idx, filter := range p.filters {
 		if err := filter.Start(); err != nil {
-			return fmt.Errorf("failed to start input: %s", err)
+			return fmt.Errorf("failed to start input: %w", err)
 		}
 		if idx == 0 {
 			// Start background process to send events from combined filter channel to first filter plugin
@@ -96,7 +96,7 @@ func (p *Pipeline) Start() error {
 	// Start outputs
 	for _, output := range p.outputs {
 		if err := output.Start(); err != nil {
-			return fmt.Errorf("failed to start output: %s", err)
+			return fmt.Errorf("failed to start output: %w", err)
 		}
 		// Start background error listener
 		go p.errorChanWait(output.ErrorChan())
@@ -114,13 +114,13 @@ func (p *Pipeline) Stop() error {
 	// Stop inputs
 	for _, input := range p.inputs {
 		if err := input.Stop(); err != nil {
-			return fmt.Errorf("failed to stop input: %s", err)
+			return fmt.Errorf("failed to stop input: %w", err)
 		}
 	}
 	// Stop outputs
 	for _, output := range p.outputs {
 		if err := output.Stop(); err != nil {
-			return fmt.Errorf("failed to stop output: %s", err)
+			return fmt.Errorf("failed to stop output: %w", err)
 		}
 	}
 	return nil
