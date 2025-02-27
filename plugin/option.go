@@ -165,7 +165,7 @@ func (p *PluginOption) ProcessConfig(
 		case PluginOptionTypeInt:
 			switch value := optionData.(type) {
 			case int:
-				*(p.Dest.(*int)) = int(value)
+				*(p.Dest.(*int)) = value
 			default:
 				return fmt.Errorf("invalid value for option '%s': expected int and got %T", p.Name, optionData)
 			}
