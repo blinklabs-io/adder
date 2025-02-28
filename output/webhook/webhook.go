@@ -1,4 +1,4 @@
-// Copyright 2024 Blink Labs Software
+// Copyright 2025 Blink Labs Software
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/blinklabs-io/adder/event"
@@ -95,7 +96,7 @@ func (w *WebhookOutput) Start() error {
 				te := payload.(chainsync.TransactionEvent)
 				evt.Payload = te
 			default:
-				logger.Error(fmt.Sprintf("unknown event type: %s", evt.Type))
+				logger.Error("unknown event type: " + evt.Type)
 				return
 			}
 			// TODO: error handle (#334)
@@ -129,11 +130,11 @@ func formatWebhook(e *event.Event, format string) []byte {
 			dme.Title = "New Cardano Block"
 			dmefs = append(dmefs, &DiscordMessageEmbedField{
 				Name:  "Block Number",
-				Value: fmt.Sprintf("%d", bc.BlockNumber),
+				Value: strconv.FormatUint(bc.BlockNumber, 10),
 			})
 			dmefs = append(dmefs, &DiscordMessageEmbedField{
 				Name:  "Slot Number",
-				Value: fmt.Sprintf("%d", bc.SlotNumber),
+				Value: strconv.FormatUint(bc.SlotNumber, 10),
 			})
 			dmefs = append(dmefs, &DiscordMessageEmbedField{
 				Name:  "Block Hash",
@@ -150,7 +151,7 @@ func formatWebhook(e *event.Event, format string) []byte {
 			dme.Title = "Cardano Rollback"
 			dmefs = append(dmefs, &DiscordMessageEmbedField{
 				Name:  "Slot Number",
-				Value: fmt.Sprintf("%d", be.SlotNumber),
+				Value: strconv.FormatUint(be.SlotNumber, 10),
 			})
 			dmefs = append(dmefs, &DiscordMessageEmbedField{
 				Name:  "Block Hash",
@@ -162,23 +163,23 @@ func formatWebhook(e *event.Event, format string) []byte {
 			dme.Title = "New Cardano Transaction"
 			dmefs = append(dmefs, &DiscordMessageEmbedField{
 				Name:  "Block Number",
-				Value: fmt.Sprintf("%d", tc.BlockNumber),
+				Value: strconv.FormatUint(tc.BlockNumber, 10),
 			})
 			dmefs = append(dmefs, &DiscordMessageEmbedField{
 				Name:  "Slot Number",
-				Value: fmt.Sprintf("%d", tc.SlotNumber),
+				Value: strconv.FormatUint(tc.SlotNumber, 10),
 			})
 			dmefs = append(dmefs, &DiscordMessageEmbedField{
 				Name:  "Inputs",
-				Value: fmt.Sprintf("%d", len(te.Inputs)),
+				Value: strconv.Itoa(len(te.Inputs)),
 			})
 			dmefs = append(dmefs, &DiscordMessageEmbedField{
 				Name:  "Outputs",
-				Value: fmt.Sprintf("%d", len(te.Outputs)),
+				Value: strconv.Itoa(len(te.Outputs)),
 			})
 			dmefs = append(dmefs, &DiscordMessageEmbedField{
 				Name:  "Fee",
-				Value: fmt.Sprintf("%d", te.Fee),
+				Value: strconv.FormatUint(te.Fee, 10),
 			})
 			dmefs = append(dmefs, &DiscordMessageEmbedField{
 				Name:  "Transaction Hash",
@@ -254,7 +255,7 @@ func (w *WebhookOutput) SendWebhook(e *event.Event) error {
 	req.Header.Add("Content-Type", "application/json")
 	req.Header.Add(
 		"User-Agent",
-		fmt.Sprintf("Adder/%s", version.GetVersionString()),
+		"Adder/"+version.GetVersionString(),
 	)
 
 	// Setup authorization
