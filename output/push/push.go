@@ -17,6 +17,7 @@ package push
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 
@@ -309,7 +310,7 @@ func (p *PushOutput) OutputChan() <-chan event.Event {
 // and returns it as a JSON string.
 func extractCIP20FromMetadata(metadata *cbor.LazyValue) (string, error) {
 	if metadata == nil {
-		return "", fmt.Errorf("metadata is nil")
+		return "", errors.New("metadata is nil")
 	}
 
 	if _, err := metadata.Decode(); err != nil {
@@ -318,24 +319,24 @@ func extractCIP20FromMetadata(metadata *cbor.LazyValue) (string, error) {
 
 	metadataMap, ok := metadata.Value().(map[any]any)
 	if !ok {
-		return "", fmt.Errorf("metadata value is not of the expected map type")
+		return "", errors.New("metadata value is not of the expected map type")
 	}
 
 	// Extract the nested value for key 674
 	nestedValue, found := metadataMap[uint64(674)]
 	if !found {
-		return "", fmt.Errorf("key 674 not found in metadata")
+		return "", errors.New("key 674 not found in metadata")
 	}
 
 	// Assert the nested value is a map
 	nestedMap, ok := nestedValue.(map[any]any)
 	if !ok {
-		return "", fmt.Errorf("nested value for key 674 is not a map")
+		return "", errors.New("nested value for key 674 is not a map")
 	}
 
 	msgValue, found := nestedMap["msg"]
 	if !found {
-		return "", fmt.Errorf("key 'msg' not found in nested metadata map")
+		return "", errors.New("key 'msg' not found in nested metadata map")
 	}
 
 	msgStruct := map[string]any{

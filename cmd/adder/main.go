@@ -168,7 +168,7 @@ func main() {
 	// Configure input
 	input := plugin.GetPlugin(plugin.PluginTypeInput, cfg.Input)
 	if input == nil {
-		logger.Error(fmt.Sprintf("unknown input: %s", cfg.Input))
+		logger.Error("unknown input: " + cfg.Input)
 		os.Exit(1)
 	}
 	pipe.AddInput(input)
@@ -182,7 +182,7 @@ func main() {
 	// Configure output
 	output := plugin.GetPlugin(plugin.PluginTypeOutput, cfg.Output)
 	if output == nil {
-		logger.Error(fmt.Sprintf("unknown output: %s", cfg.Output))
+		logger.Error("unknown output: " + cfg.Output)
 		os.Exit(1)
 	}
 	// Check if output plugin implements APIRouteRegistrar
