@@ -1,4 +1,4 @@
-// Copyright 2025 Blink Labs Software
+// Copyright 2024 Blink Labs Software
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -17,7 +17,6 @@ package chainsync
 import (
 	"context"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"log/slog"
 	"math"
@@ -80,6 +79,7 @@ type ChainSyncStatus struct {
 	TipSlotNumber uint64
 	TipBlockHash  string
 	TipReached    bool
+	Era           string
 }
 
 type StatusUpdateFunc func(ChainSyncStatus)
@@ -202,7 +202,7 @@ func (c *ChainSync) setupConnection() error {
 		c.dialAddress = c.socketPath
 		useNtn = false
 	} else if c.dialFamily == "" || c.dialAddress == "" {
-		return errors.New("you must specify a host/port, UNIX socket path, or well-known network name")
+		return fmt.Errorf("you must specify a host/port, UNIX socket path, or well-known network name")
 	}
 	// Create connection
 	var err error
@@ -229,7 +229,7 @@ func (c *ChainSync) setupConnection() error {
 		return err
 	}
 	if c.logger != nil {
-		c.logger.Info("connected to node at " + c.dialAddress)
+		c.logger.Info(fmt.Sprintf("connected to node at %s", c.dialAddress))
 	}
 	// Start async error handler
 	go func() {
@@ -338,7 +338,7 @@ func (c *ChainSync) handleRollForward(
 			return err
 		}
 		if block == nil {
-			return errors.New("blockfetch returned empty")
+			return fmt.Errorf("blockfetch returned empty")
 		}
 		blockEvt := event.New("chainsync.block", time.Now(), NewBlockHeaderContext(v), NewBlockEvent(block, c.includeCbor))
 		c.eventChan <- blockEvt
@@ -348,7 +348,7 @@ func (c *ChainSync) handleRollForward(
 				return err
 			}
 			if t < 0 || t > math.MaxUint32 {
-				return errors.New("invalid number of transactions")
+				return fmt.Errorf("invalid number of transactions")
 			}
 			txEvt := event.New("chainsync.transaction", time.Now(), NewTransactionContext(block, transaction, uint32(t), c.networkMagic),
 				NewTransactionEvent(block, transaction, c.includeCbor, resolvedInputs))
@@ -377,7 +377,7 @@ func (c *ChainSync) handleBlockFetchBlock(
 			return err
 		}
 		if t < 0 || t > math.MaxUint32 {
-			return errors.New("invalid number of transactions")
+			return fmt.Errorf("invalid number of transactions")
 		}
 		txEvt := event.New(
 			"chainsync.transaction",
@@ -420,6 +420,9 @@ func (c *ChainSync) updateStatus(
 	tipSlotNumber uint64,
 	tipBlockHash string,
 ) {
+	// Determine the era based on slot number
+	era := c.getEra(slotNumber)
+
 	// Update cursor cache
 	blockHashBytes, _ := hex.DecodeString(blockHash)
 	c.cursorCache = append(
@@ -444,6 +447,7 @@ func (c *ChainSync) updateStatus(
 	c.status.BlockHash = blockHash
 	c.status.TipSlotNumber = tipSlotNumber
 	c.status.TipBlockHash = tipBlockHash
+	c.status.Era = era
 	if c.statusUpdateFunc != nil {
 		c.statusUpdateFunc(*(c.status))
 	}
@@ -465,7 +469,7 @@ func getKupoClient(c *ChainSync) (*kugo.Client, error) {
 	defer cancel()
 
 	healthUrl := strings.TrimRight(c.kupoUrl, "/") + "/v1/health"
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, healthUrl, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", healthUrl, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create health check request: %w", err)
 	}
@@ -476,7 +480,7 @@ func getKupoClient(c *ChainSync) (*kugo.Client, error) {
 		return nil, fmt.Errorf("failed to perform health check: %w", err)
 	}
 	if resp == nil {
-		return nil, errors.New("health check response empty, aborting")
+		return nil, fmt.Errorf("health check response empty, aborting")
 	}
 	defer resp.Body.Close()
 
@@ -543,4 +547,23 @@ func resolveTransactionInputs(
 		}
 	}
 	return resolvedInputs, nil
+}
+
+func (c *ChainSync) getEra(slotNumber uint64) string {
+	switch {
+	case slotNumber < 4492800: // example boundary
+		return "Byron"
+	case slotNumber < 15984000:
+		return "Shelley"
+	case slotNumber < 34560000:
+		return "Allegra"
+	case slotNumber < 38880000:
+		return "Mary"
+	case slotNumber < 43200000:
+		return "Alonzo"
+	case slotNumber < 50400000:
+		return "Babbage"
+	default:
+		return "Conway" // future era
+	}
 }
