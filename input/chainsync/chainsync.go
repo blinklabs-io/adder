@@ -1,4 +1,4 @@
-// Copyright 2024 Blink Labs Software
+// Copyright 2025 Blink Labs Software
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@ package chainsync
 import (
 	"context"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"log/slog"
 	"math"
@@ -202,7 +203,7 @@ func (c *ChainSync) setupConnection() error {
 		c.dialAddress = c.socketPath
 		useNtn = false
 	} else if c.dialFamily == "" || c.dialAddress == "" {
-		return fmt.Errorf("you must specify a host/port, UNIX socket path, or well-known network name")
+		return errors.New("you must specify a host/port, UNIX socket path, or well-known network name")
 	}
 	// Create connection
 	var err error
@@ -229,7 +230,7 @@ func (c *ChainSync) setupConnection() error {
 		return err
 	}
 	if c.logger != nil {
-		c.logger.Info(fmt.Sprintf("connected to node at %s", c.dialAddress))
+		c.logger.Info("connected to node at " + c.dialAddress)
 	}
 	// Start async error handler
 	go func() {
@@ -338,7 +339,7 @@ func (c *ChainSync) handleRollForward(
 			return err
 		}
 		if block == nil {
-			return fmt.Errorf("blockfetch returned empty")
+			return errors.New("blockfetch returned empty")
 		}
 		blockEvt := event.New("chainsync.block", time.Now(), NewBlockHeaderContext(v), NewBlockEvent(block, c.includeCbor))
 		c.eventChan <- blockEvt
@@ -348,7 +349,7 @@ func (c *ChainSync) handleRollForward(
 				return err
 			}
 			if t < 0 || t > math.MaxUint32 {
-				return fmt.Errorf("invalid number of transactions")
+				return errors.New("invalid number of transactions")
 			}
 			txEvt := event.New("chainsync.transaction", time.Now(), NewTransactionContext(block, transaction, uint32(t), c.networkMagic),
 				NewTransactionEvent(block, transaction, c.includeCbor, resolvedInputs))
@@ -377,7 +378,7 @@ func (c *ChainSync) handleBlockFetchBlock(
 			return err
 		}
 		if t < 0 || t > math.MaxUint32 {
-			return fmt.Errorf("invalid number of transactions")
+			return errors.New("invalid number of transactions")
 		}
 		txEvt := event.New(
 			"chainsync.transaction",
@@ -469,7 +470,7 @@ func getKupoClient(c *ChainSync) (*kugo.Client, error) {
 	defer cancel()
 
 	healthUrl := strings.TrimRight(c.kupoUrl, "/") + "/v1/health"
-	req, err := http.NewRequestWithContext(ctx, "GET", healthUrl, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, healthUrl, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create health check request: %w", err)
 	}
@@ -480,7 +481,7 @@ func getKupoClient(c *ChainSync) (*kugo.Client, error) {
 		return nil, fmt.Errorf("failed to perform health check: %w", err)
 	}
 	if resp == nil {
-		return nil, fmt.Errorf("health check response empty, aborting")
+		return nil, errors.New("health check response empty, aborting")
 	}
 	defer resp.Body.Close()
 
