@@ -2,14 +2,242 @@ package chainsync
 
 import (
 	"encoding/hex"
-	"testing"
 	"time"
 
+	"testing"
+
 	"github.com/blinklabs-io/adder/event"
+	"github.com/blinklabs-io/gouroboros/connection"
+	"github.com/blinklabs-io/gouroboros/ledger"
 	"github.com/blinklabs-io/gouroboros/protocol/chainsync"
 	ocommon "github.com/blinklabs-io/gouroboros/protocol/common"
 	"github.com/stretchr/testify/assert"
+	utxorpc "github.com/utxorpc/go-codegen/utxorpc/v1alpha/cardano"
 )
+
+// MockAddr is a mock implementation of the net.Addr interface.
+type MockAddr struct {
+	NetWorkStr string
+	AddrStr    string
+}
+
+func (m MockAddr) Network() string {
+	return m.NetWorkStr
+}
+
+func (m MockAddr) String() string {
+	return m.AddrStr
+}
+
+// NewMockCallbackContext creates a mock CallbackContext for testing.
+func NewMockCallbackContext() chainsync.CallbackContext {
+	return chainsync.CallbackContext{
+		ConnectionId: connection.ConnectionId{
+			LocalAddr:  MockAddr{NetWorkStr: "tcp", AddrStr: "127.0.0.1:3000"},
+			RemoteAddr: MockAddr{NetWorkStr: "tcp", AddrStr: "127.0.0.1:4000"},
+		},
+		Client: nil,
+		Server: nil,
+	}
+}
+
+// MockBlock is a mock implementation of the ledger.Block interface for testing.
+type MockBlock struct {
+	slotNumber  uint64
+	blockNumber uint64
+	hash        string
+	prevHash    string
+	era         ledger.Era
+	issuerVkey  ledger.IssuerVkey
+	cbor        []byte
+}
+
+func (m MockBlock) SlotNumber() uint64 {
+	return m.slotNumber
+}
+
+func (m MockBlock) BlockNumber() uint64 {
+	return m.blockNumber
+}
+
+func (m MockBlock) Hash() string {
+	return m.hash
+}
+
+func (m MockBlock) PrevHash() string {
+	return m.prevHash
+}
+
+func (m MockBlock) IssuerVkey() ledger.IssuerVkey {
+	return m.issuerVkey
+}
+
+func (m MockBlock) BlockBodySize() uint64 {
+	return 0
+}
+
+func (m MockBlock) Era() ledger.Era {
+	return m.era
+}
+
+func (m MockBlock) Cbor() []byte {
+	return m.cbor
+}
+
+func (m MockBlock) Header() ledger.BlockHeader {
+	return MockBlockHeader{
+		slotNumber:    m.slotNumber,
+		blockNumber:   m.blockNumber,
+		hash:          m.hash,
+		prevHash:      m.prevHash,
+		era:           m.era,
+		issuerVkey:    m.issuerVkey,
+		blockBodySize: 0,
+		cbor:          m.cbor,
+	}
+}
+
+func (m MockBlock) Type() int {
+	return 0
+}
+
+func (m MockBlock) Transactions() []ledger.Transaction {
+	return nil
+}
+
+func (m MockBlock) Utxorpc() *utxorpc.Block {
+	return nil
+}
+
+// MockBlockHeader is a mock implementation of the ledger.BlockHeader interface for testing.
+type MockBlockHeader struct {
+	slotNumber    uint64
+	blockNumber   uint64
+	hash          string
+	prevHash      string
+	era           ledger.Era
+	issuerVkey    ledger.IssuerVkey
+	blockBodySize uint64
+	cbor          []byte
+}
+
+func (m MockBlockHeader) SlotNumber() uint64 {
+	return m.slotNumber
+}
+
+func (m MockBlockHeader) BlockNumber() uint64 {
+	return m.blockNumber
+}
+
+func (m MockBlockHeader) Hash() string {
+	return m.hash
+}
+
+func (m MockBlockHeader) PrevHash() string {
+	return m.prevHash
+}
+
+func (m MockBlockHeader) IssuerVkey() ledger.IssuerVkey {
+	return m.issuerVkey
+}
+
+func (m MockBlockHeader) BlockBodySize() uint64 {
+	return m.blockBodySize
+}
+
+func (m MockBlockHeader) Era() ledger.Era {
+	return m.era
+}
+
+func (m MockBlockHeader) Cbor() []byte {
+	return m.cbor
+}
+
+func TestEraUpdate(t *testing.T) {
+	// Create a new ChainSync instance
+	chainSync := New()
+
+	// Create a mock block with a specific era
+	mockEra := ledger.Era{Name: "MockEra"}
+	mockBlock := MockBlock{
+		slotNumber:  12345,
+		blockNumber: 67890,
+		hash:        "mockHash",
+		prevHash:    "mockPrevHash",
+		era:         mockEra,
+		cbor:        []byte("mockCbor"),
+	}
+
+	// Create a mock tip
+	mockTip := chainsync.Tip{
+		Point: ocommon.Point{
+			Slot: 12345,
+			Hash: []byte("mockTipHash"),
+		},
+	}
+
+	// Create a mock callback context
+	mockCallbackContext := NewMockCallbackContext()
+
+	// Call handleRollForward with the mock block, tip, and callback context
+	err := chainSync.handleRollForward(mockCallbackContext, 0, mockBlock, mockTip)
+	if err != nil {
+		t.Fatalf("handleRollForward failed: %v", err)
+	}
+
+	// Check if the era has been correctly updated in the status
+	if chainSync.status.Era != mockEra.Name {
+		t.Errorf("Expected era to be %s, got %s", mockEra.Name, chainSync.status.Era)
+	}
+
+	// Check if other status fields are correctly updated
+	if chainSync.status.SlotNumber != mockBlock.SlotNumber() {
+		t.Errorf("Expected slot number to be %d, got %d", mockBlock.SlotNumber(), chainSync.status.SlotNumber)
+	}
+
+	if chainSync.status.BlockNumber != mockBlock.BlockNumber() {
+		t.Errorf("Expected block number to be %d, got %d", mockBlock.BlockNumber(), chainSync.status.BlockNumber)
+	}
+
+	if chainSync.status.BlockHash != mockBlock.Hash() {
+		t.Errorf("Expected block hash to be %s, got %s", mockBlock.Hash(), chainSync.status.BlockHash)
+	}
+
+	if chainSync.status.TipSlotNumber != mockTip.Point.Slot {
+		t.Errorf("Expected tip slot number to be %d, got %d", mockTip.Point.Slot, chainSync.status.TipSlotNumber)
+	}
+
+	if chainSync.status.TipBlockHash != hex.EncodeToString(mockTip.Point.Hash) {
+		t.Errorf("Expected tip block hash to be %s, got %s", hex.EncodeToString(mockTip.Point.Hash), chainSync.status.TipBlockHash)
+	}
+}
+
+func TestUpdateStatusWithEra(t *testing.T) {
+	// Create a mock ChainSync object
+	chainSync := &ChainSync{
+		status: &ChainSyncStatus{},
+		statusUpdateFunc: func(status ChainSyncStatus) {
+			assert.Equal(t, "TestEra", status.Era, "Expected the Era field to be 'TestEra'")
+		},
+	}
+
+	// Call updateStatus with mock data including an era
+	chainSync.updateStatus(
+		100,        // SlotNumber
+		1,          // BlockNumber
+		"testHash", // BlockHash
+		100,        // TipSlotNumber
+		"tipHash",  // TipBlockHash
+		"TestEra",  // Era
+	)
+
+	assert.Equal(t, uint64(100), chainSync.status.SlotNumber, "Expected SlotNumber to be 100")
+	assert.Equal(t, uint64(1), chainSync.status.BlockNumber, "Expected BlockNumber to be 1")
+	assert.Equal(t, "testHash", chainSync.status.BlockHash, "Expected BlockHash to be 'testHash'")
+	assert.Equal(t, uint64(100), chainSync.status.TipSlotNumber, "Expected TipSlotNumber to be 100")
+	assert.Equal(t, "tipHash", chainSync.status.TipBlockHash, "Expected TipBlockHash to be 'tipHash'")
+	assert.Equal(t, "TestEra", chainSync.status.Era, "Expected Era to be 'TestEra'")
+}
 
 func TestHandleRollBackward(t *testing.T) {
 	// Create a new ChainSync instance
@@ -63,80 +291,4 @@ func TestHandleRollBackward(t *testing.T) {
 	assert.Equal(t, "0102030405", c.status.BlockHash)
 	assert.Equal(t, uint64(67890), c.status.TipSlotNumber)
 	assert.Equal(t, "060708090a", c.status.TipBlockHash)
-}
-
-func TestUpdateStatusWithEra(t *testing.T) {
-	chainSync := &ChainSync{
-		status: &ChainSyncStatus{},
-	}
-
-	testCases := []struct {
-		slotNumber  uint64
-		expectedEra string
-		expectedTip bool
-	}{
-		{0, "Byron", false},          // lower boundary case
-		{4492799, "Byron", false},    // edge of Byron
-		{4492800, "Shelley", false},  // start of Shelley
-		{15983999, "Shelley", false}, // edge of Shelley
-		{15984000, "Allegra", false}, // start of Allegra
-		{34559999, "Allegra", false}, // edge of Allegra
-		{34560000, "Mary", false},    // start of Mary
-		{38879999, "Mary", false},    // edge of Mary
-		{38880000, "Alonzo", false},  // start of Alonzo
-		{43199999, "Alonzo", false},  // edge of Alonzo
-		{43200000, "Babbage", false}, // start of Babbage
-		{50399999, "Babbage", false}, // edge of Babbage
-		{50400000, "Conway", false},  // start of Conway
-		{99999999, "Conway", false},  // future slot case
-	}
-
-	for _, tc := range testCases {
-		blockHash := "abcdef1234567890"
-		blockHashBytes, _ := hex.DecodeString(blockHash)
-
-		chainSync.updateStatus(tc.slotNumber, 100, blockHash, 60000000, "hash")
-		assert.Equal(t, tc.expectedEra, chainSync.status.Era, "Unexpected era for slot %d", tc.slotNumber)
-		assert.Equal(t, tc.slotNumber, chainSync.status.SlotNumber)
-		assert.Equal(t, blockHash, chainSync.status.BlockHash)
-		assert.Contains(t, chainSync.cursorCache, ocommon.Point{Slot: tc.slotNumber, Hash: blockHashBytes})
-	}
-
-	// Additional edge case: Testing tipReached logic
-	chainSync.bulkRangeEnd.Slot = 50000000 // example bulk range end
-	chainSync.updateStatus(60000001, 101, "abcd1234", 60000001, "hash")
-	assert.True(t, chainSync.status.TipReached, "TipReached should be true when slotNumber >= tipSlotNumber")
-}
-
-func TestGetEra(t *testing.T) {
-	c := &ChainSync{}
-
-	tests := []struct {
-		slotNumber uint64
-		expected   string
-	}{
-		{0, "Byron"},           // start of Byron
-		{4492799, "Byron"},     // end of Byron
-		{4492800, "Shelley"},   // start of Shelley
-		{15983999, "Shelley"},  // end of Shelley
-		{15984000, "Allegra"},  // start of Allegra
-		{34559999, "Allegra"},  // end of Allegra
-		{34560000, "Mary"},     // start of Mary
-		{38879999, "Mary"},     // end of Mary
-		{38880000, "Alonzo"},   // start of Alonzo
-		{43199999, "Alonzo"},   // end of Alonzo
-		{43200000, "Babbage"},  // start of Babbage
-		{50399999, "Babbage"},  // end of Babbage
-		{50400000, "Conway"},   // start of Conway
-		{9999999999, "Conway"}, // far future but still Conway
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.expected, func(t *testing.T) {
-			result := c.getEra(tt.slotNumber)
-			if result != tt.expected {
-				t.Errorf("getEra(%d) = %s; want %s", tt.slotNumber, result, tt.expected)
-			}
-		})
-	}
 }

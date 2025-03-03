@@ -316,6 +316,7 @@ func (c *ChainSync) handleRollBackward(
 		hex.EncodeToString(point.Hash),     // BlockHash
 		tip.Point.Slot,                     // TipSlotNumber
 		hex.EncodeToString(tip.Point.Hash), // TipBlockHash
+		"",
 	)
 	return nil
 }
@@ -328,10 +329,12 @@ func (c *ChainSync) handleRollForward(
 ) error {
 	switch v := blockData.(type) {
 	case ledger.Block:
+		era := v.Header().Era().Name
 		evt := event.New("chainsync.block", time.Now(), NewBlockContext(v, c.networkMagic), NewBlockEvent(v, c.includeCbor))
 		c.eventChan <- evt
-		c.updateStatus(v.SlotNumber(), v.BlockNumber(), v.Hash(), tip.Point.Slot, hex.EncodeToString(tip.Point.Hash))
+		c.updateStatus(v.SlotNumber(), v.BlockNumber(), v.Hash(), tip.Point.Slot, hex.EncodeToString(tip.Point.Hash), era)
 	case ledger.BlockHeader:
+		era := v.Era().Name
 		blockSlot := v.SlotNumber()
 		blockHash, _ := hex.DecodeString(v.Hash())
 		block, err := c.oConn.BlockFetch().Client.GetBlock(ocommon.Point{Slot: blockSlot, Hash: blockHash})
@@ -355,7 +358,7 @@ func (c *ChainSync) handleRollForward(
 				NewTransactionEvent(block, transaction, c.includeCbor, resolvedInputs))
 			c.eventChan <- txEvt
 		}
-		c.updateStatus(v.SlotNumber(), v.BlockNumber(), v.Hash(), tip.Point.Slot, hex.EncodeToString(tip.Point.Hash))
+		c.updateStatus(v.SlotNumber(), v.BlockNumber(), v.Hash(), tip.Point.Slot, hex.EncodeToString(tip.Point.Hash), era)
 	}
 	return nil
 }
@@ -365,6 +368,7 @@ func (c *ChainSync) handleBlockFetchBlock(
 	blockType uint,
 	block ledger.Block,
 ) error {
+	era := block.Header().Era().Name
 	blockEvt := event.New(
 		"chainsync.block",
 		time.Now(),
@@ -404,6 +408,7 @@ func (c *ChainSync) handleBlockFetchBlock(
 		block.Hash(),
 		c.bulkRangeEnd.Slot,
 		hex.EncodeToString(c.bulkRangeEnd.Hash),
+		era,
 	)
 	// Start normal chain-sync if we've reached the last block of our bulk range
 	if block.SlotNumber() == c.bulkRangeEnd.Slot {
@@ -420,9 +425,8 @@ func (c *ChainSync) updateStatus(
 	blockHash string,
 	tipSlotNumber uint64,
 	tipBlockHash string,
+	era string,
 ) {
-	// Determine the era based on slot number
-	era := c.getEra(slotNumber)
 
 	// Update cursor cache
 	blockHashBytes, _ := hex.DecodeString(blockHash)
@@ -548,23 +552,4 @@ func resolveTransactionInputs(
 		}
 	}
 	return resolvedInputs, nil
-}
-
-func (c *ChainSync) getEra(slotNumber uint64) string {
-	switch {
-	case slotNumber < 4492800: // example boundary
-		return "Byron"
-	case slotNumber < 15984000:
-		return "Shelley"
-	case slotNumber < 34560000:
-		return "Allegra"
-	case slotNumber < 38880000:
-		return "Mary"
-	case slotNumber < 43200000:
-		return "Alonzo"
-	case slotNumber < 50400000:
-		return "Babbage"
-	default:
-		return "Conway" // future era
-	}
 }
