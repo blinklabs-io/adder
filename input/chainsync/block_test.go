@@ -74,7 +74,7 @@ func (m MockBlock) Header() common.BlockHeader {
 }
 
 func (m MockBlock) Type() int {
-	return 0 // Placeholder implementation
+	return 0
 }
 
 func (m MockBlock) Transactions() []common.Transaction {
@@ -82,7 +82,7 @@ func (m MockBlock) Transactions() []common.Transaction {
 }
 
 func (m MockBlock) Utxorpc() *utxorpc.Block {
-	return nil // Placeholder implementation
+	return nil
 }
 
 func (m MockBlock) IsShelley() bool {
@@ -225,13 +225,12 @@ func TestNewBlockContextEdgeCases(t *testing.T) {
 			block: MockBlock{
 				MockBlockHeader: MockBlockHeader{
 					blockNumber: ^uint64(0), // Max uint64 value
-					slotNumber:  ^uint64(0), // Max uint64 value
+					slotNumber:  ^uint64(0),
 					era: common.Era{
 						Name: "Alonzo",
 					},
-					hash:     "max-block-hash",
-					prevHash: "max-prev-hash",
-					//issuerVkey: MockIssuerVkey{},
+					hash:          "max-block-hash",
+					prevHash:      "max-prev-hash",
 					blockBodySize: ^uint64(0),
 					cborBytes:     []byte{0x0A, 0x0B, 0x0C},
 				},
@@ -244,10 +243,7 @@ func TestNewBlockContextEdgeCases(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			// Act
 			blockContext := NewBlockContext(tc.block, tc.networkMagic)
-
-			// Assert
 			assert.Equal(t, tc.expectedEra, blockContext.Era, "Era should match")
 			assert.Equal(t, tc.block.BlockNumber(), blockContext.BlockNumber, "Block number should match")
 			assert.Equal(t, tc.block.SlotNumber(), blockContext.SlotNumber, "Slot number should match")
