@@ -22,6 +22,7 @@ type BlockContext struct {
 	BlockNumber  uint64 `json:"blockNumber"`
 	SlotNumber   uint64 `json:"slotNumber"`
 	NetworkMagic uint32 `json:"networkMagic"`
+	Era          string `json:"era"`
 }
 
 type BlockEvent struct {
@@ -38,6 +39,7 @@ func NewBlockContext(block ledger.Block, networkMagic uint32) BlockContext {
 		BlockNumber:  block.BlockNumber(),
 		SlotNumber:   block.SlotNumber(),
 		NetworkMagic: networkMagic,
+		Era:          block.Era().Name,
 	}
 	return ctx
 }
@@ -46,6 +48,7 @@ func NewBlockHeaderContext(block ledger.BlockHeader) BlockContext {
 	ctx := BlockContext{
 		BlockNumber: block.BlockNumber(),
 		SlotNumber:  block.SlotNumber(),
+		Era:         block.Era().Name,
 	}
 	return ctx
 }

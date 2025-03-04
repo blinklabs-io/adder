@@ -80,7 +80,6 @@ type ChainSyncStatus struct {
 	TipSlotNumber uint64
 	TipBlockHash  string
 	TipReached    bool
-	Era           string
 }
 
 type StatusUpdateFunc func(ChainSyncStatus)
@@ -316,7 +315,6 @@ func (c *ChainSync) handleRollBackward(
 		hex.EncodeToString(point.Hash),     // BlockHash
 		tip.Point.Slot,                     // TipSlotNumber
 		hex.EncodeToString(tip.Point.Hash), // TipBlockHash
-		"",
 	)
 	return nil
 }
@@ -329,12 +327,10 @@ func (c *ChainSync) handleRollForward(
 ) error {
 	switch v := blockData.(type) {
 	case ledger.Block:
-		era := v.Header().Era().Name
 		evt := event.New("chainsync.block", time.Now(), NewBlockContext(v, c.networkMagic), NewBlockEvent(v, c.includeCbor))
 		c.eventChan <- evt
-		c.updateStatus(v.SlotNumber(), v.BlockNumber(), v.Hash(), tip.Point.Slot, hex.EncodeToString(tip.Point.Hash), era)
+		c.updateStatus(v.SlotNumber(), v.BlockNumber(), v.Hash(), tip.Point.Slot, hex.EncodeToString(tip.Point.Hash))
 	case ledger.BlockHeader:
-		era := v.Era().Name
 		blockSlot := v.SlotNumber()
 		blockHash, _ := hex.DecodeString(v.Hash())
 		block, err := c.oConn.BlockFetch().Client.GetBlock(ocommon.Point{Slot: blockSlot, Hash: blockHash})
@@ -358,7 +354,7 @@ func (c *ChainSync) handleRollForward(
 				NewTransactionEvent(block, transaction, c.includeCbor, resolvedInputs))
 			c.eventChan <- txEvt
 		}
-		c.updateStatus(v.SlotNumber(), v.BlockNumber(), v.Hash(), tip.Point.Slot, hex.EncodeToString(tip.Point.Hash), era)
+		c.updateStatus(v.SlotNumber(), v.BlockNumber(), v.Hash(), tip.Point.Slot, hex.EncodeToString(tip.Point.Hash))
 	}
 	return nil
 }
@@ -368,7 +364,6 @@ func (c *ChainSync) handleBlockFetchBlock(
 	blockType uint,
 	block ledger.Block,
 ) error {
-	era := block.Header().Era().Name
 	blockEvt := event.New(
 		"chainsync.block",
 		time.Now(),
@@ -408,7 +403,6 @@ func (c *ChainSync) handleBlockFetchBlock(
 		block.Hash(),
 		c.bulkRangeEnd.Slot,
 		hex.EncodeToString(c.bulkRangeEnd.Hash),
-		era,
 	)
 	// Start normal chain-sync if we've reached the last block of our bulk range
 	if block.SlotNumber() == c.bulkRangeEnd.Slot {
@@ -425,9 +419,7 @@ func (c *ChainSync) updateStatus(
 	blockHash string,
 	tipSlotNumber uint64,
 	tipBlockHash string,
-	era string,
 ) {
-
 	// Update cursor cache
 	blockHashBytes, _ := hex.DecodeString(blockHash)
 	c.cursorCache = append(
@@ -452,7 +444,6 @@ func (c *ChainSync) updateStatus(
 	c.status.BlockHash = blockHash
 	c.status.TipSlotNumber = tipSlotNumber
 	c.status.TipBlockHash = tipBlockHash
-	c.status.Era = era
 	if c.statusUpdateFunc != nil {
 		c.statusUpdateFunc(*(c.status))
 	}
