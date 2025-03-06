@@ -186,10 +186,30 @@ func TestNewBlockContext(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			blockContext := NewBlockContext(tc.block, tc.networkMagic)
-			assert.Equal(t, tc.expectedEra, blockContext.Era, "Era should match")
-			assert.Equal(t, tc.expectedBlock, blockContext.BlockNumber, "Block number should match")
-			assert.Equal(t, tc.expectedSlot, blockContext.SlotNumber, "Slot number should match")
-			assert.Equal(t, tc.networkMagic, blockContext.NetworkMagic, "Network magic should match")
+			assert.Equal(
+				t,
+				tc.expectedEra,
+				blockContext.Era,
+				"Era should match",
+			)
+			assert.Equal(
+				t,
+				tc.expectedBlock,
+				blockContext.BlockNumber,
+				"Block number should match",
+			)
+			assert.Equal(
+				t,
+				tc.expectedSlot,
+				blockContext.SlotNumber,
+				"Slot number should match",
+			)
+			assert.Equal(
+				t,
+				tc.networkMagic,
+				blockContext.NetworkMagic,
+				"Network magic should match",
+			)
 		})
 	}
 }
@@ -244,10 +264,30 @@ func TestNewBlockContextEdgeCases(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			blockContext := NewBlockContext(tc.block, tc.networkMagic)
-			assert.Equal(t, tc.expectedEra, blockContext.Era, "Era should match")
-			assert.Equal(t, tc.block.BlockNumber(), blockContext.BlockNumber, "Block number should match")
-			assert.Equal(t, tc.block.SlotNumber(), blockContext.SlotNumber, "Slot number should match")
-			assert.Equal(t, tc.networkMagic, blockContext.NetworkMagic, "Network magic should match")
+			assert.Equal(
+				t,
+				tc.expectedEra,
+				blockContext.Era,
+				"Era should match",
+			)
+			assert.Equal(
+				t,
+				tc.block.BlockNumber(),
+				blockContext.BlockNumber,
+				"Block number should match",
+			)
+			assert.Equal(
+				t,
+				tc.block.SlotNumber(),
+				blockContext.SlotNumber,
+				"Slot number should match",
+			)
+			assert.Equal(
+				t,
+				tc.networkMagic,
+				blockContext.NetworkMagic,
+				"Network magic should match",
+			)
 		})
 	}
 }

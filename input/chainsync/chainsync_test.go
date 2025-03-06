@@ -59,7 +59,11 @@ func TestHandleRollBackward(t *testing.T) {
 
 	// Verify that the status was updated correctly
 	assert.Equal(t, uint64(12345), c.status.SlotNumber)
-	assert.Equal(t, uint64(0), c.status.BlockNumber) // BlockNumber should be 0 after rollback
+	assert.Equal(
+		t,
+		uint64(0),
+		c.status.BlockNumber,
+	) // BlockNumber should be 0 after rollback
 	assert.Equal(t, "0102030405", c.status.BlockHash)
 	assert.Equal(t, uint64(67890), c.status.TipSlotNumber)
 	assert.Equal(t, "060708090a", c.status.TipBlockHash)
