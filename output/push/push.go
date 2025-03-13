@@ -21,14 +21,13 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/blinklabs-io/gouroboros/cbor"
-	"golang.org/x/oauth2/google"
-
 	"github.com/blinklabs-io/adder/event"
 	"github.com/blinklabs-io/adder/input/chainsync"
 	"github.com/blinklabs-io/adder/internal/logging"
 	"github.com/blinklabs-io/adder/output/push/fcm"
 	"github.com/blinklabs-io/adder/plugin"
+	"github.com/blinklabs-io/gouroboros/cbor"
+	"golang.org/x/oauth2/google"
 )
 
 type PushOutput struct {

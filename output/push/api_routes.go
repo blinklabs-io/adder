@@ -21,7 +21,6 @@ import (
 var routesRegistered = false
 
 func (p *PushOutput) RegisterRoutes() {
-
 	if routesRegistered {
 		return
 	}
