@@ -19,11 +19,10 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/gen2brain/beeep"
-
 	"github.com/blinklabs-io/adder/event"
 	"github.com/blinklabs-io/adder/input/chainsync"
 	"github.com/blinklabs-io/adder/plugin"
+	"github.com/gen2brain/beeep"
 )
 
 //go:embed icon.png
@@ -67,7 +66,7 @@ func (n *NotifyOutput) Start() error {
 		}
 	}
 	filename := fmt.Sprintf("%s/%s/%s", userCacheDir, "adder", "icon.png")
-	if err := os.WriteFile(filename, icon, 0600); err != nil {
+	if err := os.WriteFile(filename, icon, 0o600); err != nil {
 		panic(err)
 	}
 	go func() {

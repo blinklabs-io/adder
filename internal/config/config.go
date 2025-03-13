@@ -20,7 +20,6 @@ import (
 	"os"
 
 	"github.com/blinklabs-io/adder/plugin"
-
 	"github.com/kelseyhightower/envconfig"
 	"gopkg.in/yaml.v2"
 )

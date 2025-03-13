@@ -26,12 +26,10 @@ import (
 	"time"
 
 	"github.com/SundaeSwap-finance/kugo"
-
 	"github.com/SundaeSwap-finance/ogmigo/ouroboros/chainsync"
 	"github.com/blinklabs-io/adder/event"
 	"github.com/blinklabs-io/adder/internal/logging"
 	"github.com/blinklabs-io/adder/plugin"
-
 	ouroboros "github.com/blinklabs-io/gouroboros"
 	"github.com/blinklabs-io/gouroboros/ledger"
 	"github.com/blinklabs-io/gouroboros/protocol/blockfetch"

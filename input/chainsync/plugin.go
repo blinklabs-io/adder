@@ -22,7 +22,6 @@ import (
 
 	"github.com/blinklabs-io/adder/internal/logging"
 	"github.com/blinklabs-io/adder/plugin"
-
 	ocommon "github.com/blinklabs-io/gouroboros/protocol/common"
 )
 

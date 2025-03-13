@@ -18,12 +18,11 @@ import (
 	"encoding/hex"
 	"strings"
 
-	"github.com/blinklabs-io/gouroboros/ledger"
-	"github.com/btcsuite/btcd/btcutil/bech32"
-
 	"github.com/blinklabs-io/adder/event"
 	"github.com/blinklabs-io/adder/input/chainsync"
 	"github.com/blinklabs-io/adder/plugin"
+	"github.com/blinklabs-io/gouroboros/ledger"
+	"github.com/btcsuite/btcd/btcutil/bech32"
 )
 
 type ChainSync struct {

@@ -22,9 +22,6 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/inconshreveable/mousetrap"
-	"go.uber.org/automaxprocs/maxprocs"
-
 	"github.com/blinklabs-io/adder/api"
 	_ "github.com/blinklabs-io/adder/filter"
 	_ "github.com/blinklabs-io/adder/input"
@@ -34,6 +31,8 @@ import (
 	_ "github.com/blinklabs-io/adder/output"
 	"github.com/blinklabs-io/adder/pipeline"
 	"github.com/blinklabs-io/adder/plugin"
+	"github.com/inconshreveable/mousetrap"
+	"go.uber.org/automaxprocs/maxprocs"
 )
 
 var programName string = "adder"
