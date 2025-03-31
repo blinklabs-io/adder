@@ -4,14 +4,13 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
 package chainsync
 
 import (
@@ -191,41 +190,125 @@ func TestChainSync_OutputChan(t *testing.T) {
 	}
 }
 
-func TestFilterByAddress(t *testing.T) {
-	// Setup ChainSync with address filter
-	cs := New(WithAddresses([]string{"addr_test1qqjwq357"}))
+// Mock certificate implementations
+type mockStakeDelegationCert struct {
+	common.StakeDelegationCertificate
+	cborData []byte
+}
 
-	// Create a mock address using the methods
-	mockAddr := common.Address{}
+func (m *mockStakeDelegationCert) Cbor() []byte { return m.cborData }
 
-	// Mock transaction event
-	output := MockOutput{
-		address: mockAddr,
-		amount:  1000000,
-		assets:  nil,
-		datum:   nil,
+type mockStakeDeregistrationCert struct {
+	common.StakeDeregistrationCertificate
+	cborData []byte
+}
+
+func (m *mockStakeDeregistrationCert) Cbor() []byte { return m.cborData }
+
+func mockStakeCredentialValue(credType uint, hashBytes []byte) common.StakeCredential {
+	return common.StakeCredential{
+		StructAsArray:   cbor.StructAsArray{},
+		DecodeStoreCbor: cbor.DecodeStoreCbor{},
+		CredType:        credType,
+		Credential:      hashBytes,
 	}
-	evt := event.Event{
-		Payload: chainsync.TransactionEvent{
-			Outputs:        []ledger.TransactionOutput{output},
-			ResolvedInputs: []ledger.TransactionOutput{output},
+}
+
+func mockStakeCredentialPtr(credType uint, hashBytes []byte) *common.StakeCredential {
+	cred := mockStakeCredentialValue(credType, hashBytes)
+	return &cred
+}
+
+func mockAddress(addrStr string) common.Address {
+	return common.Address{}
+}
+
+func TestFilterByAddress(t *testing.T) {
+	tests := []struct {
+		name          string
+		filterAddress string
+		outputAddr    common.Address
+		cert          ledger.Certificate
+		shouldMatch   bool
+	}{
+		{
+			name:          "Basic address match",
+			filterAddress: "addr_test1qqjwq357",
+			outputAddr:    mockAddress("addr_test1qqjwq357"),
+			shouldMatch:   true,
+		},
+
+		{
+			name:          "StakeDelegationCertificate match",
+			filterAddress: "stake1276l2v4nvtm6mpr7s6cu3ezneh6vrunlw0jahq9fxy6v6e37p04",
+			outputAddr:    mockAddress("addr_doesnt_match"),
+			cert: &common.StakeDelegationCertificate{
+				StakeCredential: mockStakeCredentialPtr(0, []byte{1, 2, 3}),
+			},
+			shouldMatch: true,
+		},
+		{
+			name:          "StakeDeregistrationCertificate match",
+			filterAddress: "stake1276l2v4nvtm6mpr7s6cu3ezneh6vrunlw0jahq9fxy6v6e37p04",
+			outputAddr:    mockAddress("addr_doesnt_match"),
+			cert: &common.StakeDeregistrationCertificate{
+				StakeDeregistration: mockStakeCredentialValue(0, []byte{1, 2, 3}),
+			},
+			shouldMatch: true,
+		},
+		{
+			name:          "No match",
+			filterAddress: "stake_test1uzw2x9z6y3q4y5z6x7y8z9",
+			outputAddr:    mockAddress("addr_doesnt_match"),
+			shouldMatch:   false,
 		},
 	}
 
-	// Start the filter
-	err := cs.Start()
-	assert.NoError(t, err, "ChainSync filter should start without error")
-	defer cs.Stop()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create chainsync instance with address filter
+			cs := New(WithAddresses([]string{tt.filterAddress}))
 
-	// Send event to input channel
-	cs.InputChan() <- evt
+			output := MockOutput{
+				address: tt.outputAddr,
+				amount:  1000000,
+				assets:  nil,
+				datum:   nil,
+			}
 
-	// Wait for the event to be processed
-	select {
-	case filteredEvt := <-cs.OutputChan():
-		assert.Equal(t, evt, filteredEvt, "Filtered event should match the input event")
-	case <-time.After(10 * time.Second):
-		t.Fatal("Test timed out waiting for filtered event")
+			txEvent := chainsync.TransactionEvent{
+				Outputs:        []ledger.TransactionOutput{output},
+				ResolvedInputs: []ledger.TransactionOutput{output},
+			}
+
+			if tt.cert != nil {
+				txEvent.Certificates = []ledger.Certificate{tt.cert}
+			}
+
+			evt := event.Event{Payload: txEvent}
+
+			err := cs.Start()
+			assert.NoError(t, err)
+			defer cs.Stop()
+
+			cs.InputChan() <- evt
+
+			if tt.shouldMatch {
+				select {
+				case filteredEvt := <-cs.OutputChan():
+					assert.Equal(t, evt, filteredEvt)
+				case <-time.After(1 * time.Second):
+					t.Error("Expected event to pass filter but it didn't")
+				}
+			} else {
+				select {
+				case <-cs.OutputChan():
+					t.Error("Expected event to be filtered out but it passed through")
+				case <-time.After(100 * time.Millisecond):
+					// Expected no event
+				}
+			}
+		})
 	}
 }
 

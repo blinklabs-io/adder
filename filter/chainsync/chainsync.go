@@ -22,6 +22,7 @@ import (
 	"github.com/blinklabs-io/adder/input/chainsync"
 	"github.com/blinklabs-io/adder/plugin"
 	"github.com/blinklabs-io/gouroboros/ledger"
+	"github.com/blinklabs-io/gouroboros/ledger/common"
 	"github.com/btcsuite/btcd/btcutil/bech32"
 )
 
@@ -124,6 +125,36 @@ func (c *ChainSync) Start() error {
 								}
 							}
 						}
+
+						if !foundMatch && isStakeAddress {
+							for _, certificate := range v.Certificates {
+								var credBytes []byte
+								switch cert := certificate.(type) {
+								case *common.StakeDelegationCertificate:
+									hash := cert.StakeCredential.Hash()
+									credBytes = hash[:]
+								case *common.StakeDeregistrationCertificate:
+									hash := cert.StakeDeregistration.Hash()
+									credBytes = hash[:]
+								default:
+									continue
+								}
+
+								convData, err := bech32.ConvertBits(credBytes, 8, 5, true)
+								if err != nil {
+									continue
+								}
+								encoded, err := bech32.Encode("stake", convData)
+								if err != nil {
+									continue
+								}
+								if encoded == filterAddress {
+									foundMatch = true
+									break
+								}
+							}
+						}
+
 						if foundMatch {
 							filterMatched = true
 							break
