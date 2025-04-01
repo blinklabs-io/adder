@@ -514,7 +514,7 @@ func resolveTransactionInputs(
 			)
 			if err != nil {
 				return nil, fmt.Errorf(
-					"Error fetching matches for input TxId: %s, Index: %d. Error: %w\n",
+					"error fetching matches for input TxId: %s, Index: %d. Error: %w",
 					txId,
 					txIndex,
 					err,
@@ -523,14 +523,14 @@ func resolveTransactionInputs(
 
 			if len(matches) == 0 {
 				slog.Info(
-					"No matches found for input TxId: %s, Index: %d, could be due to Kupo not in sync\n",
+					"no matches found for input TxId: %s, Index: %d, could be due to Kupo not in sync",
 					txId,
 					txIndex,
 				)
 			} else {
-				slog.Debug(fmt.Sprintf("Found matches %d for input TxId: %s, Index: %d\n", len(matches), txId, txIndex))
+				slog.Debug(fmt.Sprintf("found matches %d for input TxId: %s, Index: %d", len(matches), txId, txIndex))
 				for _, match := range matches {
-					slog.Debug(fmt.Sprintf("Match: %#v\n", match))
+					slog.Debug(fmt.Sprintf("Match: %#v", match))
 					transactionOutput, err := NewResolvedTransactionOutput(match)
 					if err != nil {
 						return nil, err
