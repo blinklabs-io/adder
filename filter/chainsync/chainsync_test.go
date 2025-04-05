@@ -14,6 +14,7 @@
 package chainsync
 
 import (
+	"bytes"
 	"encoding/hex"
 	"testing"
 	"time"
@@ -23,6 +24,7 @@ import (
 	"github.com/blinklabs-io/gouroboros/cbor"
 	"github.com/blinklabs-io/gouroboros/ledger"
 	"github.com/blinklabs-io/gouroboros/ledger/common"
+	"github.com/btcsuite/btcd/btcutil/bech32"
 	"github.com/stretchr/testify/assert"
 	"github.com/utxorpc/go-codegen/utxorpc/v1alpha/cardano"
 )
@@ -205,16 +207,16 @@ type mockStakeDeregistrationCert struct {
 
 func (m *mockStakeDeregistrationCert) Cbor() []byte { return m.cborData }
 
-func mockStakeCredentialValue(credType uint, hashBytes []byte) common.StakeCredential {
-	return common.StakeCredential{
-		StructAsArray:   cbor.StructAsArray{},
-		DecodeStoreCbor: cbor.DecodeStoreCbor{},
-		CredType:        credType,
-		Credential:      hashBytes,
+func mockStakeCredentialValue(credType uint, hashBytes []byte) common.Credential {
+	var credHash common.CredentialHash
+	copy(credHash[:], hashBytes)
+	return common.Credential{
+		CredType:   credType,
+		Credential: credHash,
 	}
 }
 
-func mockStakeCredentialPtr(credType uint, hashBytes []byte) *common.StakeCredential {
+func mockStakeCredentialPtr(credType uint, hashBytes []byte) *common.Credential {
 	cred := mockStakeCredentialValue(credType, hashBytes)
 	return &cred
 }
@@ -224,6 +226,11 @@ func mockAddress(addrStr string) common.Address {
 }
 
 func TestFilterByAddress(t *testing.T) {
+	cred := mockStakeCredentialValue(0, bytes.Repeat([]byte{1}, 28))
+	credHash := cred.Hash()
+	convData, _ := bech32.ConvertBits(credHash[:], 8, 5, true)
+	testStakeAddress, _ := bech32.Encode("stake", convData)
+
 	tests := []struct {
 		name          string
 		filterAddress string
@@ -240,19 +247,19 @@ func TestFilterByAddress(t *testing.T) {
 
 		{
 			name:          "StakeDelegationCertificate match",
-			filterAddress: "stake1276l2v4nvtm6mpr7s6cu3ezneh6vrunlw0jahq9fxy6v6e37p04",
+			filterAddress: testStakeAddress,
 			outputAddr:    mockAddress("addr_doesnt_match"),
 			cert: &common.StakeDelegationCertificate{
-				StakeCredential: mockStakeCredentialPtr(0, []byte{1, 2, 3}),
+				StakeCredential: &cred,
 			},
 			shouldMatch: true,
 		},
 		{
 			name:          "StakeDeregistrationCertificate match",
-			filterAddress: "stake1276l2v4nvtm6mpr7s6cu3ezneh6vrunlw0jahq9fxy6v6e37p04",
+			filterAddress: testStakeAddress,
 			outputAddr:    mockAddress("addr_doesnt_match"),
 			cert: &common.StakeDeregistrationCertificate{
-				StakeDeregistration: mockStakeCredentialValue(0, []byte{1, 2, 3}),
+				StakeDeregistration: cred,
 			},
 			shouldMatch: true,
 		},
