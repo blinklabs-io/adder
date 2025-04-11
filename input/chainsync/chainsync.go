@@ -462,7 +462,7 @@ func getKupoClient(c *ChainSync) (*kugo.Client, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	healthUrl := strings.TrimRight(c.kupoUrl, "/") + "/v1/health"
+	healthUrl := strings.TrimRight(c.kupoUrl, "/") + "/health"
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, healthUrl, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create health check request: %w", err)
