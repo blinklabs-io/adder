@@ -21,8 +21,8 @@ func (m MockIssuerVkey) Hash() []byte {
 
 // MockBlockHeader implements BlockHeader interface
 type MockBlockHeader struct {
-	hash          string
-	prevHash      string
+	hash          common.Blake2b256
+	prevHash      common.Blake2b256
 	blockNumber   uint64
 	slotNumber    uint64
 	issuerVkey    common.IssuerVkey
@@ -31,11 +31,11 @@ type MockBlockHeader struct {
 	cborBytes     []byte
 }
 
-func (m MockBlockHeader) Hash() string {
+func (m MockBlockHeader) Hash() common.Blake2b256 {
 	return m.hash
 }
 
-func (m MockBlockHeader) PrevHash() string {
+func (m MockBlockHeader) PrevHash() common.Blake2b256 {
 	return m.prevHash
 }
 
@@ -127,8 +127,8 @@ func TestNewBlockContext(t *testing.T) {
 					era: common.Era{
 						Name: "Shelley",
 					},
-					hash:          "sample-hash-shelley",
-					prevHash:      "prev-hash-shelley",
+					hash:          common.NewBlake2b256([]byte("sample-hash-shelley")),
+					prevHash:      common.NewBlake2b256([]byte("prev-hash-shelley")),
 					blockBodySize: 1024,
 					cborBytes:     []byte{0x01, 0x02, 0x03},
 				},
@@ -148,8 +148,8 @@ func TestNewBlockContext(t *testing.T) {
 					era: common.Era{
 						Name: "Allegra",
 					},
-					hash:          "another-hash-allegra",
-					prevHash:      "prev-hash-allegra",
+					hash:          common.NewBlake2b256([]byte("another-hash-allegra")),
+					prevHash:      common.NewBlake2b256([]byte("prev-hash-allegra")),
 					blockBodySize: 2048,
 					cborBytes:     []byte{0x04, 0x05, 0x06},
 				},
@@ -169,8 +169,8 @@ func TestNewBlockContext(t *testing.T) {
 					era: common.Era{
 						Name: "Mary",
 					},
-					hash:          "mary-block-hash",
-					prevHash:      "prev-hash-mary",
+					hash:          common.NewBlake2b256([]byte("mary-block-hash")),
+					prevHash:      common.NewBlake2b256([]byte("prev-hash-mary")),
 					blockBodySize: 4096,
 					cborBytes:     []byte{0x07, 0x08, 0x09},
 				},
@@ -230,8 +230,8 @@ func TestNewBlockContextEdgeCases(t *testing.T) {
 					era: common.Era{
 						Name: "",
 					},
-					hash:          "",
-					prevHash:      "",
+					hash:          common.Blake2b256{},
+					prevHash:      common.Blake2b256{},
 					blockBodySize: 0,
 					cborBytes:     []byte{},
 				},
@@ -249,8 +249,8 @@ func TestNewBlockContextEdgeCases(t *testing.T) {
 					era: common.Era{
 						Name: "Alonzo",
 					},
-					hash:          "max-block-hash",
-					prevHash:      "max-prev-hash",
+					hash:          common.NewBlake2b256([]byte("max-block-hash")),
+					prevHash:      common.NewBlake2b256([]byte("max-prev-hash")),
 					blockBodySize: ^uint64(0),
 					cborBytes:     []byte{0x0A, 0x0B, 0x0C},
 				},

@@ -57,7 +57,7 @@ func NewBlockEvent(block ledger.Block, includeCbor bool) BlockEvent {
 	evt := BlockEvent{
 		Block:            block,
 		BlockBodySize:    block.BlockBodySize(),
-		BlockHash:        block.Hash(),
+		BlockHash:        block.Hash().String(),
 		IssuerVkey:       block.IssuerVkey().Hash().String(),
 		TransactionCount: uint64(len(block.Transactions())),
 	}

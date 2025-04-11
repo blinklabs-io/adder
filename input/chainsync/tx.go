@@ -51,7 +51,7 @@ func NewTransactionContext(
 	ctx := TransactionContext{
 		BlockNumber:     block.BlockNumber(),
 		SlotNumber:      block.SlotNumber(),
-		TransactionHash: tx.Hash(),
+		TransactionHash: tx.Hash().String(),
 		TransactionIdx:  index,
 		NetworkMagic:    networkMagic,
 	}
@@ -66,7 +66,7 @@ func NewTransactionEvent(
 ) TransactionEvent {
 	evt := TransactionEvent{
 		Transaction: tx,
-		BlockHash:   block.Hash(),
+		BlockHash:   block.Hash().String(),
 		Inputs:      tx.Inputs(),
 		Outputs:     tx.Outputs(),
 		Fee:         tx.Fee(),

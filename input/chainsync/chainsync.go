@@ -327,11 +327,10 @@ func (c *ChainSync) handleRollForward(
 	case ledger.Block:
 		evt := event.New("chainsync.block", time.Now(), NewBlockContext(v, c.networkMagic), NewBlockEvent(v, c.includeCbor))
 		c.eventChan <- evt
-		c.updateStatus(v.SlotNumber(), v.BlockNumber(), v.Hash(), tip.Point.Slot, hex.EncodeToString(tip.Point.Hash))
+		c.updateStatus(v.SlotNumber(), v.BlockNumber(), v.Hash().String(), tip.Point.Slot, hex.EncodeToString(tip.Point.Hash))
 	case ledger.BlockHeader:
 		blockSlot := v.SlotNumber()
-		blockHash, _ := hex.DecodeString(v.Hash())
-		block, err := c.oConn.BlockFetch().Client.GetBlock(ocommon.Point{Slot: blockSlot, Hash: blockHash})
+		block, err := c.oConn.BlockFetch().Client.GetBlock(ocommon.Point{Slot: blockSlot, Hash: v.Hash().Bytes()})
 		if err != nil {
 			return err
 		}
@@ -352,7 +351,7 @@ func (c *ChainSync) handleRollForward(
 				NewTransactionEvent(block, transaction, c.includeCbor, resolvedInputs))
 			c.eventChan <- txEvt
 		}
-		c.updateStatus(v.SlotNumber(), v.BlockNumber(), v.Hash(), tip.Point.Slot, hex.EncodeToString(tip.Point.Hash))
+		c.updateStatus(v.SlotNumber(), v.BlockNumber(), v.Hash().String(), tip.Point.Slot, hex.EncodeToString(tip.Point.Hash))
 	}
 	return nil
 }
@@ -398,7 +397,7 @@ func (c *ChainSync) handleBlockFetchBlock(
 	c.updateStatus(
 		block.SlotNumber(),
 		block.BlockNumber(),
-		block.Hash(),
+		block.Hash().String(),
 		c.bulkRangeEnd.Slot,
 		hex.EncodeToString(c.bulkRangeEnd.Hash),
 	)
