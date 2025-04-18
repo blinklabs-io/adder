@@ -8,6 +8,9 @@ on:
 
 concurrency: ${{ github.ref }}
 
+env:
+  APPLICATION_NAME: 'adder'
+
 jobs:
   create-draft-release:
     runs-on: ubuntu-latest
@@ -59,10 +62,10 @@ jobs:
           - runner: ubuntu-latest
             os: linux
             arch: arm64
-          - runner: ubuntu-latest
+          - runner: windows-latest
             os: windows
             arch: amd64
-          - runner: ubuntu-latest
+          - runner: windows-latest
             os: windows
             arch: arm64
     runs-on: ${{ matrix.runner }}
@@ -75,17 +78,31 @@ jobs:
       id-token: write
       packages: write
       statuses: write
-    env:
-      APPLICATION_NAME: 'adder'
     steps:
-      - run: "echo \"RELEASE_TAG=${GITHUB_REF#refs/tags/}\" >> $GITHUB_ENV"
+      - name: Set RELEASE_TAG (Windows)
+        if: matrix.os == 'windows'
+        shell: pwsh
+        run: |
+          $tagName = $env:GITHUB_REF -replace 'refs/tags/', ''
+          echo "RELEASE_TAG=$tagName" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Set RELEASE_TAG
+        if: matrix.os != 'windows'
+        run: "echo \"RELEASE_TAG=${GITHUB_REF#refs/tags/}\" >> $GITHUB_ENV"
       - uses: actions/checkout@v4
         with:
           fetch-depth: '0'
       - uses: actions/setup-go@v5
         with:
           go-version: 1.23.x
+      - name: Build binary (Windows)
+        if: matrix.os == 'windows'
+        shell: pwsh
+        run: |
+          $env:GOOS = "${{ matrix.os }}"
+          $env:GOARCH = "${{ matrix.arch }}"
+          make build
       - name: Build binary
+        if: matrix.os != 'windows'
         run: GOOS=${{ matrix.os }} GOARCH=${{ matrix.arch }} make build
 
       # Sign Windows build
@@ -104,32 +121,45 @@ jobs:
       - name: Set up Cloud SDK
         if: ${{ startsWith(github.ref, 'refs/tags/') && matrix.os == 'windows' }}
         uses: 'google-github-actions/setup-gcloud@v2'
-      - name: Sign windows binary
+      - name: Sign binary (Windows)
         if: ${{ startsWith(github.ref, 'refs/tags/') && matrix.os == 'windows' }}
+        shell: pwsh
         run: |
-          echo "Downloading jsign.jar"
-          curl -L -o jsign.jar https://github.com/ebourg/jsign/releases/download/6.0/jsign-6.0.jar
-          echo "Verifying jsign.jar checksum"
-          echo '05ca18d4ab7b8c2183289b5378d32860f0ea0f3bdab1f1b8cae5894fb225fa8a  jsign.jar' | sha256sum -c
-          echo "${{ secrets.CERTIFICATE_CHAIN }}" | base64 --decode > codesign-chain.pem
-          set +x
-          _filename=${{ env.APPLICATION_NAME }}
-          ACCESS_TOKEN=$(gcloud auth print-access-token)
-          echo "::add-mask::$ACCESS_TOKEN"
-          java -jar jsign.jar \
-            --storetype ${{ secrets.CERTIFICATE_STORE_TYPE }} \
-            --storepass "$ACCESS_TOKEN" \
-            --keystore ${{ secrets.CERTIFICATE_KEYSTORE }} \
-            --alias ${{ secrets.CERTIFICATE_KEY_NAME }} \
-            --certfile codesign-chain.pem \
-            --tsmode RFC3161 \
-            --tsaurl http://timestamp.globalsign.com/tsa/r6advanced1 \
-            ${_filename}
-          unset ACCESS_TOKEN
-          set -x
-          echo "Signed Windows binary: ${_filename}"
-          echo "Cleaning up certificate chain"
-          rm -f codesign-chain.pem
+          Write-Host "Downloading jsign.jar"
+          Invoke-WebRequest -Uri "https://github.com/ebourg/jsign/releases/download/6.0/jsign-6.0.jar" -OutFile "jsign.jar"
+
+          Write-Host "Verifying jsign.jar checksum"
+          $expectedHash = "05ca18d4ab7b8c2183289b5378d32860f0ea0f3bdab1f1b8cae5894fb225fa8a"
+          $actualHash = (Get-FileHash -Path "jsign.jar" -Algorithm SHA256).Hash.ToLower()
+
+          if ($actualHash -ne $expectedHash) {
+            Write-Error "Hash verification failed for jsign.jar"
+            Write-Error "Expected: $expectedHash"
+            Write-Error "Actual: $actualHash"
+            exit 1
+          }
+
+          [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String("${{ secrets.CERTIFICATE_CHAIN }}")) | Out-File -FilePath "codesign-chain.pem" -Encoding utf8
+
+          $filename = "${{ env.APPLICATION_NAME }}.exe"
+          $ACCESS_TOKEN = & gcloud auth print-access-token
+          Write-Host "::add-mask::$ACCESS_TOKEN"
+
+          java -jar jsign.jar `
+            --storetype ${{ secrets.CERTIFICATE_STORE_TYPE }} `
+            --storepass "$ACCESS_TOKEN" `
+            --keystore ${{ secrets.CERTIFICATE_KEYSTORE }} `
+            --alias ${{ secrets.CERTIFICATE_KEY_NAME }} `
+            --certfile "codesign-chain.pem" `
+            --tsmode RFC3161 `
+            --tsaurl "http://timestamp.globalsign.com/tsa/r6advanced1" `
+            $filename
+
+          $ACCESS_TOKEN = $null
+
+          Write-Host "Signed Windows binary: $filename"
+          Write-Host "Cleaning up certificate chain"
+          Remove-Item -Path "codesign-chain.pem" -Force
 
       # Sign MacOS build
 
@@ -177,15 +207,28 @@ jobs:
           ditto -c -k --keepParent "${{ env.APPLICATION_NAME }}.app" "notarization.zip"
           xcrun notarytool submit "notarization.zip" --keychain-profile "notarytool-profile" --wait
           xcrun stapler staple "${{ env.APPLICATION_NAME }}.app"
-      - name: Upload release asset
-        if: startsWith(github.ref, 'refs/tags/')
+
+      - name: Upload release asset (Windows)
+        if: startsWith(github.ref, 'refs/tags/') && matrix.os == 'windows'
+        shell: pwsh
         run: |
-          _filename=${{ env.APPLICATION_NAME }}-${{ env.RELEASE_TAG }}-${{ matrix.os }}-${{ matrix.arch }}
-          if [[ "${{ matrix.os }}" == "windows" ]]; then
-            _filename=${_filename}.exe
-          fi
-          if [[ "${{ matrix.os }}" == "windows" || "${{ matrix.os }}" == "linux" || "${{ matrix.os }}" == "freebsd" ]]; then
-            cp ${{ env.APPLICATION_NAME }} ${_filename}
+          $filename = "${{ env.APPLICATION_NAME }}-${{ env.RELEASE_TAG }}-${{ matrix.os }}-${{ matrix.arch }}.zip"
+          Compress-Archive "${{ env.APPLICATION_NAME }}.exe" "$filename"
+          Write-Host "Uploading file: $filename"
+          # Upload file using PowerShell
+          $headers = @{
+            "Authorization" = "token ${{ secrets.GITHUB_TOKEN }}"
+            "Content-Type" = "application/octet-stream"
+          }
+          $uploadUrl = "https://uploads.github.com/repos/${{ github.repository }}/releases/${{ needs.create-draft-release.outputs.RELEASE_ID }}/assets?name=$filename"
+          Invoke-RestMethod -Uri $uploadUrl -Method Post -Headers $headers -InFile $filename
+
+      - name: Upload release asset
+        if: startsWith(github.ref, 'refs/tags/') && matrix.os != 'windows'
+        run: |
+          _filename=${{ env.APPLICATION_NAME }}-${{ env.RELEASE_TAG }}-${{ matrix.os }}-${{ matrix.arch }}.tar.gz
+          if [[ "${{ matrix.os }}" != "windows" ]]; then
+            tar czf ${_filename} ${{ env.APPLICATION_NAME }}
           fi
           if [[ "${{ matrix.os }}" == "darwin" ]]; then
             _filename=${{ env.APPLICATION_NAME }}-${{ env.RELEASE_TAG }}-${{ matrix.os }}-${{ matrix.arch }}.zip
@@ -197,7 +240,14 @@ jobs:
             --data-binary @${_filename} \
             https://uploads.github.com/repos/${{ github.repository_owner }}/adder/releases/${{ needs.create-draft-release.outputs.RELEASE_ID }}/assets?name=${_filename}
 
+      - name: Attest binary (Windows)
+        if: startsWith(github.ref, 'refs/tags/') && matrix.os == 'windows'
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: '${{ env.APPLICATION_NAME }}.exe'
+
       - name: Attest binary
+        if: startsWith(github.ref, 'refs/tags/') && matrix.os != 'windows'
         uses: actions/attest-build-provenance@v2
         with:
           subject-path: '${{ env.APPLICATION_NAME }}'
