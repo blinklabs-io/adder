@@ -6,8 +6,8 @@ github.com/KyleBanks/depth v1.2.1 h1:5h8fQADFrWtarTdtDudMmGsC7GPbOAu6RVB3ffsVFHc
 github.com/KyleBanks/depth v1.2.1/go.mod h1:jzSb9d0L43HxTQfT+oSA1EEp2q+ne2uh6XgeJcm8brE=
 github.com/SundaeSwap-finance/kugo v1.1.0 h1:9fzzqiRcyOD8NF2L7I8aJArtyiYg9pu54SEoFKLs8JI=
 github.com/SundaeSwap-finance/kugo v1.1.0/go.mod h1:J3ePLSTzrEL3wqphzuMeq2KLe3jN0i69gVt3UHUAvhY=
-github.com/SundaeSwap-finance/ogmigo v0.9.0 h1:+W9XuZfyMy2Kx7A4wZAmuks7hyq5TdfvBlUb1JSRP50=
-github.com/SundaeSwap-finance/ogmigo v0.9.0/go.mod h1:io/H+NvaSomJKmh4mbhjgT0RX4AdTTSxbImeRNZCCKs=
+github.com/SundaeSwap-finance/ogmigo v0.10.0 h1:vADmZtMZna0dBHK4FEWMpjP3sh0Xla6Imr8MdX4h/6Y=
+github.com/SundaeSwap-finance/ogmigo v0.10.0/go.mod h1:snL4kMjA9fBKQek2Dt4cfV9yGBVxGSstFL6tg4ckoNA=
 github.com/aead/siphash v1.0.1/go.mod h1:Nywa3cDsYNNK3gaciGTWPwHt0wlpNV15vwmswBAUSII=
 github.com/aws/aws-sdk-go v1.55.6 h1:cSg4pvZ3m8dgYcgqB97MrcdjUmZ1BeMYKUxMMB89IPk=
 github.com/aws/aws-sdk-go v1.55.6/go.mod h1:eRwEWoyTWFMVYVQzKMNHWP5/RV4xIUGMQfXQHfHkpNU=
