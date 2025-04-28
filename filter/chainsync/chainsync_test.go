@@ -207,7 +207,10 @@ type mockStakeDeregistrationCert struct {
 
 func (m *mockStakeDeregistrationCert) Cbor() []byte { return m.cborData }
 
-func mockStakeCredentialValue(credType uint, hashBytes []byte) common.Credential {
+func mockStakeCredentialValue(
+	credType uint,
+	hashBytes []byte,
+) common.Credential {
 	var credHash common.CredentialHash
 	copy(credHash[:], hashBytes)
 	return common.Credential{
@@ -216,7 +219,10 @@ func mockStakeCredentialValue(credType uint, hashBytes []byte) common.Credential
 	}
 }
 
-func mockStakeCredentialPtr(credType uint, hashBytes []byte) *common.Credential {
+func mockStakeCredentialPtr(
+	credType uint,
+	hashBytes []byte,
+) *common.Credential {
 	cred := mockStakeCredentialValue(credType, hashBytes)
 	return &cred
 }
@@ -329,7 +335,9 @@ func TestFilterByPolicyId(t *testing.T) {
 	policyId := policyIdHash // Use the same hash as the filter
 
 	// Create a new MultiAsset with pre-populated data
-	assetsData := make(map[common.Blake2b224]map[cbor.ByteString]common.MultiAssetTypeOutput)
+	assetsData := make(
+		map[common.Blake2b224]map[cbor.ByteString]common.MultiAssetTypeOutput,
+	)
 	assetName := cbor.NewByteString([]byte("asset1"))
 	assetsData[policyId] = map[cbor.ByteString]common.MultiAssetTypeOutput{
 		assetName: 1, // Add asset with quantity 1
@@ -360,7 +368,12 @@ func TestFilterByPolicyId(t *testing.T) {
 	// Wait for the event to be processed
 	select {
 	case filteredEvt := <-cs.OutputChan():
-		assert.Equal(t, evt, filteredEvt, "Filtered event should match the input event")
+		assert.Equal(
+			t,
+			evt,
+			filteredEvt,
+			"Filtered event should match the input event",
+		)
 	case <-time.After(5 * time.Second):
 		t.Fatal("Test timed out waiting for filtered event")
 	}
@@ -375,7 +388,9 @@ func TestFilterByAssetFingerprint(t *testing.T) {
 	policyId := common.Blake2b224Hash([]byte("policy1"))
 
 	// Create a new MultiAsset with pre-populated data
-	assetsData := make(map[common.Blake2b224]map[cbor.ByteString]common.MultiAssetTypeOutput)
+	assetsData := make(
+		map[common.Blake2b224]map[cbor.ByteString]common.MultiAssetTypeOutput,
+	)
 	assetName := cbor.NewByteString([]byte("asset1"))
 	assetsData[policyId] = map[cbor.ByteString]common.MultiAssetTypeOutput{
 		assetName: 1, // Add asset with quantity 1
@@ -406,7 +421,12 @@ func TestFilterByAssetFingerprint(t *testing.T) {
 	// Wait for the event to be processed
 	select {
 	case filteredEvt := <-cs.OutputChan():
-		assert.Equal(t, evt, filteredEvt, "Filtered event should match the input event")
+		assert.Equal(
+			t,
+			evt,
+			filteredEvt,
+			"Filtered event should match the input event",
+		)
 	case <-time.After(5 * time.Second):
 		t.Fatal("Test timed out waiting for filtered event")
 	}
@@ -434,7 +454,12 @@ func TestFilterByPoolId(t *testing.T) {
 	// Wait for the event to be processed
 	select {
 	case filteredEvt := <-cs.OutputChan():
-		assert.Equal(t, evt, filteredEvt, "Filtered event should match the input event")
+		assert.Equal(
+			t,
+			evt,
+			filteredEvt,
+			"Filtered event should match the input event",
+		)
 	case <-time.After(5 * time.Second):
 		t.Fatal("Test timed out waiting for filtered event")
 	}
