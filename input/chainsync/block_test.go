@@ -127,8 +127,12 @@ func TestNewBlockContext(t *testing.T) {
 					era: common.Era{
 						Name: "Shelley",
 					},
-					hash:          common.NewBlake2b256([]byte("sample-hash-shelley")),
-					prevHash:      common.NewBlake2b256([]byte("prev-hash-shelley")),
+					hash: common.NewBlake2b256(
+						[]byte("sample-hash-shelley"),
+					),
+					prevHash: common.NewBlake2b256(
+						[]byte("prev-hash-shelley"),
+					),
 					blockBodySize: 1024,
 					cborBytes:     []byte{0x01, 0x02, 0x03},
 				},
@@ -148,8 +152,12 @@ func TestNewBlockContext(t *testing.T) {
 					era: common.Era{
 						Name: "Allegra",
 					},
-					hash:          common.NewBlake2b256([]byte("another-hash-allegra")),
-					prevHash:      common.NewBlake2b256([]byte("prev-hash-allegra")),
+					hash: common.NewBlake2b256(
+						[]byte("another-hash-allegra"),
+					),
+					prevHash: common.NewBlake2b256(
+						[]byte("prev-hash-allegra"),
+					),
 					blockBodySize: 2048,
 					cborBytes:     []byte{0x04, 0x05, 0x06},
 				},
@@ -169,8 +177,12 @@ func TestNewBlockContext(t *testing.T) {
 					era: common.Era{
 						Name: "Mary",
 					},
-					hash:          common.NewBlake2b256([]byte("mary-block-hash")),
-					prevHash:      common.NewBlake2b256([]byte("prev-hash-mary")),
+					hash: common.NewBlake2b256(
+						[]byte("mary-block-hash"),
+					),
+					prevHash: common.NewBlake2b256(
+						[]byte("prev-hash-mary"),
+					),
 					blockBodySize: 4096,
 					cborBytes:     []byte{0x07, 0x08, 0x09},
 				},
@@ -249,8 +261,12 @@ func TestNewBlockContextEdgeCases(t *testing.T) {
 					era: common.Era{
 						Name: "Alonzo",
 					},
-					hash:          common.NewBlake2b256([]byte("max-block-hash")),
-					prevHash:      common.NewBlake2b256([]byte("max-prev-hash")),
+					hash: common.NewBlake2b256(
+						[]byte("max-block-hash"),
+					),
+					prevHash: common.NewBlake2b256(
+						[]byte("max-prev-hash"),
+					),
 					blockBodySize: ^uint64(0),
 					cborBytes:     []byte{0x0A, 0x0B, 0x0C},
 				},

@@ -12,7 +12,9 @@ import (
 
 func TestPluginRegistration(t *testing.T) {
 	// Retrieve the plugin entries
-	plugins := plugin.GetPlugins(plugin.PluginTypeFilter) // Get all registered plugins
+	plugins := plugin.GetPlugins(
+		plugin.PluginTypeFilter,
+	) // Get all registered plugins
 
 	// Find the "chainsync" plugin
 	var p plugin.Plugin
@@ -80,7 +82,12 @@ func TestPluginEventProcessing(t *testing.T) {
 	// Read the event from the output channel
 	select {
 	case outputEvent := <-p.OutputChan():
-		assert.Equal(t, testEvent, outputEvent, "Output event should match input event")
+		assert.Equal(
+			t,
+			testEvent,
+			outputEvent,
+			"Output event should match input event",
+		)
 	case <-time.After(1 * time.Second):
 		t.Fatal("Timeout waiting for output event")
 	}
