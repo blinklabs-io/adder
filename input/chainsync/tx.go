@@ -1,4 +1,4 @@
-// Copyright 2023 Blink Labs Software
+// Copyright 2025 Blink Labs Software
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -28,18 +28,19 @@ type TransactionContext struct {
 }
 
 type TransactionEvent struct {
-	Transaction     ledger.Transaction         `json:"-"`
-	BlockHash       string                     `json:"blockHash"`
-	TransactionCbor byteSliceJsonHex           `json:"transactionCbor,omitempty"`
-	Inputs          []ledger.TransactionInput  `json:"inputs"`
-	Outputs         []ledger.TransactionOutput `json:"outputs"`
-	Certificates    []ledger.Certificate       `json:"certificates,omitempty"`
-	ReferenceInputs []ledger.TransactionInput  `json:"referenceInputs,omitempty"`
-	Metadata        *cbor.LazyValue            `json:"metadata,omitempty"`
-	Fee             uint64                     `json:"fee"`
-	TTL             uint64                     `json:"ttl,omitempty"`
-	ResolvedInputs  []ledger.TransactionOutput `json:"resolvedInputs,omitempty"`
-	Withdrawals     map[string]uint64          `json:"withdrawals,omitempty"`
+	Transaction     ledger.Transaction            `json:"-"`
+	BlockHash       string                        `json:"blockHash"`
+	TransactionCbor byteSliceJsonHex              `json:"transactionCbor,omitempty"`
+	Inputs          []ledger.TransactionInput     `json:"inputs"`
+	Outputs         []ledger.TransactionOutput    `json:"outputs"`
+	Certificates    []ledger.Certificate          `json:"certificates,omitempty"`
+	ReferenceInputs []ledger.TransactionInput     `json:"referenceInputs,omitempty"`
+	Metadata        *cbor.LazyValue               `json:"metadata,omitempty"`
+	Fee             uint64                        `json:"fee"`
+	TTL             uint64                        `json:"ttl,omitempty"`
+	ResolvedInputs  []ledger.TransactionOutput    `json:"resolvedInputs,omitempty"`
+	Withdrawals     map[string]uint64             `json:"withdrawals,omitempty"`
+	Witnesses       lcommon.TransactionWitnessSet `json:"witnesses,omitempty"`
 }
 
 func NewTransactionContext(
@@ -70,6 +71,7 @@ func NewTransactionEvent(
 		Inputs:      tx.Inputs(),
 		Outputs:     tx.Outputs(),
 		Fee:         tx.Fee(),
+		Witnesses:   tx.Witnesses(),
 	}
 	if includeCbor {
 		evt.TransactionCbor = tx.Cbor()
