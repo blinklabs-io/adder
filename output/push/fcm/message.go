@@ -32,9 +32,9 @@ type Message struct {
 }
 
 type MessageContent struct {
-	Token        string                 `json:"token"`
-	Notification *NotificationContent   `json:"notification,omitempty"`
-	Data         map[string]interface{} `json:"data,omitempty"`
+	Token        string               `json:"token"`
+	Notification *NotificationContent `json:"notification,omitempty"`
+	Data         map[string]any       `json:"data,omitempty"`
 }
 
 type NotificationContent struct {
@@ -44,7 +44,7 @@ type NotificationContent struct {
 
 type MessageOption func(*MessageContent)
 
-func WithData(data map[string]interface{}) MessageOption {
+func WithData(data map[string]any) MessageOption {
 	return func(m *MessageContent) {
 		m.Data = data
 	}

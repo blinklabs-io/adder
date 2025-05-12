@@ -19,16 +19,16 @@ import (
 )
 
 type Event struct {
-	Type      string      `json:"type"`
-	Timestamp time.Time   `json:"timestamp"`
-	Context   interface{} `json:"context,omitempty"`
-	Payload   interface{} `json:"payload"`
+	Type      string    `json:"type"`
+	Timestamp time.Time `json:"timestamp"`
+	Context   any       `json:"context,omitempty"`
+	Payload   any       `json:"payload"`
 }
 
 func New(
 	eventType string,
 	timestamp time.Time,
-	context, payload interface{},
+	context, payload any,
 ) Event {
 	return Event{
 		Type:      eventType,
