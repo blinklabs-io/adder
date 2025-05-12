@@ -30,14 +30,14 @@ const (
 )
 
 type Config struct {
-	Api        ApiConfig                                         `yaml:"api"`
-	ConfigFile string                                            `yaml:"-"`
-	Version    bool                                              `yaml:"-"`
-	Logging    LoggingConfig                                     `yaml:"logging"`
-	Debug      DebugConfig                                       `yaml:"debug"`
-	Input      string                                            `yaml:"input"   envconfig:"INPUT"`
-	Output     string                                            `yaml:"output"  envconfig:"OUTPUT"`
-	Plugin     map[string]map[string]map[interface{}]interface{} `yaml:"plugins"`
+	Api        ApiConfig                         `yaml:"api"`
+	ConfigFile string                            `yaml:"-"`
+	Version    bool                              `yaml:"-"`
+	Logging    LoggingConfig                     `yaml:"logging"`
+	Debug      DebugConfig                       `yaml:"debug"`
+	Input      string                            `yaml:"input"   envconfig:"INPUT"`
+	Output     string                            `yaml:"output"  envconfig:"OUTPUT"`
+	Plugin     map[string]map[string]map[any]any `yaml:"plugins"`
 }
 
 type ApiConfig struct {

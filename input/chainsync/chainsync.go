@@ -320,7 +320,7 @@ func (c *ChainSync) handleRollBackward(
 func (c *ChainSync) handleRollForward(
 	ctx ochainsync.CallbackContext,
 	blockType uint,
-	blockData interface{},
+	blockData any,
 	tip ochainsync.Tip,
 ) error {
 	switch v := blockData.(type) {

@@ -1,4 +1,4 @@
-// Copyright 2023 Blink Labs Software
+// Copyright 2025 Blink Labs Software
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -15,6 +15,8 @@
 package event
 
 import (
+	"slices"
+
 	"github.com/blinklabs-io/adder/event"
 	"github.com/blinklabs-io/adder/plugin"
 )
@@ -51,13 +53,7 @@ func (e *Event) Start() error {
 			}
 			// Drop events if we have a type filter configured and the event doesn't match
 			if len(e.filterTypes) > 0 {
-				matched := false
-				for _, filterType := range e.filterTypes {
-					if evt.Type == filterType {
-						matched = true
-						break
-					}
-				}
+				matched := slices.Contains(e.filterTypes, evt.Type)
 				if !matched {
 					continue
 				}

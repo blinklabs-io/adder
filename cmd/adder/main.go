@@ -185,7 +185,7 @@ func main() {
 		os.Exit(1)
 	}
 	// Check if output plugin implements APIRouteRegistrar
-	if registrar, ok := interface{}(output).(api.APIRouteRegistrar); ok {
+	if registrar, ok := any(output).(api.APIRouteRegistrar); ok {
 		registrar.RegisterRoutes()
 	}
 	pipe.AddOutput(output)

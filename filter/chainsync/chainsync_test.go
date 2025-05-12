@@ -125,11 +125,11 @@ func (m MockOutput) Utxorpc() *cardano.TxOutput {
 	return nil
 }
 
-func (l *MockLogger) Info(msg string, args ...interface{})  {}
-func (l *MockLogger) Error(msg string, args ...interface{}) {}
-func (l *MockLogger) Debug(msg string, args ...interface{}) {}
-func (l *MockLogger) Warn(msg string, args ...interface{})  {}
-func (l *MockLogger) Trace(msg string, args ...interface{}) {}
+func (l *MockLogger) Info(msg string, args ...any)  {}
+func (l *MockLogger) Error(msg string, args ...any) {}
+func (l *MockLogger) Debug(msg string, args ...any) {}
+func (l *MockLogger) Warn(msg string, args ...any)  {}
+func (l *MockLogger) Trace(msg string, args ...any) {}
 
 func TestNewChainSync(t *testing.T) {
 	c := New()

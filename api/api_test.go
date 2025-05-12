@@ -16,7 +16,7 @@ func TestRouteRegistration(t *testing.T) {
 
 	// Check if Fcm implements APIRouteRegistrar and register its routes
 	pushPlugin := &push.PushOutput{}
-	if registrar, ok := interface{}(pushPlugin).(api.APIRouteRegistrar); ok {
+	if registrar, ok := any(pushPlugin).(api.APIRouteRegistrar); ok {
 		registrar.RegisterRoutes()
 	} else {
 		t.Fatal("pushPlugin does NOT implement APIRouteRegistrar")
