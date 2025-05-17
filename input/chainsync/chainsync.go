@@ -22,6 +22,7 @@ import (
 	"log/slog"
 	"math"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -69,6 +70,8 @@ type ChainSync struct {
 	dialFamily         string
 	kupoUrl            string
 	kupoClient         *kugo.Client
+	delayConfirmations uint
+	delayBuffer        [][]event.Event
 }
 
 type ChainSyncStatus struct {
@@ -304,6 +307,22 @@ func (c *ChainSync) handleRollBackward(
 		nil,
 		NewRollbackEvent(point),
 	)
+	// Remove rolled-back events from buffer
+	if len(c.delayBuffer) > 0 {
+		// We iterate backwards to avoid the issues with deleting from a list while iterating over it
+		for i := len(c.delayBuffer) - 1; i >= 0; i-- {
+			for _, evt := range c.delayBuffer[i] {
+				// Look for block event
+				if blockEvtCtx, ok := evt.Context.(BlockContext); ok {
+					// Delete event batch if slot is after rollback point
+					if blockEvtCtx.SlotNumber > point.Slot {
+						c.delayBuffer = slices.Delete(c.delayBuffer, i, i+1)
+						break
+					}
+				}
+			}
+		}
+	}
 	c.eventChan <- evt
 
 	// updating status after roll backward
@@ -323,36 +342,73 @@ func (c *ChainSync) handleRollForward(
 	blockData interface{},
 	tip ochainsync.Tip,
 ) error {
+	var block ledger.Block
+	var err error
+	tmpEvents := make([]event.Event, 0, 20)
 	switch v := blockData.(type) {
 	case ledger.Block:
-		evt := event.New("chainsync.block", time.Now(), NewBlockContext(v, c.networkMagic), NewBlockEvent(v, c.includeCbor))
-		c.eventChan <- evt
-		c.updateStatus(v.SlotNumber(), v.BlockNumber(), v.Hash().String(), tip.Point.Slot, hex.EncodeToString(tip.Point.Hash))
+		block = v
 	case ledger.BlockHeader:
 		blockSlot := v.SlotNumber()
-		block, err := c.oConn.BlockFetch().Client.GetBlock(ocommon.Point{Slot: blockSlot, Hash: v.Hash().Bytes()})
+		block, err = c.oConn.BlockFetch().Client.GetBlock(ocommon.Point{Slot: blockSlot, Hash: v.Hash().Bytes()})
 		if err != nil {
 			return err
 		}
 		if block == nil {
 			return errors.New("blockfetch returned empty")
 		}
-		blockEvt := event.New("chainsync.block", time.Now(), NewBlockHeaderContext(v), NewBlockEvent(block, c.includeCbor))
-		c.eventChan <- blockEvt
-		for t, transaction := range block.Transactions() {
-			resolvedInputs, err := resolveTransactionInputs(transaction, c)
-			if err != nil {
-				return err
-			}
-			if t < 0 || t > math.MaxUint32 {
-				return errors.New("invalid number of transactions")
-			}
-			txEvt := event.New("chainsync.transaction", time.Now(), NewTransactionContext(block, transaction, uint32(t), c.networkMagic),
-				NewTransactionEvent(block, transaction, c.includeCbor, resolvedInputs))
-			c.eventChan <- txEvt
-		}
-		c.updateStatus(v.SlotNumber(), v.BlockNumber(), v.Hash().String(), tip.Point.Slot, hex.EncodeToString(tip.Point.Hash))
+	default:
+		return errors.New("unknown type")
 	}
+	blockEvt := event.New("chainsync.block", time.Now(), NewBlockHeaderContext(block.Header()), NewBlockEvent(block, c.includeCbor))
+	tmpEvents = append(tmpEvents, blockEvt)
+	for t, transaction := range block.Transactions() {
+		resolvedInputs, err := resolveTransactionInputs(transaction, c)
+		if err != nil {
+			return err
+		}
+		if t < 0 || t > math.MaxUint32 {
+			return errors.New("invalid number of transactions")
+		}
+		txEvt := event.New("chainsync.transaction", time.Now(), NewTransactionContext(block, transaction, uint32(t), c.networkMagic),
+			NewTransactionEvent(block, transaction, c.includeCbor, resolvedInputs))
+		tmpEvents = append(tmpEvents, txEvt)
+	}
+	updateTip := ochainsync.Tip{
+		Point: ocommon.Point{
+			Slot: block.SlotNumber(),
+			Hash: block.Hash().Bytes(),
+		},
+		BlockNumber: block.BlockNumber(),
+	}
+	if c.delayConfirmations == 0 {
+		// Send events immediately if no delay confirmations configured
+		for _, evt := range tmpEvents {
+			c.eventChan <- evt
+		}
+	} else {
+		// Add events to delay buffer
+		c.delayBuffer = append(c.delayBuffer, tmpEvents)
+		// Send oldest events and remove from buffer if delay buffer is larger than configured delay confirmations
+		if uint(len(c.delayBuffer)) > c.delayConfirmations {
+			for _, evt := range c.delayBuffer[0] {
+				// Look for block event
+				if blockEvt, ok := evt.Payload.(BlockEvent); ok {
+					// Populate current point for update status based on most recently sent events
+					updateTip = ochainsync.Tip{
+						Point: ocommon.Point{
+							Slot: blockEvt.Block.SlotNumber(),
+							Hash: blockEvt.Block.Hash().Bytes(),
+						},
+						BlockNumber: blockEvt.Block.BlockNumber(),
+					}
+				}
+				c.eventChan <- evt
+			}
+			c.delayBuffer = slices.Delete(c.delayBuffer, 0, 1)
+		}
+	}
+	c.updateStatus(updateTip.Point.Slot, updateTip.BlockNumber, hex.EncodeToString(updateTip.Point.Hash), tip.Point.Slot, hex.EncodeToString(tip.Point.Hash))
 	return nil
 }
 
