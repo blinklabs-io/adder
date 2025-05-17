@@ -26,17 +26,18 @@ import (
 )
 
 var cmdlineOptions struct {
-	network        string
-	networkMagic   uint
-	address        string
-	socketPath     string
-	ntcTcp         bool
-	bulkMode       bool
-	intersectTip   bool
-	intersectPoint string
-	includeCbor    bool
-	autoReconnect  bool
-	kupoUrl        string
+	network            string
+	networkMagic       uint
+	address            string
+	socketPath         string
+	ntcTcp             bool
+	bulkMode           bool
+	intersectTip       bool
+	intersectPoint     string
+	includeCbor        bool
+	autoReconnect      bool
+	kupoUrl            string
+	delayConfirmations uint
 }
 
 func init() {
@@ -126,6 +127,13 @@ func init() {
 					DefaultValue: "",
 					Dest:         &(cmdlineOptions.kupoUrl),
 				},
+				{
+					Name:         "delay-confirmations",
+					Type:         plugin.PluginOptionTypeUint,
+					Description:  "number of confirmations required before emitting events",
+					DefaultValue: uint(0),
+					Dest:         &(cmdlineOptions.delayConfirmations),
+				},
 			},
 		},
 	)
@@ -151,6 +159,7 @@ func NewFromCmdlineOptions() plugin.Plugin {
 		WithIncludeCbor(cmdlineOptions.includeCbor),
 		WithAutoReconnect(cmdlineOptions.autoReconnect),
 		WithKupoUrl(cmdlineOptions.kupoUrl),
+		WithDelayConfirmations(cmdlineOptions.delayConfirmations),
 	}
 	if cmdlineOptions.intersectPoint != "" {
 		intersectPoints := []ocommon.Point{}

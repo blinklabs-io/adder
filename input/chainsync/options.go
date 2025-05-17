@@ -108,8 +108,16 @@ func WithBulkMode(bulkMode bool) ChainSyncOptionFunc {
 	}
 }
 
+// WithKupoUrl specifies the URL for a Kupo instance that will be queried for additional information
 func WithKupoUrl(kupoUrl string) ChainSyncOptionFunc {
 	return func(c *ChainSync) {
 		c.kupoUrl = kupoUrl
+	}
+}
+
+// WithDelayConfirmationCount specifies the number of confirmations (subsequent blocks) are required before an event will be emitted
+func WithDelayConfirmations(count uint) ChainSyncOptionFunc {
+	return func(c *ChainSync) {
+		c.delayConfirmations = count
 	}
 }
