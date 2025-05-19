@@ -7,7 +7,7 @@ toolchain go1.24.1
 require (
 	github.com/SundaeSwap-finance/kugo v1.1.0
 	github.com/SundaeSwap-finance/ogmigo v0.10.0
-	github.com/blinklabs-io/gouroboros v0.120.1
+	github.com/blinklabs-io/gouroboros v0.121.0
 	github.com/btcsuite/btcd/btcutil v1.1.6
 	github.com/gen2brain/beeep v0.0.0-20240516210008-9c006672e7f4
 	github.com/gin-gonic/gin v1.10.0
@@ -70,11 +70,11 @@ require (
 	github.com/ugorji/go/codec v1.2.12 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	golang.org/x/arch v0.8.0 // indirect
-	golang.org/x/crypto v0.37.0 // indirect
+	golang.org/x/crypto v0.38.0 // indirect
 	golang.org/x/net v0.38.0 // indirect
-	golang.org/x/sync v0.13.0 // indirect
-	golang.org/x/sys v0.32.0 // indirect
-	golang.org/x/text v0.24.0 // indirect
+	golang.org/x/sync v0.14.0 // indirect
+	golang.org/x/sys v0.33.0 // indirect
+	golang.org/x/text v0.25.0 // indirect
 	golang.org/x/tools v0.21.1-0.20240508182429-e35e4ccd0d2d // indirect
 	google.golang.org/protobuf v1.36.3 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
