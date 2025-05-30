@@ -22,6 +22,7 @@ import (
 	"log/slog"
 	"math"
 	"net/http"
+	"net/url"
 	"slices"
 	"strings"
 	"time"
@@ -43,6 +44,7 @@ const (
 	cursorCacheSize = 20
 
 	maxAutoReconnectDelay = 60 * time.Second
+	defaultKupoTimeout    = 30 * time.Second
 )
 
 type ChainSync struct {
@@ -507,41 +509,55 @@ func getKupoClient(c *ChainSync) (*kugo.Client, error) {
 		return c.kupoClient, nil
 	}
 
+	// Validate URL first
+	_, err := url.ParseRequestURI(c.kupoUrl)
+	if err != nil {
+		return nil, fmt.Errorf("invalid kupo URL: %w", err)
+	}
+
 	KugoCustomLogger := logging.NewKugoCustomLogger(logging.LevelInfo)
 
+	// Create client with timeout
 	k := kugo.New(
 		kugo.WithEndpoint(c.kupoUrl),
 		kugo.WithLogger(KugoCustomLogger),
+		kugo.WithTimeout(defaultKupoTimeout),
 	)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
+	httpClient := &http.Client{
+		Timeout: 2 * time.Second,
+	}
 
 	healthUrl := strings.TrimRight(c.kupoUrl, "/") + "/health"
+
+	// Create context with timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, healthUrl, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create health check request: %w", err)
 	}
 
-	client := &http.Client{}
-	resp, err := client.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to perform health check: %w", err)
-	}
-	if resp == nil {
-		return nil, errors.New("health check response empty, aborting")
+		// Handle different error types
+		switch {
+		case errors.Is(err, context.DeadlineExceeded):
+			return nil, errors.New("kupo health check timed out after 3 seconds")
+		case strings.Contains(err.Error(), "no such host"):
+			return nil, fmt.Errorf("failed to resolve kupo host: %w", err)
+		default:
+			return nil, fmt.Errorf("failed to perform health check: %w", err)
+		}
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf(
-			"health check failed with status code: %d",
-			resp.StatusCode,
-		)
+		return nil, fmt.Errorf("health check failed with status code: %d", resp.StatusCode)
 	}
 
 	c.kupoClient = k
-
 	return k, nil
 }
 
@@ -564,10 +580,18 @@ func resolveTransactionInputs(
 			// Extract transaction ID and index from the input
 			txId := input.Id().String()
 			txIndex := int(input.Index())
-			matches, err := k.Matches(context.Background(),
+
+			// Add timeout for matches query
+			ctx, cancel := context.WithTimeout(context.Background(), defaultKupoTimeout)
+			defer cancel()
+
+			matches, err := k.Matches(ctx,
 				kugo.TxOut(chainsync.NewTxID(txId, txIndex)),
 			)
 			if err != nil {
+				if errors.Is(err, context.DeadlineExceeded) {
+					return nil, fmt.Errorf("kupo matches query timed out after %v", defaultKupoTimeout)
+				}
 				return nil, fmt.Errorf(
 					"error fetching matches for input TxId: %s, Index: %d. Error: %w",
 					txId,

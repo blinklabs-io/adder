@@ -2,13 +2,19 @@ package chainsync
 
 import (
 	"encoding/hex"
+	//"fmt"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/SundaeSwap-finance/kugo"
 	"github.com/blinklabs-io/adder/event"
 	"github.com/blinklabs-io/gouroboros/protocol/chainsync"
 	ocommon "github.com/blinklabs-io/gouroboros/protocol/common"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestHandleRollBackward(t *testing.T) {
@@ -67,4 +73,93 @@ func TestHandleRollBackward(t *testing.T) {
 	assert.Equal(t, "0102030405", c.status.BlockHash)
 	assert.Equal(t, uint64(67890), c.status.TipSlotNumber)
 	assert.Equal(t, "060708090a", c.status.TipBlockHash)
+}
+
+func TestGetKupoClient(t *testing.T) {
+	// Setup test server
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/health" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer ts.Close()
+
+	t.Run("successful client creation", func(t *testing.T) {
+		c := &ChainSync{
+			kupoUrl: ts.URL,
+		}
+
+		client, err := getKupoClient(c)
+		require.NoError(t, err)
+		assert.NotNil(t, client)
+		assert.NotNil(t, c.kupoClient)
+	})
+
+	t.Run("returns cached client", func(t *testing.T) {
+		mockClient := &kugo.Client{}
+		c := &ChainSync{
+			kupoUrl:    ts.URL,
+			kupoClient: mockClient,
+		}
+
+		client, err := getKupoClient(c)
+		require.NoError(t, err)
+		assert.Same(t, mockClient, client)
+	})
+
+	t.Run("health check timeout", func(t *testing.T) {
+		slowTS := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			time.Sleep(4 * time.Second) // Longer than the 3s context timeout
+			w.WriteHeader(http.StatusOK)
+		}))
+		defer slowTS.Close()
+
+		c := &ChainSync{
+			kupoUrl: slowTS.URL,
+		}
+
+		_, err := getKupoClient(c)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "kupo health check timed out after 3 seconds")
+	})
+
+	t.Run("failed health check status", func(t *testing.T) {
+		failTS := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusInternalServerError)
+		}))
+		defer failTS.Close()
+
+		c := &ChainSync{
+			kupoUrl: failTS.URL,
+		}
+
+		_, err := getKupoClient(c)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "health check failed with status code: 500")
+	})
+
+	t.Run("malformed URL", func(t *testing.T) {
+		c := &ChainSync{
+			kupoUrl: "http://invalid url",
+		}
+
+		_, err := getKupoClient(c)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "invalid kupo URL")
+	})
+
+	t.Run("unreachable host", func(t *testing.T) {
+		c := &ChainSync{
+			kupoUrl: "http://unreachable-host.invalid",
+		}
+
+		_, err := getKupoClient(c)
+		require.Error(t, err)
+		assert.True(t,
+			strings.Contains(err.Error(), "failed to resolve kupo host") ||
+				strings.Contains(err.Error(), "failed to perform health check"),
+			"unexpected error: %v", err)
+	})
 }
