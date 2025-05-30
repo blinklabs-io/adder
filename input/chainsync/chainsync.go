@@ -544,7 +544,7 @@ func getKupoClient(c *ChainSync) (*kugo.Client, error) {
 		// Handle different error types
 		switch {
 		case errors.Is(err, context.DeadlineExceeded):
-			return nil, fmt.Errorf("kupo health check timed out after 3 seconds")
+			return nil, errors.New("kupo health check timed out after 3 seconds")
 		case strings.Contains(err.Error(), "no such host"):
 			return nil, fmt.Errorf("failed to resolve kupo host: %w", err)
 		default:
