@@ -2,6 +2,7 @@ package chainsync
 
 import (
 	"encoding/hex"
+	//"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -110,7 +111,7 @@ func TestGetKupoClient(t *testing.T) {
 
 	t.Run("health check timeout", func(t *testing.T) {
 		slowTS := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			time.Sleep(3 * time.Second)
+			time.Sleep(4 * time.Second) // Longer than the 3s context timeout
 			w.WriteHeader(http.StatusOK)
 		}))
 		defer slowTS.Close()
@@ -121,7 +122,7 @@ func TestGetKupoClient(t *testing.T) {
 
 		_, err := getKupoClient(c)
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "kupo health check timed out after 2 seconds")
+		assert.Contains(t, err.Error(), "kupo health check timed out after 3 seconds")
 	})
 
 	t.Run("failed health check status", func(t *testing.T) {
@@ -156,10 +157,9 @@ func TestGetKupoClient(t *testing.T) {
 
 		_, err := getKupoClient(c)
 		require.Error(t, err)
-		// Accept either timeout or connection error
 		assert.True(t,
-			strings.Contains(err.Error(), "kupo health check timed out") ||
-				strings.Contains(err.Error(), "failed to connect"),
+			strings.Contains(err.Error(), "failed to resolve kupo host") ||
+				strings.Contains(err.Error(), "failed to perform health check"),
 			"unexpected error: %v", err)
 	})
 }

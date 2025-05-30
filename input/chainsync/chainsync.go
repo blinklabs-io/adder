@@ -509,7 +509,7 @@ func getKupoClient(c *ChainSync) (*kugo.Client, error) {
 		return c.kupoClient, nil
 	}
 
-	// First validate the URL
+	// Validate URL first
 	_, err := url.ParseRequestURI(c.kupoUrl)
 	if err != nil {
 		return nil, fmt.Errorf("invalid kupo URL: %w", err)
@@ -517,6 +517,7 @@ func getKupoClient(c *ChainSync) (*kugo.Client, error) {
 
 	KugoCustomLogger := logging.NewKugoCustomLogger(logging.LevelInfo)
 
+	// Create client with timeout
 	k := kugo.New(
 		kugo.WithEndpoint(c.kupoUrl),
 		kugo.WithLogger(KugoCustomLogger),
@@ -528,29 +529,29 @@ func getKupoClient(c *ChainSync) (*kugo.Client, error) {
 	}
 
 	healthUrl := strings.TrimRight(c.kupoUrl, "/") + "/health"
-	req, err := http.NewRequest(http.MethodGet, healthUrl, nil)
+
+	// Create context with timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, healthUrl, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create health check request: %w", err)
 	}
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		var urlErr *url.Error
-		if errors.As(err, &urlErr) {
-			if urlErr.Timeout() {
-				return nil, fmt.Errorf("kupo health check timed out after 2 seconds")
-			}
-			if strings.Contains(err.Error(), "no such host") {
-				return nil, fmt.Errorf("failed to connect to kupo: %w", err)
-			}
+		// Handle different error types
+		switch {
+		case errors.Is(err, context.DeadlineExceeded):
+			return nil, fmt.Errorf("kupo health check timed out after 3 seconds")
+		case strings.Contains(err.Error(), "no such host"):
+			return nil, fmt.Errorf("failed to resolve kupo host: %w", err)
+		default:
+			return nil, fmt.Errorf("failed to perform health check: %w", err)
 		}
-		return nil, fmt.Errorf("failed to perform health check: %w", err)
 	}
-	defer func() {
-		if resp != nil && resp.Body != nil {
-			resp.Body.Close()
-		}
-	}()
+	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("health check failed with status code: %d", resp.StatusCode)
