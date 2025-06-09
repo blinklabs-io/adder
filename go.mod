@@ -6,7 +6,7 @@ toolchain go1.24.1
 
 require (
 	github.com/SundaeSwap-finance/kugo v1.2.0
-	github.com/SundaeSwap-finance/ogmigo/v6 v6.0.1
+	github.com/SundaeSwap-finance/ogmigo/v6 v6.0.2
 	github.com/blinklabs-io/gouroboros v0.123.0
 	github.com/btcsuite/btcd/btcutil v1.1.6
 	github.com/gen2brain/beeep v0.0.0-20240516210008-9c006672e7f4
@@ -31,6 +31,7 @@ require (
 	filippo.io/edwards25519 v1.1.0 // indirect
 	github.com/KyleBanks/depth v1.2.1 // indirect
 	github.com/aws/aws-sdk-go v1.55.6 // indirect
+	github.com/btcsuite/btcutil v1.0.2 // indirect
 	github.com/buger/jsonparser v1.1.1 // indirect
 	github.com/bytedance/sonic v1.11.6 // indirect
 	github.com/bytedance/sonic/loader v0.1.1 // indirect
