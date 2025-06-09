@@ -121,8 +121,8 @@ func (m MockOutput) Cbor() []byte {
 	return []byte{}
 }
 
-func (m MockOutput) Utxorpc() *cardano.TxOutput {
-	return nil
+func (m MockOutput) Utxorpc() (*cardano.TxOutput, error) {
+	return nil, nil
 }
 
 func (l *MockLogger) Info(msg string, args ...any)  {}

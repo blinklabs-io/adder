@@ -158,7 +158,7 @@ func (txOut ResolvedTransactionOutput) Cbor() []byte {
 	return []byte{}
 }
 
-func (txOut ResolvedTransactionOutput) Utxorpc() *utxorpc.TxOutput {
+func (txOut ResolvedTransactionOutput) Utxorpc() (*utxorpc.TxOutput, error) {
 	// Placeholder for UTXO RPC representation
-	return &utxorpc.TxOutput{}
+	return &utxorpc.TxOutput{}, nil
 }
