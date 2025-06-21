@@ -13,8 +13,8 @@ github.com/SundaeSwap-finance/ogmigo/v6 v6.0.2/go.mod h1:FgU9nAQNyi+ApWqXB+DKAcb
 github.com/aead/siphash v1.0.1/go.mod h1:Nywa3cDsYNNK3gaciGTWPwHt0wlpNV15vwmswBAUSII=
 github.com/aws/aws-sdk-go v1.55.6 h1:cSg4pvZ3m8dgYcgqB97MrcdjUmZ1BeMYKUxMMB89IPk=
 github.com/aws/aws-sdk-go v1.55.6/go.mod h1:eRwEWoyTWFMVYVQzKMNHWP5/RV4xIUGMQfXQHfHkpNU=
-github.com/blinklabs-io/gouroboros v0.123.0 h1:0XelRN0fr1EBEDCSj6SjXZmXLg9bOmQ6FBLPcwu3T/c=
-github.com/blinklabs-io/gouroboros v0.123.0/go.mod h1:LUGnvJ1iOmpCihNxT9fyZFf6KD5E45sV8ZqEUgljzDw=
+github.com/blinklabs-io/gouroboros v0.125.1 h1:ZhKgKvFEcz8OtGxGrEYh8A03nqS7+QWqDE+/sGKNKdA=
+github.com/blinklabs-io/gouroboros v0.125.1/go.mod h1:LUGnvJ1iOmpCihNxT9fyZFf6KD5E45sV8ZqEUgljzDw=
 github.com/blinklabs-io/ouroboros-mock v0.3.8 h1:+DAt2rx0ouZUxee5DBMgZq3I1+ZdxFSHG9g3tYl/FKU=
 github.com/blinklabs-io/ouroboros-mock v0.3.8/go.mod h1:UwQIf4KqZwO13P9d90fbi3UL/X7JaJfeEbqk+bEeFQA=
 github.com/btcsuite/btcd v0.20.1-beta/go.mod h1:wVuoA8VJLEcwgqHBwHmzLRazpKxTv13Px/pDuV7OomQ=
