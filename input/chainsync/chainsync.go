@@ -217,6 +217,8 @@ func (c *ChainSync) setupConnection() error {
 			ochainsync.NewConfig(
 				ochainsync.WithRollForwardFunc(c.handleRollForward),
 				ochainsync.WithRollBackwardFunc(c.handleRollBackward),
+				// Enable pipelining of RequestNext messages to speed up chainsync
+				ochainsync.WithPipelineLimit(50),
 			),
 		),
 		ouroboros.WithBlockFetchConfig(
