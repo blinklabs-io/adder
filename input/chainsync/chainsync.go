@@ -111,6 +111,10 @@ func (c *ChainSync) Start() error {
 	if c.oConn.BlockFetch() != nil {
 		c.oConn.BlockFetch().Client.Start()
 	}
+	// TODO: remove me
+	// Disable bulk mode until we can fix it
+	// https://github.com/blinklabs-io/adder/issues/412
+	c.bulkMode = false
 	if c.bulkMode && !c.intersectTip && c.oConn.BlockFetch() != nil {
 		// Get available block range between our intersect point(s) and the chain tip
 		var err error
