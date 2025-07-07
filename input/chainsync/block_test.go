@@ -81,8 +81,8 @@ func (m MockBlock) Transactions() []common.Transaction {
 	return m.transactions
 }
 
-func (m MockBlock) Utxorpc() *utxorpc.Block {
-	return nil
+func (m MockBlock) Utxorpc() (*utxorpc.Block, error) {
+	return nil, nil
 }
 
 func (m MockBlock) IsShelley() bool {
