@@ -153,6 +153,11 @@ func (txOut ResolvedTransactionOutput) DatumHash() *common.Blake2b256 {
 	return nil
 }
 
+func (txOut ResolvedTransactionOutput) ScriptRef() common.Script {
+	// Placeholder for script ref
+	return nil
+}
+
 func (txOut ResolvedTransactionOutput) Cbor() []byte {
 	// Placeholder for CBOR serialization
 	return []byte{}

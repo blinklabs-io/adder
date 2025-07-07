@@ -91,10 +91,11 @@ func (m *MockAddress) UnmarshalCBOR(data []byte) error {
 
 // MockOutput is a mock implementation of the TransactionOutput interface
 type MockOutput struct {
-	address ledger.Address
-	amount  uint64
-	assets  *common.MultiAsset[common.MultiAssetTypeOutput]
-	datum   *cbor.LazyValue
+	address   ledger.Address
+	amount    uint64
+	assets    *common.MultiAsset[common.MultiAssetTypeOutput]
+	datum     *cbor.LazyValue
+	scriptRef common.Script
 }
 
 func (m MockOutput) Address() ledger.Address {
@@ -115,6 +116,10 @@ func (m MockOutput) Datum() *cbor.LazyValue {
 
 func (m MockOutput) DatumHash() *common.Blake2b256 {
 	return nil
+}
+
+func (m MockOutput) ScriptRef() common.Script {
+	return m.scriptRef
 }
 
 func (m MockOutput) Cbor() []byte {
