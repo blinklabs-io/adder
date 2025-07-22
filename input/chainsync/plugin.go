@@ -31,7 +31,6 @@ var cmdlineOptions struct {
 	address            string
 	socketPath         string
 	ntcTcp             bool
-	bulkMode           bool
 	intersectTip       bool
 	intersectPoint     string
 	includeCbor        bool
@@ -84,13 +83,6 @@ func init() {
 					Description:  "use the NtC (node-to-client) protocol over TCP, for use when exposing a node's UNIX socket via socat or similar",
 					DefaultValue: false,
 					Dest:         &(cmdlineOptions.ntcTcp),
-				},
-				{
-					Name:         "bulk-mode",
-					Type:         plugin.PluginOptionTypeBool,
-					Description:  "use the 'bulk' sync mode with NtN (node-to-node). This should only be used against your own nodes for resource usage reasons",
-					DefaultValue: false,
-					Dest:         &(cmdlineOptions.bulkMode),
 				},
 				{
 					Name:         "intersect-tip",
@@ -155,7 +147,6 @@ func NewFromCmdlineOptions() plugin.Plugin {
 		WithAddress(cmdlineOptions.address),
 		WithSocketPath(cmdlineOptions.socketPath),
 		WithNtcTcp(cmdlineOptions.ntcTcp),
-		WithBulkMode(cmdlineOptions.bulkMode),
 		WithIncludeCbor(cmdlineOptions.includeCbor),
 		WithAutoReconnect(cmdlineOptions.autoReconnect),
 		WithKupoUrl(cmdlineOptions.kupoUrl),
