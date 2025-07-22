@@ -43,6 +43,8 @@ const (
 	// Size of cache for recent chainsync cursors
 	cursorCacheSize = 20
 
+	blockBatchSize = 500
+
 	maxAutoReconnectDelay = 60 * time.Second
 	defaultKupoTimeout    = 30 * time.Second
 )
@@ -55,7 +57,6 @@ type ChainSync struct {
 	address            string
 	socketPath         string
 	ntcTcp             bool
-	bulkMode           bool
 	intersectTip       bool
 	intersectPoints    []ocommon.Point
 	includeCbor        bool
@@ -65,8 +66,6 @@ type ChainSync struct {
 	status             *ChainSyncStatus
 	errorChan          chan error
 	eventChan          chan event.Event
-	bulkRangeStart     ocommon.Point
-	bulkRangeEnd       ocommon.Point
 	cursorCache        []ocommon.Point
 	dialAddress        string
 	dialFamily         string
@@ -74,6 +73,9 @@ type ChainSync struct {
 	kupoClient         *kugo.Client
 	delayConfirmations uint
 	delayBuffer        [][]event.Event
+	pendingBlockPoints []ocommon.Point
+	blockfetchDoneChan chan struct{}
+	lastTip            ochainsync.Tip
 }
 
 type ChainSyncStatus struct {
@@ -111,41 +113,16 @@ func (c *ChainSync) Start() error {
 	if c.oConn.BlockFetch() != nil {
 		c.oConn.BlockFetch().Client.Start()
 	}
-	// TODO: remove me
-	// Disable bulk mode until we can fix it
-	// https://github.com/blinklabs-io/adder/issues/412
-	c.bulkMode = false
-	if c.bulkMode && !c.intersectTip && c.oConn.BlockFetch() != nil {
-		// Get available block range between our intersect point(s) and the chain tip
-		var err error
-		c.bulkRangeStart, c.bulkRangeEnd, err = c.oConn.ChainSync().Client.GetAvailableBlockRange(
-			c.intersectPoints,
-		)
+	c.pendingBlockPoints = make([]ocommon.Point, 0)
+	if c.intersectTip {
+		tip, err := c.oConn.ChainSync().Client.GetCurrentTip()
 		if err != nil {
 			return err
 		}
-		if c.bulkRangeStart.Slot == 0 || c.bulkRangeEnd.Slot == 0 {
-			// We're already at chain tip, so start a normal sync
-			if err := c.oConn.ChainSync().Client.Sync(c.intersectPoints); err != nil {
-				return err
-			}
-		} else {
-			// Use BlockFetch to request the entire available block range at once
-			if err := c.oConn.BlockFetch().Client.GetBlockRange(c.bulkRangeStart, c.bulkRangeEnd); err != nil {
-				return err
-			}
-		}
-	} else {
-		if c.intersectTip {
-			tip, err := c.oConn.ChainSync().Client.GetCurrentTip()
-			if err != nil {
-				return err
-			}
-			c.intersectPoints = []ocommon.Point{tip.Point}
-		}
-		if err := c.oConn.ChainSync().Client.Sync(c.intersectPoints); err != nil {
-			return err
-		}
+		c.intersectPoints = []ocommon.Point{tip.Point}
+	}
+	if err := c.oConn.ChainSync().Client.Sync(c.intersectPoints); err != nil {
+		return err
 	}
 	return nil
 }
@@ -228,6 +205,9 @@ func (c *ChainSync) setupConnection() error {
 		ouroboros.WithBlockFetchConfig(
 			blockfetch.NewConfig(
 				blockfetch.WithBlockFunc(c.handleBlockFetchBlock),
+				blockfetch.WithBatchDoneFunc(c.handleBlockFetchBatchDone),
+				// Set the recv queue size to 2x our block batch size
+				blockfetch.WithRecvQueueSize(1000),
 			),
 		),
 	)
@@ -309,6 +289,7 @@ func (c *ChainSync) handleRollBackward(
 	point ocommon.Point,
 	tip ochainsync.Tip,
 ) error {
+	c.lastTip = tip
 	evt := event.New(
 		"chainsync.rollback",
 		time.Now(),
@@ -350,21 +331,33 @@ func (c *ChainSync) handleRollForward(
 	blockData any,
 	tip ochainsync.Tip,
 ) error {
+	c.lastTip = tip
 	var block ledger.Block
-	var err error
 	tmpEvents := make([]event.Event, 0, 20)
 	switch v := blockData.(type) {
 	case ledger.Block:
 		block = v
 	case ledger.BlockHeader:
-		blockSlot := v.SlotNumber()
-		block, err = c.oConn.BlockFetch().Client.GetBlock(ocommon.Point{Slot: blockSlot, Hash: v.Hash().Bytes()})
-		if err != nil {
+		c.pendingBlockPoints = append(
+			c.pendingBlockPoints,
+			ocommon.Point{
+				Hash: v.Hash().Bytes(),
+				Slot: v.SlotNumber(),
+			},
+		)
+		// Don't fetch block unless we hit the batch size or are close to tip
+		if v.SlotNumber() < (tip.Point.Slot-10000) && len(c.pendingBlockPoints) < blockBatchSize {
+			return nil
+		}
+		// Request pending block range
+		c.blockfetchDoneChan = make(chan struct{})
+		if err := c.oConn.BlockFetch().Client.GetBlockRange(c.pendingBlockPoints[0], c.pendingBlockPoints[len(c.pendingBlockPoints)-1]); err != nil {
 			return err
 		}
-		if block == nil {
-			return errors.New("blockfetch returned empty")
-		}
+		c.pendingBlockPoints = make([]ocommon.Point, 0)
+		// Wait for block-fetch to finish
+		<-c.blockfetchDoneChan
+		return nil
 	default:
 		return errors.New("unknown type")
 	}
@@ -462,15 +455,16 @@ func (c *ChainSync) handleBlockFetchBlock(
 		block.SlotNumber(),
 		block.BlockNumber(),
 		block.Hash().String(),
-		c.bulkRangeEnd.Slot,
-		hex.EncodeToString(c.bulkRangeEnd.Hash),
+		c.lastTip.Point.Slot,
+		hex.EncodeToString(c.lastTip.Point.Hash),
 	)
-	// Start normal chain-sync if we've reached the last block of our bulk range
-	if block.SlotNumber() == c.bulkRangeEnd.Slot {
-		if err := c.oConn.ChainSync().Client.Sync([]ocommon.Point{c.bulkRangeEnd}); err != nil {
-			return err
-		}
-	}
+	return nil
+}
+
+func (c *ChainSync) handleBlockFetchBatchDone(
+	ctx blockfetch.CallbackContext,
+) error {
+	close(c.blockfetchDoneChan)
 	return nil
 }
 
@@ -492,12 +486,9 @@ func (c *ChainSync) updateStatus(
 	}
 	// Determine if we've reached the chain tip
 	if !c.status.TipReached {
-		// Make sure we're past the end slot in any bulk range, since we don't update the tip during bulk sync
-		if slotNumber > c.bulkRangeEnd.Slot {
-			// Make sure our current slot is equal/higher than our last known tip slot
-			if c.status.SlotNumber > 0 && slotNumber >= c.status.TipSlotNumber {
-				c.status.TipReached = true
-			}
+		// Make sure our current slot is equal/higher than our last known tip slot
+		if c.status.SlotNumber > 0 && slotNumber >= c.status.TipSlotNumber {
+			c.status.TipReached = true
 		}
 	}
 	c.status.SlotNumber = slotNumber
