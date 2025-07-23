@@ -361,7 +361,12 @@ func (c *ChainSync) handleRollForward(
 	default:
 		return errors.New("unknown type")
 	}
-	blockEvt := event.New("chainsync.block", time.Now(), NewBlockHeaderContext(block.Header()), NewBlockEvent(block, c.includeCbor))
+	blockEvt := event.New(
+		"chainsync.block",
+		time.Now(),
+		NewBlockHeaderContext(block.Header()),
+		NewBlockEvent(block, c.includeCbor),
+	)
 	tmpEvents = append(tmpEvents, blockEvt)
 	for t, transaction := range block.Transactions() {
 		resolvedInputs, err := resolveTransactionInputs(transaction, c)
@@ -371,8 +376,22 @@ func (c *ChainSync) handleRollForward(
 		if t < 0 || t > math.MaxUint32 {
 			return errors.New("invalid number of transactions")
 		}
-		txEvt := event.New("chainsync.transaction", time.Now(), NewTransactionContext(block, transaction, uint32(t), c.networkMagic),
-			NewTransactionEvent(block, transaction, c.includeCbor, resolvedInputs))
+		txEvt := event.New(
+			"chainsync.transaction",
+			time.Now(),
+			NewTransactionContext(
+				block,
+				transaction,
+				uint32(t),
+				c.networkMagic,
+			),
+			NewTransactionEvent(
+				block,
+				transaction,
+				c.includeCbor,
+				resolvedInputs,
+			),
+		)
 		tmpEvents = append(tmpEvents, txEvt)
 	}
 	updateTip := ochainsync.Tip{
@@ -409,7 +428,13 @@ func (c *ChainSync) handleRollForward(
 			c.delayBuffer = slices.Delete(c.delayBuffer, 0, 1)
 		}
 	}
-	c.updateStatus(updateTip.Point.Slot, updateTip.BlockNumber, hex.EncodeToString(updateTip.Point.Hash), tip.Point.Slot, hex.EncodeToString(tip.Point.Hash))
+	c.updateStatus(
+		updateTip.Point.Slot,
+		updateTip.BlockNumber,
+		hex.EncodeToString(updateTip.Point.Hash),
+		tip.Point.Slot,
+		hex.EncodeToString(tip.Point.Hash),
+	)
 	return nil
 }
 
@@ -541,7 +566,9 @@ func getKupoClient(c *ChainSync) (*kugo.Client, error) {
 		// Handle different error types
 		switch {
 		case errors.Is(err, context.DeadlineExceeded):
-			return nil, errors.New("kupo health check timed out after 3 seconds")
+			return nil, errors.New(
+				"kupo health check timed out after 3 seconds",
+			)
 		case strings.Contains(err.Error(), "no such host"):
 			return nil, fmt.Errorf("failed to resolve kupo host: %w", err)
 		default:
@@ -551,7 +578,10 @@ func getKupoClient(c *ChainSync) (*kugo.Client, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("health check failed with status code: %d", resp.StatusCode)
+		return nil, fmt.Errorf(
+			"health check failed with status code: %d",
+			resp.StatusCode,
+		)
 	}
 
 	c.kupoClient = k
@@ -579,7 +609,10 @@ func resolveTransactionInputs(
 			txIndex := int(input.Index())
 
 			// Add timeout for matches query
-			ctx, cancel := context.WithTimeout(context.Background(), defaultKupoTimeout)
+			ctx, cancel := context.WithTimeout(
+				context.Background(),
+				defaultKupoTimeout,
+			)
 			defer cancel()
 
 			matches, err := k.Matches(ctx,
@@ -587,7 +620,10 @@ func resolveTransactionInputs(
 			)
 			if err != nil {
 				if errors.Is(err, context.DeadlineExceeded) {
-					return nil, fmt.Errorf("kupo matches query timed out after %v", defaultKupoTimeout)
+					return nil, fmt.Errorf(
+						"kupo matches query timed out after %v",
+						defaultKupoTimeout,
+					)
 				}
 				return nil, fmt.Errorf(
 					"error fetching matches for input TxId: %s, Index: %d. Error: %w",
