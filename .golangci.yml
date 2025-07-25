@@ -25,7 +25,6 @@ linters:
     - musttag
     - nilerr
     - nilnesserr
-    - noctx
     - perfsprint
     - prealloc
     - protogetter
