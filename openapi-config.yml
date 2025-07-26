@@ -1,0 +1,4 @@
+enumClassPrefix: true
+generateInterfaces: true
+structPrefix: true
+isGoSubmodule: true
