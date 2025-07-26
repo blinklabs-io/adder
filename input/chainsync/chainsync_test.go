@@ -77,13 +77,15 @@ func TestHandleRollBackward(t *testing.T) {
 
 func TestGetKupoClient(t *testing.T) {
 	// Setup test server
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/health" {
-			w.WriteHeader(http.StatusOK)
-			return
-		}
-		w.WriteHeader(http.StatusNotFound)
-	}))
+	ts := httptest.NewServer(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/health" {
+				w.WriteHeader(http.StatusOK)
+				return
+			}
+			w.WriteHeader(http.StatusNotFound)
+		}),
+	)
 	defer ts.Close()
 
 	t.Run("successful client creation", func(t *testing.T) {
@@ -110,10 +112,14 @@ func TestGetKupoClient(t *testing.T) {
 	})
 
 	t.Run("health check timeout", func(t *testing.T) {
-		slowTS := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			time.Sleep(4 * time.Second) // Longer than the 3s context timeout
-			w.WriteHeader(http.StatusOK)
-		}))
+		slowTS := httptest.NewServer(
+			http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				time.Sleep(
+					4 * time.Second,
+				) // Longer than the 3s context timeout
+				w.WriteHeader(http.StatusOK)
+			}),
+		)
 		defer slowTS.Close()
 
 		c := &ChainSync{
@@ -122,13 +128,19 @@ func TestGetKupoClient(t *testing.T) {
 
 		_, err := getKupoClient(c)
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "kupo health check timed out after 3 seconds")
+		assert.Contains(
+			t,
+			err.Error(),
+			"kupo health check timed out after 3 seconds",
+		)
 	})
 
 	t.Run("failed health check status", func(t *testing.T) {
-		failTS := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(http.StatusInternalServerError)
-		}))
+		failTS := httptest.NewServer(
+			http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusInternalServerError)
+			}),
+		)
 		defer failTS.Close()
 
 		c := &ChainSync{
@@ -137,7 +149,11 @@ func TestGetKupoClient(t *testing.T) {
 
 		_, err := getKupoClient(c)
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "health check failed with status code: 500")
+		assert.Contains(
+			t,
+			err.Error(),
+			"health check failed with status code: 500",
+		)
 	})
 
 	t.Run("malformed URL", func(t *testing.T) {

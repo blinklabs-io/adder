@@ -1,0 +1,111 @@
+openapi: 3.0.1
+info:
+  contact:
+    email: support@blinklabs.io
+    name: Blink Labs
+    url: https://blinklabs.io
+  description: Adder API
+  license:
+    name: Apache 2.0
+    url: http://www.apache.org/licenses/LICENSE-2.0.html
+  title: Adder API
+  version: v1
+servers:
+- url: /v1
+paths:
+  /fcm:
+    post:
+      description: Store a new FCM token
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/push.TokenRequest"
+        description: FCM Token Request
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                type: string
+          description: Created
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/push.ErrorResponse"
+          description: Bad Request
+      summary: Store FCM Token
+      x-codegen-request-body-name: body
+  /fcm/{token}:
+    delete:
+      description: Delete an FCM token by its value
+      parameters:
+      - description: FCM Token
+        in: path
+        name: token
+        required: true
+        schema:
+          type: string
+      responses:
+        "204":
+          content:
+            application/json:
+              schema:
+                type: string
+          description: No Content
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/push.ErrorResponse"
+          description: Not Found
+      summary: Delete FCM Token
+    get:
+      description: Get an FCM token by its value
+      parameters:
+      - description: FCM Token
+        in: path
+        name: token
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/push.TokenResponse"
+          description: OK
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/push.ErrorResponse"
+          description: Not Found
+      summary: Get FCM Token
+components:
+  schemas:
+    push.ErrorResponse:
+      example:
+        error: error
+      properties:
+        error:
+          type: string
+      type: object
+    push.TokenRequest:
+      properties:
+        fcmToken:
+          type: string
+      required:
+      - fcmToken
+      type: object
+    push.TokenResponse:
+      example:
+        fcmToken: fcmToken
+      properties:
+        fcmToken:
+          type: string
+      type: object
+x-original-swagger-version: "2.0"
