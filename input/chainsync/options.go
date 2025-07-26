@@ -102,10 +102,10 @@ func WithStatusUpdateFunc(
 }
 
 // WithBulkMode specifies whether to use the "bulk" sync mode with NtN (node-to-node). This should only be used against your own nodes for resource usage reasons
+//
+// Deprecated: this flag no longer does anything useful, as bulk mode is now the default (and only) mode of operation
 func WithBulkMode(bulkMode bool) ChainSyncOptionFunc {
-	return func(c *ChainSync) {
-		c.bulkMode = bulkMode
-	}
+	return func(c *ChainSync) {}
 }
 
 // WithKupoUrl specifies the URL for a Kupo instance that will be queried for additional information
