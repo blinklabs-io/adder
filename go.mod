@@ -7,7 +7,7 @@ toolchain go1.24.4
 require (
 	github.com/SundaeSwap-finance/kugo v1.3.0
 	github.com/SundaeSwap-finance/ogmigo/v6 v6.0.2
-	github.com/blinklabs-io/gouroboros v0.129.0
+	github.com/blinklabs-io/gouroboros v0.130.1
 	github.com/btcsuite/btcd/btcutil v1.1.6
 	github.com/gen2brain/beeep v0.11.1
 	github.com/gin-gonic/gin v1.10.1
@@ -32,7 +32,7 @@ require (
 	git.sr.ht/~jackmordaunt/go-toast v1.1.2 // indirect
 	github.com/KyleBanks/depth v1.2.1 // indirect
 	github.com/aws/aws-sdk-go v1.55.6 // indirect
-	github.com/blinklabs-io/plutigo v0.0.2-0.20250717183329-b331a97fb319 // indirect
+	github.com/blinklabs-io/plutigo v0.0.3 // indirect
 	github.com/btcsuite/btcutil v1.0.2 // indirect
 	github.com/buger/jsonparser v1.1.1 // indirect
 	github.com/bytedance/sonic v1.11.6 // indirect
