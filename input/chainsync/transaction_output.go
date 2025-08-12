@@ -23,6 +23,7 @@ import (
 	"github.com/blinklabs-io/gouroboros/cbor"
 	"github.com/blinklabs-io/gouroboros/ledger"
 	"github.com/blinklabs-io/gouroboros/ledger/common"
+	"github.com/blinklabs-io/plutigo/data"
 	utxorpc "github.com/utxorpc/go-codegen/utxorpc/v1alpha/cardano"
 )
 
@@ -166,4 +167,9 @@ func (txOut ResolvedTransactionOutput) Cbor() []byte {
 func (txOut ResolvedTransactionOutput) Utxorpc() (*utxorpc.TxOutput, error) {
 	// Placeholder for UTXO RPC representation
 	return &utxorpc.TxOutput{}, nil
+}
+
+func (txOut ResolvedTransactionOutput) ToPlutusData() data.PlutusData {
+	// Placeholder for PlutusData representation
+	return nil
 }

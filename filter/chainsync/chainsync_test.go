@@ -24,6 +24,7 @@ import (
 	"github.com/blinklabs-io/gouroboros/cbor"
 	"github.com/blinklabs-io/gouroboros/ledger"
 	"github.com/blinklabs-io/gouroboros/ledger/common"
+	"github.com/blinklabs-io/plutigo/data"
 	"github.com/btcsuite/btcd/btcutil/bech32"
 	"github.com/stretchr/testify/assert"
 	"github.com/utxorpc/go-codegen/utxorpc/v1alpha/cardano"
@@ -128,6 +129,10 @@ func (m MockOutput) Cbor() []byte {
 
 func (m MockOutput) Utxorpc() (*cardano.TxOutput, error) {
 	return nil, nil
+}
+
+func (m MockOutput) ToPlutusData() data.PlutusData {
+	return nil
 }
 
 func (l *MockLogger) Info(msg string, args ...any)  {}
