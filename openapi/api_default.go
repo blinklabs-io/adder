@@ -98,7 +98,7 @@ func (r DefaultAPIFcmPostRequest) Execute() (string, *http.Response, error) {
 /*
 FcmPost Store FCM Token
 
-Store a new FCM token
+# Store a new FCM token
 
 	@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
 	@return DefaultAPIFcmPostRequest
@@ -242,7 +242,7 @@ func (r DefaultAPIFcmTokenDeleteRequest) Execute() (string, *http.Response, erro
 /*
 FcmTokenDelete Delete FCM Token
 
-Delete an FCM token by its value
+# Delete an FCM token by its value
 
 	@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
 	@param token FCM Token
@@ -388,7 +388,7 @@ func (r DefaultAPIFcmTokenGetRequest) Execute() (*PushTokenResponse, *http.Respo
 /*
 FcmTokenGet Get FCM Token
 
-Get an FCM token by its value
+# Get an FCM token by its value
 
 	@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
 	@param token FCM Token
