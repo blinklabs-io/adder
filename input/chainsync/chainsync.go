@@ -634,7 +634,7 @@ func resolveTransactionInputs(
 			}
 
 			if len(matches) == 0 {
-				slog.Info(
+				slog.Warn(
 					"no matches found for input, could be due to Kupo not in sync.",
 					"txId", txId,
 					"txIndex", txIndex,
