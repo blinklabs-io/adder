@@ -635,9 +635,9 @@ func resolveTransactionInputs(
 
 			if len(matches) == 0 {
 				slog.Info(
-					"no matches found for input TxId: %s, Index: %d, could be due to Kupo not in sync",
-					txId,
-					txIndex,
+					"no matches found for input, could be due to Kupo not in sync.",
+					"txId", txId,
+					"txIndex", txIndex,
 				)
 			} else {
 				slog.Debug(fmt.Sprintf("found matches %d for input TxId: %s, Index: %d", len(matches), txId, txIndex))
