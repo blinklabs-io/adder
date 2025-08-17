@@ -30,6 +30,7 @@ import (
 	"github.com/SundaeSwap-finance/kugo"
 	"github.com/SundaeSwap-finance/ogmigo/v6/ouroboros/chainsync"
 	"github.com/blinklabs-io/adder/event"
+	"github.com/blinklabs-io/adder/internal/config"
 	"github.com/blinklabs-io/adder/internal/logging"
 	"github.com/blinklabs-io/adder/plugin"
 	ouroboros "github.com/blinklabs-io/gouroboros"
@@ -97,6 +98,8 @@ func New(options ...ChainSyncOptionFunc) *ChainSync {
 		intersectPoints: []ocommon.Point{},
 		status:          &ChainSyncStatus{},
 	}
+	// Use Kupo URL from global config
+	c.kupoUrl = config.GetConfig().KupoUrl
 	for _, option := range options {
 		option(c)
 	}

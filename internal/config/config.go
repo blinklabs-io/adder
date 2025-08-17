@@ -38,6 +38,7 @@ type Config struct {
 	Input      string                            `yaml:"input"   envconfig:"INPUT"`
 	Output     string                            `yaml:"output"  envconfig:"OUTPUT"`
 	Plugin     map[string]map[string]map[any]any `yaml:"plugins"`
+	KupoUrl    string                            `yaml:"kupo_url" envconfig:"KUPO_URL"`
 }
 
 type ApiConfig struct {
@@ -67,8 +68,9 @@ var globalConfig = &Config{
 		ListenAddress: "localhost",
 		ListenPort:    0,
 	},
-	Input:  DefaultInputPlugin,
-	Output: DefaultOutputPlugin,
+	Input:   DefaultInputPlugin,
+	Output:  DefaultOutputPlugin,
+	KupoUrl: "",
 }
 
 func (c *Config) Load(configFile string) error {
