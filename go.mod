@@ -6,7 +6,7 @@ toolchain go1.24.4
 
 require (
 	github.com/SundaeSwap-finance/kugo v1.3.0
-	github.com/SundaeSwap-finance/ogmigo/v6 v6.0.2
+	github.com/SundaeSwap-finance/ogmigo/v6 v6.1.0
 	github.com/blinklabs-io/gouroboros v0.131.0
 	github.com/blinklabs-io/plutigo v0.0.7
 	github.com/btcsuite/btcd/btcutil v1.1.6
