@@ -95,7 +95,7 @@ type MockOutput struct {
 	address   ledger.Address
 	amount    uint64
 	assets    *common.MultiAsset[common.MultiAssetTypeOutput]
-	datum     *cbor.LazyValue
+	datum     *common.Datum
 	scriptRef common.Script
 }
 
@@ -111,7 +111,7 @@ func (m MockOutput) Assets() *common.MultiAsset[common.MultiAssetTypeOutput] {
 	return m.assets
 }
 
-func (m MockOutput) Datum() *cbor.LazyValue {
+func (m MockOutput) Datum() *common.Datum {
 	return m.datum
 }
 
