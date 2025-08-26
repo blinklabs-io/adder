@@ -144,7 +144,7 @@ func (txOut ResolvedTransactionOutput) Assets() *common.MultiAsset[uint64] {
 	return txOut.AssetsField
 }
 
-func (txOut ResolvedTransactionOutput) Datum() *cbor.LazyValue {
+func (txOut ResolvedTransactionOutput) Datum() *common.Datum {
 	// Placeholder for Datum serialization
 	return nil
 }
