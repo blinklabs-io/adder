@@ -120,7 +120,7 @@ jobs:
           credentials_json: '${{ secrets.CERTIFICATE_SA_CREDENTIALS }}'
       - name: Set up Cloud SDK
         if: ${{ startsWith(github.ref, 'refs/tags/') && matrix.os == 'windows' }}
-        uses: google-github-actions/setup-gcloud@26f734c2779b00b7dda794207734c511110a4368 # v3.0.0 https://github.com/google-github-actions/setup-gcloud/releases/tag/v3.0.0
+        uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1 https://github.com/google-github-actions/setup-gcloud/releases/tag/v3.0.1
       - name: Sign binary (Windows)
         if: ${{ startsWith(github.ref, 'refs/tags/') && matrix.os == 'windows' }}
         shell: pwsh
