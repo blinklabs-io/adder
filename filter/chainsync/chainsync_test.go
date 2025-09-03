@@ -275,7 +275,7 @@ func TestFilterByAddress(t *testing.T) {
 			filterAddress: testStakeAddress,
 			outputAddr:    mockAddress("addr_doesnt_match"),
 			cert: &common.StakeDeregistrationCertificate{
-				StakeDeregistration: cred,
+				StakeCredential: cred,
 			},
 			shouldMatch: true,
 		},
