@@ -134,7 +134,7 @@ func (c *ChainSync) Start() error {
 									hash := cert.StakeCredential.Hash()
 									credBytes = hash[:]
 								case *common.StakeDeregistrationCertificate:
-									hash := cert.StakeDeregistration.Hash()
+									hash := cert.StakeCredential.Hash()
 									credBytes = hash[:]
 								default:
 									continue
