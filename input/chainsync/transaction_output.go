@@ -1,4 +1,4 @@
-// Copyright 2024 Blink Labs Software
+// Copyright 2025 Blink Labs Software
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -172,4 +172,9 @@ func (txOut ResolvedTransactionOutput) Utxorpc() (*utxorpc.TxOutput, error) {
 func (txOut ResolvedTransactionOutput) ToPlutusData() data.PlutusData {
 	// Placeholder for PlutusData representation
 	return nil
+}
+
+func (txOut ResolvedTransactionOutput) String() string {
+	// Placeholder for string representation
+	return ""
 }

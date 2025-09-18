@@ -135,6 +135,10 @@ func (m MockOutput) ToPlutusData() data.PlutusData {
 	return nil
 }
 
+func (m MockOutput) String() string {
+	return ""
+}
+
 func (l *MockLogger) Info(msg string, args ...any)  {}
 func (l *MockLogger) Error(msg string, args ...any) {}
 func (l *MockLogger) Debug(msg string, args ...any) {}
