@@ -19,7 +19,9 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"os/signal"
 	"runtime"
+	"syscall"
 	"time"
 
 	"github.com/blinklabs-io/adder/api"
@@ -201,9 +203,30 @@ func main() {
 		logger.Error(fmt.Sprintf("failed to start pipeline: %s", err))
 		os.Exit(1)
 	}
-	err, ok := <-pipe.ErrorChan()
-	if ok {
-		logger.Error(fmt.Sprintf("pipeline failed: %s", err))
+
+	// Setup graceful shutdown
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+
+	// Handle errors in background
+	// DON'T exit on errors
+	go func() {
+		for err := range pipe.ErrorChan() {
+			// Log error but keep running
+			logger.Error(fmt.Sprintf("pipeline error: %s", err))
+		}
+		logger.Info("Error channel closed")
+	}()
+
+	logger.Info("Adder started, waiting for shutdown signal...")
+	<-sigChan
+	logger.Info("Shutdown signal received, stopping pipeline...")
+
+	// Graceful shutdown using Stop() method
+	if err := pipe.Stop(); err != nil {
+		logger.Error(fmt.Sprintf("failed to stop pipeline: %s", err))
 		os.Exit(1)
 	}
+
+	logger.Info("Adder stopped gracefully")
 }
