@@ -15,6 +15,7 @@
 package log
 
 import (
+	"fmt"
 	"log/slog"
 
 	"github.com/blinklabs-io/adder/event"
@@ -63,14 +64,14 @@ func (l *LogOutput) Start() error {
 			}
 			switch l.level {
 			case "info":
-				l.outputLogger.Info("", "event", evt)
+				l.outputLogger.Info("", "event", fmt.Sprintf("%+v", evt))
 			case "warn":
-				l.outputLogger.Warn("", "event", evt)
+				l.outputLogger.Warn("", "event", fmt.Sprintf("%+v", evt))
 			case "error":
-				l.outputLogger.Error("", "event", evt)
+				l.outputLogger.Error("", "event", fmt.Sprintf("%+v", evt))
 			default:
 				// Use INFO level if log level isn't recognized
-				l.outputLogger.Info("", "event", evt)
+				l.outputLogger.Info("", "event", fmt.Sprintf("%+v", evt))
 			}
 		}
 	}()

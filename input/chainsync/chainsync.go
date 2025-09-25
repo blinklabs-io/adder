@@ -230,7 +230,7 @@ func (c *ChainSync) setupConnection() error {
 			if c.autoReconnect {
 				c.autoReconnectDelay = 0
 				if c.logger != nil {
-					c.logger.Info(fmt.Sprintf(
+					c.logger.Error(fmt.Sprintf(
 						"reconnecting to %s due to error: %s",
 						c.dialAddress,
 						err,
@@ -268,7 +268,7 @@ func (c *ChainSync) setupConnection() error {
 					// Restart the connection
 					if err := c.Start(); err != nil {
 						if c.logger != nil {
-							c.logger.Info(fmt.Sprintf(
+							c.logger.Error(fmt.Sprintf(
 								"reconnecting to %s due to error: %s",
 								c.dialAddress,
 								err,
