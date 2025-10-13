@@ -20,7 +20,7 @@ require (
 	github.com/swaggo/swag v1.16.6
 	github.com/utxorpc/go-codegen v0.17.0
 	go.uber.org/automaxprocs v1.6.0
-	golang.org/x/oauth2 v0.31.0
+	golang.org/x/oauth2 v0.32.0
 	gopkg.in/yaml.v2 v2.4.0
 )
 
