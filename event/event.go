@@ -19,10 +19,10 @@ import (
 )
 
 type Event struct {
-	Type      string    `json:"type"`
 	Timestamp time.Time `json:"timestamp"`
 	Context   any       `json:"context,omitempty"`
 	Payload   any       `json:"payload"`
+	Type      string    `json:"type"`
 }
 
 func New(

@@ -1,4 +1,4 @@
-// Copyright 2024 Blink Labs Software
+// Copyright 2025 Blink Labs Software
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -19,7 +19,6 @@ import (
 	"strings"
 
 	"github.com/blinklabs-io/adder/event"
-	"github.com/blinklabs-io/adder/input/chainsync"
 	"github.com/blinklabs-io/adder/plugin"
 	"github.com/blinklabs-io/gouroboros/ledger"
 	"github.com/blinklabs-io/gouroboros/ledger/common"
@@ -61,14 +60,14 @@ func (c *ChainSync) Start() error {
 				return
 			}
 			switch v := evt.Payload.(type) {
-			case chainsync.BlockEvent:
+			case event.BlockEvent:
 				// Check pool filter
 				if len(c.filterPoolIds) > 0 {
 					filterMatched := false
 					for _, filterPoolId := range c.filterPoolIds {
 						isPoolBech32 := strings.HasPrefix(filterPoolId, "pool")
 						foundMatch := false
-						be := evt.Payload.(chainsync.BlockEvent)
+						be := evt.Payload.(event.BlockEvent)
 						if be.IssuerVkey == filterPoolId {
 							foundMatch = true
 						} else if isPoolBech32 {
@@ -100,7 +99,7 @@ func (c *ChainSync) Start() error {
 						continue
 					}
 				}
-			case chainsync.TransactionEvent:
+			case event.TransactionEvent:
 				// Check address filter
 				if len(c.filterAddresses) > 0 {
 					filterMatched := false

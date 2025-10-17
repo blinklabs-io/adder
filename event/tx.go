@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package chainsync
+package event
 
 import (
 	"github.com/blinklabs-io/gouroboros/cbor"
@@ -21,27 +21,27 @@ import (
 )
 
 type TransactionContext struct {
+	TransactionHash string `json:"transactionHash"`
 	BlockNumber     uint64 `json:"blockNumber"`
 	SlotNumber      uint64 `json:"slotNumber"`
-	TransactionHash string `json:"transactionHash"`
 	TransactionIdx  uint32 `json:"transactionIdx"`
 	NetworkMagic    uint32 `json:"networkMagic"`
 }
 
 type TransactionEvent struct {
 	Transaction     ledger.Transaction            `json:"-"`
-	BlockHash       string                        `json:"blockHash"`
-	TransactionCbor byteSliceJsonHex              `json:"transactionCbor,omitempty"`
-	Inputs          []ledger.TransactionInput     `json:"inputs"`
-	Outputs         []ledger.TransactionOutput    `json:"outputs"`
-	Certificates    []ledger.Certificate          `json:"certificates,omitempty"`
-	ReferenceInputs []ledger.TransactionInput     `json:"referenceInputs,omitempty"`
+	Witnesses       lcommon.TransactionWitnessSet `json:"witnesses,omitempty"`
+	Withdrawals     map[string]uint64             `json:"withdrawals,omitempty"`
 	Metadata        *cbor.LazyValue               `json:"metadata,omitempty"`
+	BlockHash       string                        `json:"blockHash"`
+	ReferenceInputs []ledger.TransactionInput     `json:"referenceInputs,omitempty"`
+	Certificates    []ledger.Certificate          `json:"certificates,omitempty"`
+	Outputs         []ledger.TransactionOutput    `json:"outputs"`
+	ResolvedInputs  []ledger.TransactionOutput    `json:"resolvedInputs,omitempty"`
+	Inputs          []ledger.TransactionInput     `json:"inputs"`
+	TransactionCbor byteSliceJsonHex              `json:"transactionCbor,omitempty"`
 	Fee             uint64                        `json:"fee"`
 	TTL             uint64                        `json:"ttl,omitempty"`
-	ResolvedInputs  []ledger.TransactionOutput    `json:"resolvedInputs,omitempty"`
-	Withdrawals     map[string]uint64             `json:"withdrawals,omitempty"`
-	Witnesses       lcommon.TransactionWitnessSet `json:"witnesses,omitempty"`
 }
 
 func NewTransactionContext(

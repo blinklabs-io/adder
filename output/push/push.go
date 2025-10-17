@@ -22,7 +22,6 @@ import (
 	"os"
 
 	"github.com/blinklabs-io/adder/event"
-	"github.com/blinklabs-io/adder/input/chainsync"
 	"github.com/blinklabs-io/adder/internal/logging"
 	"github.com/blinklabs-io/adder/output/push/fcm"
 	"github.com/blinklabs-io/adder/plugin"
@@ -42,9 +41,9 @@ type PushOutput struct {
 }
 
 type Notification struct {
+	Message  string   `json:"message"`
 	Tokens   []string `json:"tokens"`
 	Platform int      `json:"platform"`
-	Message  string   `json:"message"`
 }
 
 type PushPayload struct {
@@ -94,8 +93,8 @@ func (p *PushOutput) Start() error {
 					panic(fmt.Errorf("ERROR: %v", context))
 				}
 
-				be := payload.(chainsync.BlockEvent)
-				bc := context.(chainsync.BlockContext)
+				be := payload.(event.BlockEvent)
+				bc := context.(event.BlockContext)
 				logger.Debug("Adder")
 				logger.Debug(fmt.Sprintf(
 					"New Block!\nBlockNumber: %d, SlotNumber: %d\nHash: %s",
@@ -122,7 +121,7 @@ func (p *PushOutput) Start() error {
 					panic(fmt.Errorf("ERROR: %v", payload))
 				}
 
-				re := payload.(chainsync.RollbackEvent)
+				re := payload.(event.RollbackEvent)
 				logger.Debug("Adder")
 				logger.Debug(
 					fmt.Sprintf("Rollback!\nSlotNumber: %d\nBlockHash: %s",
@@ -140,8 +139,8 @@ func (p *PushOutput) Start() error {
 					panic(fmt.Errorf("ERROR: %v", context))
 				}
 
-				te := payload.(chainsync.TransactionEvent)
-				tc := context.(chainsync.TransactionContext)
+				te := payload.(event.TransactionEvent)
+				tc := context.(event.TransactionContext)
 
 				// Create notification message
 				title := "Adder"

@@ -3,6 +3,7 @@ package chainsync
 import (
 	"testing"
 
+	"github.com/blinklabs-io/adder/event"
 	"github.com/blinklabs-io/gouroboros/ledger/common"
 	"github.com/stretchr/testify/assert"
 	utxorpc "github.com/utxorpc/go-codegen/utxorpc/v1alpha/cardano"
@@ -197,7 +198,7 @@ func TestNewBlockContext(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			blockContext := NewBlockContext(tc.block, tc.networkMagic)
+			blockContext := event.NewBlockContext(tc.block, tc.networkMagic)
 			assert.Equal(
 				t,
 				tc.expectedEra,
@@ -279,7 +280,7 @@ func TestNewBlockContextEdgeCases(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			blockContext := NewBlockContext(tc.block, tc.networkMagic)
+			blockContext := event.NewBlockContext(tc.block, tc.networkMagic)
 			assert.Equal(
 				t,
 				tc.expectedEra,

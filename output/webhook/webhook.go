@@ -27,7 +27,6 @@ import (
 	"time"
 
 	"github.com/blinklabs-io/adder/event"
-	"github.com/blinklabs-io/adder/input/chainsync"
 	"github.com/blinklabs-io/adder/internal/logging"
 	"github.com/blinklabs-io/adder/internal/version"
 	"github.com/blinklabs-io/adder/plugin"
@@ -85,15 +84,15 @@ func (w *WebhookOutput) Start() error {
 				if context == nil {
 					panic(fmt.Errorf("ERROR: %v", context))
 				}
-				be := payload.(chainsync.BlockEvent)
-				bc := context.(chainsync.BlockContext)
+				be := payload.(event.BlockEvent)
+				bc := context.(event.BlockContext)
 				evt.Payload = be
 				evt.Context = bc
 			case "chainsync.rollback":
-				re := payload.(chainsync.RollbackEvent)
+				re := payload.(event.RollbackEvent)
 				evt.Payload = re
 			case "chainsync.transaction":
-				te := payload.(chainsync.TransactionEvent)
+				te := payload.(event.TransactionEvent)
 				evt.Payload = te
 			default:
 				logger.Error("unknown event type: " + evt.Type)
@@ -125,8 +124,8 @@ func formatWebhook(e *event.Event, format string) []byte {
 		var dmefs []*DiscordMessageEmbedField
 		switch e.Type {
 		case "chainsync.block":
-			be := e.Payload.(chainsync.BlockEvent)
-			bc := e.Context.(chainsync.BlockContext)
+			be := e.Payload.(event.BlockEvent)
+			bc := e.Context.(event.BlockContext)
 			dme.Title = "New Cardano Block"
 			dmefs = append(dmefs, &DiscordMessageEmbedField{
 				Name:  "Block Number",
@@ -147,7 +146,7 @@ func formatWebhook(e *event.Event, format string) []byte {
 			baseURL := getBaseURL(bc.NetworkMagic)
 			dme.URL = fmt.Sprintf("%s/block/%s", baseURL, be.BlockHash)
 		case "chainsync.rollback":
-			be := e.Payload.(chainsync.RollbackEvent)
+			be := e.Payload.(event.RollbackEvent)
 			dme.Title = "Cardano Rollback"
 			dmefs = append(dmefs, &DiscordMessageEmbedField{
 				Name:  "Slot Number",
@@ -158,8 +157,8 @@ func formatWebhook(e *event.Event, format string) []byte {
 				Value: be.BlockHash,
 			})
 		case "chainsync.transaction":
-			te := e.Payload.(chainsync.TransactionEvent)
-			tc := e.Context.(chainsync.TransactionContext)
+			te := e.Payload.(event.TransactionEvent)
+			tc := e.Context.(event.TransactionContext)
 			dme.Title = "New Cardano Transaction"
 			dmefs = append(dmefs, &DiscordMessageEmbedField{
 				Name:  "Block Number",
