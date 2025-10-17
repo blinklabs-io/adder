@@ -141,17 +141,26 @@ func (p *Pipeline) Stop() error {
 		// Stop plugins and collect errors
 		for _, input := range p.inputs {
 			if err := input.Stop(); err != nil {
-				stopErrors = append(stopErrors, fmt.Errorf("failed to stop input: %w", err))
+				stopErrors = append(
+					stopErrors,
+					fmt.Errorf("failed to stop input: %w", err),
+				)
 			}
 		}
 		for _, filter := range p.filters {
 			if err := filter.Stop(); err != nil {
-				stopErrors = append(stopErrors, fmt.Errorf("failed to stop filter: %w", err))
+				stopErrors = append(
+					stopErrors,
+					fmt.Errorf("failed to stop filter: %w", err),
+				)
 			}
 		}
 		for _, output := range p.outputs {
 			if err := output.Stop(); err != nil {
-				stopErrors = append(stopErrors, fmt.Errorf("failed to stop output: %w", err))
+				stopErrors = append(
+					stopErrors,
+					fmt.Errorf("failed to stop output: %w", err),
+				)
 			}
 		}
 
