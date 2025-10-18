@@ -20,7 +20,6 @@ import (
 	"time"
 
 	"github.com/blinklabs-io/adder/event"
-	"github.com/blinklabs-io/adder/input/chainsync"
 	"github.com/blinklabs-io/gouroboros/cbor"
 	"github.com/blinklabs-io/gouroboros/ledger"
 	"github.com/blinklabs-io/gouroboros/ledger/common"
@@ -303,7 +302,7 @@ func TestFilterByAddress(t *testing.T) {
 				datum:   nil,
 			}
 
-			txEvent := chainsync.TransactionEvent{
+			txEvent := event.TransactionEvent{
 				Outputs:        []ledger.TransactionOutput{output},
 				ResolvedInputs: []ledger.TransactionOutput{output},
 			}
@@ -365,7 +364,7 @@ func TestFilterByPolicyId(t *testing.T) {
 		datum:   nil,
 	}
 	evt := event.Event{
-		Payload: chainsync.TransactionEvent{
+		Payload: event.TransactionEvent{
 			Outputs:        []ledger.TransactionOutput{output},
 			ResolvedInputs: []ledger.TransactionOutput{output},
 		},
@@ -418,7 +417,7 @@ func TestFilterByAssetFingerprint(t *testing.T) {
 		datum:   nil,
 	}
 	evt := event.Event{
-		Payload: chainsync.TransactionEvent{
+		Payload: event.TransactionEvent{
 			Outputs:        []ledger.TransactionOutput{output},
 			ResolvedInputs: []ledger.TransactionOutput{output},
 		},
@@ -452,7 +451,7 @@ func TestFilterByPoolId(t *testing.T) {
 
 	// Mock block event
 	evt := event.Event{
-		Payload: chainsync.BlockEvent{
+		Payload: event.BlockEvent{
 			IssuerVkey: "pool1", // Match the filterPoolIds
 		},
 	}

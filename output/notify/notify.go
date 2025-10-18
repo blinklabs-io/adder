@@ -1,4 +1,4 @@
-// Copyright 2024 Blink Labs Software
+// Copyright 2025 Blink Labs Software
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -20,7 +20,6 @@ import (
 	"os"
 
 	"github.com/blinklabs-io/adder/event"
-	"github.com/blinklabs-io/adder/input/chainsync"
 	"github.com/blinklabs-io/adder/plugin"
 	"github.com/gen2brain/beeep"
 )
@@ -87,8 +86,8 @@ func (n *NotifyOutput) Start() error {
 					panic(fmt.Errorf("ERROR: %v", context))
 				}
 
-				be := payload.(chainsync.BlockEvent)
-				bc := context.(chainsync.BlockContext)
+				be := payload.(event.BlockEvent)
+				bc := context.(event.BlockContext)
 				err := beeep.Notify(
 					n.title,
 					fmt.Sprintf(
@@ -109,7 +108,7 @@ func (n *NotifyOutput) Start() error {
 					panic(fmt.Errorf("ERROR: %v", payload))
 				}
 
-				re := payload.(chainsync.RollbackEvent)
+				re := payload.(event.RollbackEvent)
 				err := beeep.Notify(
 					n.title,
 					fmt.Sprintf("Rollback!\nSlotNumber: %d\nBlockHash: %s",
@@ -131,8 +130,8 @@ func (n *NotifyOutput) Start() error {
 					panic(fmt.Errorf("ERROR: %v", context))
 				}
 
-				te := payload.(chainsync.TransactionEvent)
-				tc := context.(chainsync.TransactionContext)
+				te := payload.(event.TransactionEvent)
+				tc := context.(event.TransactionContext)
 				err := beeep.Notify(
 					n.title,
 					fmt.Sprintf(

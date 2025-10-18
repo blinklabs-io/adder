@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/blinklabs-io/adder/event"
-	"github.com/blinklabs-io/adder/input/chainsync"
 	"github.com/blinklabs-io/adder/plugin"
 	"github.com/stretchr/testify/assert"
 )
@@ -73,7 +72,7 @@ func TestPluginEventProcessing(t *testing.T) {
 	testEvent := event.Event{
 		Type:      "transaction",
 		Timestamp: time.Now(),
-		Payload:   chainsync.TransactionEvent{},
+		Payload:   event.TransactionEvent{},
 	}
 
 	// Send the event to the input channel

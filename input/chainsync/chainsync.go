@@ -51,40 +51,40 @@ const (
 )
 
 type ChainSync struct {
-	oConn              *ouroboros.Connection
 	logger             plugin.Logger
-	network            string
-	networkMagic       uint32
-	address            string
-	socketPath         string
-	ntcTcp             bool
-	intersectTip       bool
-	intersectPoints    []ocommon.Point
-	includeCbor        bool
-	autoReconnect      bool
-	autoReconnectDelay time.Duration
 	statusUpdateFunc   StatusUpdateFunc
-	status             *ChainSyncStatus
-	errorChan          chan error
+	blockfetchDoneChan chan struct{}
+	kupoClient         *kugo.Client
+	oConn              *ouroboros.Connection
 	eventChan          chan event.Event
-	cursorCache        []ocommon.Point
-	dialAddress        string
+	errorChan          chan error
+	status             *ChainSyncStatus
 	dialFamily         string
 	kupoUrl            string
-	kupoClient         *kugo.Client
-	delayConfirmations uint
-	delayBuffer        [][]event.Event
+	network            string
+	socketPath         string
+	dialAddress        string
+	address            string
+	intersectPoints    []ocommon.Point
 	pendingBlockPoints []ocommon.Point
-	blockfetchDoneChan chan struct{}
+	delayBuffer        [][]event.Event
+	cursorCache        []ocommon.Point
 	lastTip            ochainsync.Tip
+	delayConfirmations uint
+	autoReconnectDelay time.Duration
+	networkMagic       uint32
+	includeCbor        bool
+	ntcTcp             bool
+	intersectTip       bool
+	autoReconnect      bool
 }
 
 type ChainSyncStatus struct {
+	BlockHash     string
+	TipBlockHash  string
 	SlotNumber    uint64
 	BlockNumber   uint64
-	BlockHash     string
 	TipSlotNumber uint64
-	TipBlockHash  string
 	TipReached    bool
 }
 
@@ -297,7 +297,7 @@ func (c *ChainSync) handleRollBackward(
 		"chainsync.rollback",
 		time.Now(),
 		nil,
-		NewRollbackEvent(point),
+		event.NewRollbackEvent(point),
 	)
 	// Remove rolled-back events from buffer
 	if len(c.delayBuffer) > 0 {
@@ -305,7 +305,7 @@ func (c *ChainSync) handleRollBackward(
 		for i := len(c.delayBuffer) - 1; i >= 0; i-- {
 			for _, evt := range c.delayBuffer[i] {
 				// Look for block event
-				if blockEvtCtx, ok := evt.Context.(BlockContext); ok {
+				if blockEvtCtx, ok := evt.Context.(event.BlockContext); ok {
 					// Delete event batch if slot is after rollback point
 					if blockEvtCtx.SlotNumber > point.Slot {
 						c.delayBuffer = slices.Delete(c.delayBuffer, i, i+1)
@@ -367,8 +367,8 @@ func (c *ChainSync) handleRollForward(
 	blockEvt := event.New(
 		"chainsync.block",
 		time.Now(),
-		NewBlockHeaderContext(block.Header()),
-		NewBlockEvent(block, c.includeCbor),
+		event.NewBlockHeaderContext(block.Header()),
+		event.NewBlockEvent(block, c.includeCbor),
 	)
 	tmpEvents = append(tmpEvents, blockEvt)
 	for t, transaction := range block.Transactions() {
@@ -382,13 +382,13 @@ func (c *ChainSync) handleRollForward(
 		txEvt := event.New(
 			"chainsync.transaction",
 			time.Now(),
-			NewTransactionContext(
+			event.NewTransactionContext(
 				block,
 				transaction,
 				uint32(t),
 				c.networkMagic,
 			),
-			NewTransactionEvent(
+			event.NewTransactionEvent(
 				block,
 				transaction,
 				c.includeCbor,
@@ -416,7 +416,7 @@ func (c *ChainSync) handleRollForward(
 		if uint(len(c.delayBuffer)) > c.delayConfirmations {
 			for _, evt := range c.delayBuffer[0] {
 				// Look for block event
-				if blockEvt, ok := evt.Payload.(BlockEvent); ok {
+				if blockEvt, ok := evt.Payload.(event.BlockEvent); ok {
 					// Populate current point for update status based on most recently sent events
 					updateTip = ochainsync.Tip{
 						Point: ocommon.Point{
@@ -449,8 +449,8 @@ func (c *ChainSync) handleBlockFetchBlock(
 	blockEvt := event.New(
 		"chainsync.block",
 		time.Now(),
-		NewBlockContext(block, c.networkMagic),
-		NewBlockEvent(block, c.includeCbor),
+		event.NewBlockContext(block, c.networkMagic),
+		event.NewBlockEvent(block, c.includeCbor),
 	)
 	c.eventChan <- blockEvt
 	for t, transaction := range block.Transactions() {
@@ -464,13 +464,13 @@ func (c *ChainSync) handleBlockFetchBlock(
 		txEvt := event.New(
 			"chainsync.transaction",
 			time.Now(),
-			NewTransactionContext(
+			event.NewTransactionContext(
 				block,
 				transaction,
 				uint32(t),
 				c.networkMagic,
 			),
-			NewTransactionEvent(
+			event.NewTransactionEvent(
 				block,
 				transaction,
 				c.includeCbor,

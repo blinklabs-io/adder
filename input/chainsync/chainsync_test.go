@@ -52,8 +52,8 @@ func TestHandleRollBackward(t *testing.T) {
 		assert.WithinDuration(t, time.Now(), evt.Timestamp, time.Second)
 
 		// Verify the payload is of type RollbackEvent and contains the correct data
-		assert.IsType(t, RollbackEvent{}, evt.Payload)
-		rollbackEvent := evt.Payload.(RollbackEvent)
+		assert.IsType(t, event.RollbackEvent{}, evt.Payload)
+		rollbackEvent := evt.Payload.(event.RollbackEvent)
 		assert.Equal(t, hex.EncodeToString(point.Hash), rollbackEvent.BlockHash)
 		assert.Equal(t, point.Slot, rollbackEvent.SlotNumber)
 
