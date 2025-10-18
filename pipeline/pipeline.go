@@ -24,13 +24,13 @@ import (
 )
 
 type Pipeline struct {
-	inputs     []plugin.Plugin
-	filters    []plugin.Plugin
-	outputs    []plugin.Plugin
 	filterChan chan event.Event
 	outputChan chan event.Event
 	errorChan  chan error
 	doneChan   chan bool
+	inputs     []plugin.Plugin
+	filters    []plugin.Plugin
+	outputs    []plugin.Plugin
 	wg         sync.WaitGroup
 	stopOnce   sync.Once
 }

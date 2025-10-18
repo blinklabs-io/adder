@@ -30,14 +30,14 @@ const (
 )
 
 type Config struct {
-	Api        ApiConfig                         `yaml:"api"`
-	Logging    LoggingConfig                     `yaml:"logging"`
-	Debug      DebugConfig                       `yaml:"debug"`
 	Plugin     map[string]map[string]map[any]any `yaml:"plugins"`
+	Logging    LoggingConfig                     `yaml:"logging"`
 	ConfigFile string                            `yaml:"-"`
 	Input      string                            `yaml:"input"    envconfig:"INPUT"`
 	Output     string                            `yaml:"output"   envconfig:"OUTPUT"`
 	KupoUrl    string                            `yaml:"kupo_url" envconfig:"KUPO_URL"`
+	Api        ApiConfig                         `yaml:"api"`
+	Debug      DebugConfig                       `yaml:"debug"`
 	Version    bool                              `yaml:"-"`
 }
 

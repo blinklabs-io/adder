@@ -41,11 +41,11 @@ func PluginTypeName(pluginType PluginType) string {
 }
 
 type PluginEntry struct {
-	Type               PluginType
+	NewFromOptionsFunc func() Plugin
 	Name               string
 	Description        string
 	Options            []PluginOption
-	NewFromOptionsFunc func() Plugin
+	Type               PluginType
 }
 
 var pluginEntries []PluginEntry

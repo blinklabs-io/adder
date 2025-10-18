@@ -27,15 +27,15 @@ import (
 
 var cmdlineOptions struct {
 	network            string
-	networkMagic       uint
 	address            string
 	socketPath         string
+	intersectPoint     string
+	networkMagic       uint
+	delayConfirmations uint
 	ntcTcp             bool
 	intersectTip       bool
-	intersectPoint     string
 	includeCbor        bool
 	autoReconnect      bool
-	delayConfirmations uint
 }
 
 func init() {

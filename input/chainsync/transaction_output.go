@@ -30,8 +30,8 @@ import (
 // ResolvedTransactionOutput represents a concrete implementation of the TransactionOutput interface
 type ResolvedTransactionOutput struct {
 	AddressField common.Address             `json:"address"`
-	AmountField  uint64                     `json:"amount"`
 	AssetsField  *common.MultiAsset[uint64] `json:"assets,omitempty"`
+	AmountField  uint64                     `json:"amount"`
 }
 
 func ExtractAssetDetailsFromMatch(
