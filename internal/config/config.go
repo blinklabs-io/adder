@@ -1,4 +1,4 @@
-// Copyright 2023 Blink Labs Software
+// Copyright 2025 Blink Labs Software
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -31,14 +31,14 @@ const (
 
 type Config struct {
 	Api        ApiConfig                         `yaml:"api"`
-	ConfigFile string                            `yaml:"-"`
-	Version    bool                              `yaml:"-"`
 	Logging    LoggingConfig                     `yaml:"logging"`
 	Debug      DebugConfig                       `yaml:"debug"`
-	Input      string                            `yaml:"input"   envconfig:"INPUT"`
-	Output     string                            `yaml:"output"  envconfig:"OUTPUT"`
 	Plugin     map[string]map[string]map[any]any `yaml:"plugins"`
+	ConfigFile string                            `yaml:"-"`
+	Input      string                            `yaml:"input"    envconfig:"INPUT"`
+	Output     string                            `yaml:"output"   envconfig:"OUTPUT"`
 	KupoUrl    string                            `yaml:"kupo_url" envconfig:"KUPO_URL"`
+	Version    bool                              `yaml:"-"`
 }
 
 type ApiConfig struct {
