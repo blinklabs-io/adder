@@ -32,9 +32,9 @@ type Message struct {
 }
 
 type MessageContent struct {
-	Token        string               `json:"token"`
 	Notification *NotificationContent `json:"notification,omitempty"`
 	Data         map[string]any       `json:"data,omitempty"`
+	Token        string               `json:"token"`
 }
 
 type NotificationContent struct {
