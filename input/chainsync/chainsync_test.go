@@ -1,3 +1,16 @@
+// Copyright 2025 Blink Labs Software
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//	http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 package chainsync
 
 import (
@@ -10,11 +23,12 @@ import (
 	"time"
 
 	"github.com/SundaeSwap-finance/kugo"
-	"github.com/blinklabs-io/adder/event"
 	"github.com/blinklabs-io/gouroboros/protocol/chainsync"
 	ocommon "github.com/blinklabs-io/gouroboros/protocol/common"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/blinklabs-io/adder/event"
 )
 
 func TestHandleRollBackward(t *testing.T) {
@@ -26,7 +40,7 @@ func TestHandleRollBackward(t *testing.T) {
 
 	// Define test data
 	point := ocommon.Point{
-		Slot: 12345,
+		Slot: 123456,
 		Hash: []byte{0x01, 0x02, 0x03, 0x04, 0x05},
 	}
 	tip := chainsync.Tip{
@@ -64,7 +78,7 @@ func TestHandleRollBackward(t *testing.T) {
 	}
 
 	// Verify that the status was updated correctly
-	assert.Equal(t, uint64(12345), c.status.SlotNumber)
+	assert.Equal(t, uint64(123456), c.status.SlotNumber)
 	assert.Equal(
 		t,
 		uint64(0),
@@ -73,6 +87,8 @@ func TestHandleRollBackward(t *testing.T) {
 	assert.Equal(t, "0102030405", c.status.BlockHash)
 	assert.Equal(t, uint64(67890), c.status.TipSlotNumber)
 	assert.Equal(t, "060708090a", c.status.TipBlockHash)
+	// New: Check EpochNumber (Byron era: 123456/21600 = 5)
+	assert.Equal(t, uint64(5), c.status.EpochNumber)
 }
 
 func TestGetKupoClient(t *testing.T) {

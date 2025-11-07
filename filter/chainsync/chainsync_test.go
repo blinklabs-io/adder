@@ -19,7 +19,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/blinklabs-io/adder/event"
 	"github.com/blinklabs-io/gouroboros/cbor"
 	"github.com/blinklabs-io/gouroboros/ledger"
 	"github.com/blinklabs-io/gouroboros/ledger/common"
@@ -27,6 +26,8 @@ import (
 	"github.com/btcsuite/btcd/btcutil/bech32"
 	"github.com/stretchr/testify/assert"
 	"github.com/utxorpc/go-codegen/utxorpc/v1alpha/cardano"
+
+	"github.com/blinklabs-io/adder/event"
 )
 
 // MockLogger is a mock implementation of the plugin.Logger interface
@@ -92,10 +93,10 @@ func (m *MockAddress) UnmarshalCBOR(data []byte) error {
 // MockOutput is a mock implementation of the TransactionOutput interface
 type MockOutput struct {
 	address   ledger.Address
-	amount    uint64
+	scriptRef common.Script
 	assets    *common.MultiAsset[common.MultiAssetTypeOutput]
 	datum     *common.Datum
-	scriptRef common.Script
+	amount    uint64
 }
 
 func (m MockOutput) Address() ledger.Address {
@@ -207,15 +208,15 @@ func TestChainSync_OutputChan(t *testing.T) {
 
 // Mock certificate implementations
 type mockStakeDelegationCert struct {
-	common.StakeDelegationCertificate
 	cborData []byte
+	common.StakeDelegationCertificate
 }
 
 func (m *mockStakeDelegationCert) Cbor() []byte { return m.cborData }
 
 type mockStakeDeregistrationCert struct {
-	common.StakeDeregistrationCertificate
 	cborData []byte
+	common.StakeDeregistrationCertificate
 }
 
 func (m *mockStakeDeregistrationCert) Cbor() []byte { return m.cborData }
@@ -251,10 +252,10 @@ func TestFilterByAddress(t *testing.T) {
 	testStakeAddress, _ := bech32.Encode("stake", convData)
 
 	tests := []struct {
-		name          string
-		filterAddress string
 		outputAddr    common.Address
 		cert          ledger.Certificate
+		name          string
+		filterAddress string
 		shouldMatch   bool
 	}{
 		{

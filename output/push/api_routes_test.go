@@ -6,10 +6,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/blinklabs-io/adder/api"
-	"github.com/blinklabs-io/adder/output/push"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/blinklabs-io/adder/api"
+	"github.com/blinklabs-io/adder/output/push"
 )
 
 func setupRouter() *gin.Engine {

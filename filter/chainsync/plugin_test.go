@@ -4,9 +4,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/blinklabs-io/adder/event"
 	"github.com/blinklabs-io/adder/plugin"
-	"github.com/stretchr/testify/assert"
 )
 
 func TestPluginRegistration(t *testing.T) {

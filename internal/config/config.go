@@ -24,21 +24,67 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
+// ByronGenesisConfig holds Byron era genesis parameters
+type ByronGenesisConfig struct {
+	EndSlot            *uint64 `yaml:"end_slot"              envconfig:"BYRON_GENESIS_END_SLOT"`
+	EpochLength        uint64  `yaml:"epoch_length"          envconfig:"BYRON_GENESIS_EPOCH_LENGTH"`
+	ByronSlotsPerEpoch uint64  `yaml:"byron_slots_per_epoch" envconfig:"BYRON_GENESIS_BYRON_SLOTS_PER_EPOCH"`
+}
+
+// ShelleyGenesisConfig holds Shelley era genesis parameters
+type ShelleyGenesisConfig struct {
+	EpochLength uint64 `yaml:"epoch_length" envconfig:"SHELLEY_GENESIS_EPOCH_LENGTH"`
+}
+
+// populateByronGenesis sets defaults and validates ByronGenesisConfig
+func (c *Config) populateByronGenesis() {
+	cfg := &c.ByronGenesis
+	// Apply defaults only when values are truly unset. Zero values are valid for Byron-less networks.
+	if cfg.EpochLength == 0 {
+		cfg.EpochLength = 21600
+	}
+	if cfg.ByronSlotsPerEpoch == 0 {
+		cfg.ByronSlotsPerEpoch = cfg.EpochLength
+	}
+	if cfg.EndSlot == nil {
+		defaultEndSlot := uint64(4492799)
+		cfg.EndSlot = &defaultEndSlot
+	}
+}
+
+// populateShelleyTransEpoch sets the Shelley transition epoch
+func (c *Config) populateShelleyTransEpoch() {
+	if c.ShelleyTransEpoch == -1 {
+		c.ShelleyTransEpoch = 208 // Default to mainnet
+	}
+}
+
+// populateShelleyGenesis sets defaults and validates ShelleyGenesisConfig
+func (c *Config) populateShelleyGenesis() {
+	cfg := &c.ShelleyGenesis
+	if cfg.EpochLength == 0 {
+		cfg.EpochLength = 432000
+	}
+}
+
 const (
 	DefaultInputPlugin  = "chainsync"
 	DefaultOutputPlugin = "log"
 )
 
 type Config struct {
-	Plugin     map[string]map[string]map[any]any `yaml:"plugins"`
-	Logging    LoggingConfig                     `yaml:"logging"`
-	ConfigFile string                            `yaml:"-"`
-	Input      string                            `yaml:"input"    envconfig:"INPUT"`
-	Output     string                            `yaml:"output"   envconfig:"OUTPUT"`
-	KupoUrl    string                            `yaml:"kupo_url" envconfig:"KUPO_URL"`
-	Api        ApiConfig                         `yaml:"api"`
-	Debug      DebugConfig                       `yaml:"debug"`
-	Version    bool                              `yaml:"-"`
+	ByronGenesis      ByronGenesisConfig                `yaml:"byron_genesis"      envconfig:"BYRON_GENESIS"`
+	Plugin            map[string]map[string]map[any]any `yaml:"plugins"            envconfig:"PLUGINS"`
+	Logging           LoggingConfig                     `yaml:"logging"            envconfig:"LOGGING"`
+	ConfigFile        string                            `yaml:"-"`
+	Input             string                            `yaml:"input"              envconfig:"INPUT"`
+	Output            string                            `yaml:"output"             envconfig:"OUTPUT"`
+	KupoUrl           string                            `yaml:"kupo_url"           envconfig:"KUPO_URL"`
+	Api               ApiConfig                         `yaml:"api"                envconfig:"API"`
+	Debug             DebugConfig                       `yaml:"debug"              envconfig:"DEBUG"`
+	ShelleyGenesis    ShelleyGenesisConfig              `yaml:"shelley_genesis"    envconfig:"SHELLEY_GENESIS"`
+	ShelleyTransEpoch int32                             `yaml:"shelley_trans_epoch" envconfig:"SHELLEY_TRANS_EPOCH"`
+	Version           bool                              `yaml:"-"`
 }
 
 type ApiConfig struct {
@@ -68,9 +114,17 @@ var globalConfig = &Config{
 		ListenAddress: "localhost",
 		ListenPort:    0,
 	},
-	Input:   DefaultInputPlugin,
-	Output:  DefaultOutputPlugin,
-	KupoUrl: "",
+	Input:             DefaultInputPlugin,
+	Output:            DefaultOutputPlugin,
+	KupoUrl:           "",
+	ShelleyTransEpoch: -1, // Use -1 to indicate unset, will be populated later
+	ByronGenesis: ByronGenesisConfig{
+		EpochLength: 21600,
+		EndSlot:     func() *uint64 { v := uint64(4492799); return &v }(),
+	},
+	ShelleyGenesis: ShelleyGenesisConfig{
+		EpochLength: 432000,
+	},
 }
 
 func (c *Config) Load(configFile string) error {
@@ -86,12 +140,14 @@ func (c *Config) Load(configFile string) error {
 		}
 	}
 	// Load config values from environment variables
-	// We use "dummy" as the app name here to (mostly) prevent picking up env
-	// vars that we hadn't explicitly specified in annotations above
 	err := envconfig.Process("dummy", c)
 	if err != nil {
 		return fmt.Errorf("error processing environment: %w", err)
 	}
+	// Populate Byron and Shelley genesis configs and transition epoch
+	c.populateByronGenesis()
+	c.populateShelleyGenesis()
+	c.populateShelleyTransEpoch()
 	return nil
 }
 
