@@ -128,6 +128,32 @@ variable. For example, the `-input` option has the `INPUT` environment variable,
 the `-input-chainsync-address` option has the `INPUT_CHAINSYNC_ADDRESS`
 environment variable, and `-output` has `OUTPUT`.
 
+### Environment Variables
+
+Core configuration options can be set using environment variables:
+
+- `INPUT` - Input plugin to use (default: "chainsync")
+- `OUTPUT` - Output plugin to use (default: "log")  
+- `KUPO_URL` - URL for Kupo service integration
+- `LOGGING_LEVEL` - Log level (default: "info")
+- `API_ADDRESS` - API server listen address (default: "0.0.0.0")
+- `API_PORT` - API server port (default: 8080)
+- `DEBUG_ADDRESS` - Debug server address (default: "localhost")
+- `DEBUG_PORT` - Debug server port (default: 0)
+
+Genesis configuration can also be controlled via environment variables:
+
+**Network Transition:**
+- `SHELLEY_TRANS_EPOCH` - Epoch number when Shelley era begins (default: 208 for mainnet)
+
+**Byron Genesis:**
+- `BYRON_GENESIS_END_SLOT` - End slot for Byron era
+- `BYRON_GENESIS_EPOCH_LENGTH` - Slot length of Byron epochs (default: 21600)
+- `BYRON_GENESIS_BYRON_SLOTS_PER_EPOCH` - Byron slots per epoch
+
+**Shelley Genesis:**
+- `SHELLEY_GENESIS_EPOCH_LENGTH` - Slot length of Shelley epochs (default: 432000)
+
 You can also specify each option in the config file.
 
 ```yaml

@@ -28,17 +28,51 @@ import (
 	"time"
 
 	"github.com/SundaeSwap-finance/kugo"
-	"github.com/SundaeSwap-finance/ogmigo/v6/ouroboros/chainsync"
 	"github.com/blinklabs-io/adder/event"
 	"github.com/blinklabs-io/adder/internal/config"
 	"github.com/blinklabs-io/adder/internal/logging"
 	"github.com/blinklabs-io/adder/plugin"
 	ouroboros "github.com/blinklabs-io/gouroboros"
 	"github.com/blinklabs-io/gouroboros/ledger"
-	"github.com/blinklabs-io/gouroboros/protocol/blockfetch"
+	blockfetch "github.com/blinklabs-io/gouroboros/protocol/blockfetch"
 	ochainsync "github.com/blinklabs-io/gouroboros/protocol/chainsync"
 	ocommon "github.com/blinklabs-io/gouroboros/protocol/common"
 )
+
+// EpochFromSlot derives an epoch from a slot using Byron/Shelley genesis params.
+// Byron slots: 0..EndSlot inclusive. Explicit zero EndSlot/ShelleyTransEpoch means no Byron era.
+// Zero epoch length in either era yields a safe fallback (0 Byron / starting Shelley epoch).
+func EpochFromSlot(slot uint64) uint64 {
+	cfg := config.GetConfig()
+	byron := cfg.ByronGenesis
+	shelley := cfg.ShelleyGenesis
+
+	endSlot := func() uint64 {
+		if byron.EndSlot != nil {
+			return *byron.EndSlot
+		}
+		return 0
+	}()
+	shelleyTransEpoch := func() uint64 {
+		if cfg.ShelleyTransEpoch >= 0 {
+			//nolint:gosec // ShelleyTransEpoch is controlled config, safe conversion
+			return uint64(cfg.ShelleyTransEpoch)
+		}
+		return 0
+	}()
+	if slot <= endSlot {
+		if byron.EpochLength == 0 {
+			return 0 // avoid div by zero
+		}
+		return slot / byron.EpochLength
+	}
+	shelleyStartEpoch := shelleyTransEpoch
+	shelleyStartSlot := endSlot + 1
+	if shelley.EpochLength == 0 {
+		return shelleyStartEpoch // avoid div by zero
+	}
+	return shelleyStartEpoch + (slot-shelleyStartSlot)/shelley.EpochLength
+}
 
 const (
 	// Size of cache for recent chainsync cursors
@@ -84,6 +118,7 @@ type ChainSyncStatus struct {
 	TipBlockHash  string
 	SlotNumber    uint64
 	BlockNumber   uint64
+	EpochNumber   uint64
 	TipSlotNumber uint64
 	TipReached    bool
 }
@@ -522,6 +557,7 @@ func (c *ChainSync) updateStatus(
 	c.status.SlotNumber = slotNumber
 	c.status.BlockNumber = blockNumber
 	c.status.BlockHash = blockHash
+	c.status.EpochNumber = EpochFromSlot(slotNumber)
 	c.status.TipSlotNumber = tipSlotNumber
 	c.status.TipBlockHash = tipBlockHash
 	if c.statusUpdateFunc != nil {
@@ -621,9 +657,9 @@ func resolveTransactionInputs(
 			)
 			defer cancel()
 
-			matches, err := k.Matches(ctx,
-				kugo.TxOut(chainsync.NewTxID(txId, txIndex)),
-			)
+			// Create a simple transaction identifier
+			txID := fmt.Sprintf("%d@%s", txIndex, txId)
+			matches, err := k.Matches(ctx, kugo.Transaction(txID))
 			if err != nil {
 				if errors.Is(err, context.DeadlineExceeded) {
 					return nil, fmt.Errorf(

@@ -3,10 +3,11 @@ package chainsync
 import (
 	"testing"
 
-	"github.com/blinklabs-io/adder/event"
 	"github.com/blinklabs-io/gouroboros/ledger/common"
 	"github.com/stretchr/testify/assert"
 	utxorpc "github.com/utxorpc/go-codegen/utxorpc/v1alpha/cardano"
+
+	"github.com/blinklabs-io/adder/event"
 )
 
 // MockIssuerVkey to implement IssuerVkey interface
@@ -22,14 +23,14 @@ func (m MockIssuerVkey) Hash() []byte {
 
 // MockBlockHeader implements BlockHeader interface
 type MockBlockHeader struct {
-	hash          common.Blake2b256
-	prevHash      common.Blake2b256
-	blockNumber   uint64
-	slotNumber    uint64
-	issuerVkey    common.IssuerVkey
-	blockBodySize uint64
 	era           common.Era
 	cborBytes     []byte
+	blockNumber   uint64
+	slotNumber    uint64
+	blockBodySize uint64
+	hash          common.Blake2b256
+	prevHash      common.Blake2b256
+	issuerVkey    common.IssuerVkey
 }
 
 func (m MockBlockHeader) Hash() common.Blake2b256 {
@@ -113,11 +114,11 @@ func (m MockBlock) IsConway() bool {
 func TestNewBlockContext(t *testing.T) {
 	testCases := []struct {
 		name          string
-		block         MockBlock
-		networkMagic  uint32
 		expectedEra   string
+		block         MockBlock
 		expectedBlock uint64
 		expectedSlot  uint64
+		networkMagic  uint32
 	}{
 		{
 			name: "Shelley Era Block",
@@ -230,9 +231,9 @@ func TestNewBlockContext(t *testing.T) {
 func TestNewBlockContextEdgeCases(t *testing.T) {
 	testCases := []struct {
 		name         string
+		expectedEra  string
 		block        MockBlock
 		networkMagic uint32
-		expectedEra  string
 	}{
 		{
 			name: "Zero Values",

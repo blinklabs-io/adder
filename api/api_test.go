@@ -5,9 +5,10 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/blinklabs-io/adder/api"
 	"github.com/blinklabs-io/adder/output/push"
-	"github.com/stretchr/testify/assert"
 )
 
 func TestRouteRegistration(t *testing.T) {
