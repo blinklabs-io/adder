@@ -7,7 +7,7 @@ toolchain go1.24.4
 require (
 	github.com/SundaeSwap-finance/kugo v1.3.0
 	github.com/SundaeSwap-finance/ogmigo/v6 v6.2.0
-	github.com/blinklabs-io/gouroboros v0.138.0
+	github.com/blinklabs-io/gouroboros v0.139.0
 	github.com/blinklabs-io/plutigo v0.0.13
 	github.com/btcsuite/btcd/btcutil v1.1.6
 	github.com/gen2brain/beeep v0.11.1
@@ -18,7 +18,7 @@ require (
 	github.com/swaggo/files v1.0.1
 	github.com/swaggo/gin-swagger v1.6.1
 	github.com/swaggo/swag v1.16.6
-	github.com/utxorpc/go-codegen v0.17.0
+	github.com/utxorpc/go-codegen v0.18.1
 	go.uber.org/automaxprocs v1.6.0
 	golang.org/x/oauth2 v0.33.0
 	gopkg.in/yaml.v2 v2.4.0
@@ -92,6 +92,6 @@ require (
 	golang.org/x/sys v0.37.0 // indirect
 	golang.org/x/text v0.30.0 // indirect
 	golang.org/x/tools v0.37.0 // indirect
-	google.golang.org/protobuf v1.36.9 // indirect
+	google.golang.org/protobuf v1.36.10 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
