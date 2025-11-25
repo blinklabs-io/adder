@@ -244,8 +244,8 @@ func (c *ChainSync) setupConnection() error {
 			blockfetch.NewConfig(
 				blockfetch.WithBlockFunc(c.handleBlockFetchBlock),
 				blockfetch.WithBatchDoneFunc(c.handleBlockFetchBatchDone),
-				// Set the recv queue size to 2x our block batch size
-				blockfetch.WithRecvQueueSize(1000),
+				// Set the recv queue size to larger than our block batch size
+				blockfetch.WithRecvQueueSize(512),
 			),
 		),
 	)
