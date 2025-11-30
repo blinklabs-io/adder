@@ -16,10 +16,10 @@ Events are created with a simple schema.
 
 ```json
 {
-    "type": "event type",
-    "timestamp": "wall clock timestamp of event",
-    "context": "metadata about the event",
-    "payload": "the full event specific payload"
+  "type": "event type",
+  "timestamp": "wall clock timestamp of event",
+  "context": "metadata about the event",
+  "payload": "the full event specific payload"
 }
 ```
 
@@ -27,32 +27,35 @@ The chainsync input produces three event types: `block`, `rollback`, and
 `transaction`. Each type has a unique payload.
 
 block:
+
 ```json
 {
-    "context": {
-        "blockNumber": 123,
-        "slotNumber": 1234567,
-    },
-    "payload": {
-        "blockBodySize": 123,
-        "issuerVkey": "a712f81ab2eac...",
-        "blockHash": "abcd123...",
-        "blockCbor": "85828a1a000995c21..."
-    }
+  "context": {
+    "blockNumber": 123,
+    "slotNumber": 1234567
+  },
+  "payload": {
+    "blockBodySize": 123,
+    "issuerVkey": "a712f81ab2eac...",
+    "blockHash": "abcd123...",
+    "blockCbor": "85828a1a000995c21..."
+  }
 }
 ```
 
 rollback:
+
 ```json
 {
-    "payload": {
-        "blockHash": "abcd123...",
-        "slotNumber": 1234567
-    }
+  "payload": {
+    "blockHash": "abcd123...",
+    "slotNumber": 1234567
+  }
 }
 ```
 
 transaction:
+
 ```json
 {
     "context": {
@@ -105,22 +108,23 @@ Adder supports multiple configuration methods for versatility: commandline
 arguments, YAML config file, and environment variables (in that order).
 
 You can get a list of all available commandline arguments by using the
-`-h`/`-help` flag.
+`--help` flag.
 
 ```bash
-$ ./adder -h
-Usage of adder:
-  -config string
-        path to config file to load
-  -input string
-        input plugin to use, 'list' to show available (default "chainsync")
-  -input-chainsync-address string
-        specifies the TCP address of the node to connect to
+$ ./adder --help
+
+Usage:
+  adder [flags]
+
+Flags:
+      --config string                 path to config file to load
+      --input string                  input plugin to use, 'list' to show available (default "chainsync")
+      --input-chainsync-address string
+                                      specifies the TCP address of the node to connect to
 ...
-  -output string
-        output plugin to use, 'list' to show available (default "log")
-  -output-log-level string
-        specifies the log level to use (default "info")
+      --output string                 output plugin to use, 'list' to show available (default "log")
+      --output-log-level string       specifies the log level to use (default "info")
+  -h, --help                          help for adder
 ```
 
 Each commandline argument (other than `-config`) has a corresponding environment
@@ -133,7 +137,7 @@ environment variable, and `-output` has `OUTPUT`.
 Core configuration options can be set using environment variables:
 
 - `INPUT` - Input plugin to use (default: "chainsync")
-- `OUTPUT` - Output plugin to use (default: "log")  
+- `OUTPUT` - Output plugin to use (default: "log")
 - `KUPO_URL` - URL for Kupo service integration
 - `LOGGING_LEVEL` - Log level (default: "info")
 - `API_ADDRESS` - API server listen address (default: "0.0.0.0")
@@ -144,14 +148,17 @@ Core configuration options can be set using environment variables:
 Genesis configuration can also be controlled via environment variables:
 
 **Network Transition:**
+
 - `SHELLEY_TRANS_EPOCH` - Epoch number when Shelley era begins (default: 208 for mainnet)
 
 **Byron Genesis:**
+
 - `BYRON_GENESIS_END_SLOT` - End slot for Byron era
 - `BYRON_GENESIS_EPOCH_LENGTH` - Slot length of Byron epochs (default: 21600)
 - `BYRON_GENESIS_BYRON_SLOTS_PER_EPOCH` - Byron slots per epoch
 
 **Shelley Genesis:**
+
 - `SHELLEY_GENESIS_EPOCH_LENGTH` - Slot length of Shelley epochs (default: 432000)
 
 You can also specify each option in the config file.
@@ -211,7 +218,7 @@ filters will be output.
 
 ```bash
 export INPUT_CHAINSYNC_NETWORK=preview
-./adder 
+./adder
 ```
 
 Alternatively using equivalent commandline options:

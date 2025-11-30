@@ -15,8 +15,9 @@
 package plugin
 
 import (
-	"flag"
 	"fmt"
+
+	"github.com/spf13/pflag"
 )
 
 type PluginType int
@@ -54,7 +55,7 @@ func Register(pluginEntry PluginEntry) {
 	pluginEntries = append(pluginEntries, pluginEntry)
 }
 
-func PopulateCmdlineOptions(fs *flag.FlagSet) error {
+func PopulateCmdlineOptions(fs *pflag.FlagSet) error {
 	for _, plugin := range pluginEntries {
 		for _, option := range plugin.Options {
 			if err := option.AddToFlagSet(fs, PluginTypeName(plugin.Type), plugin.Name); err != nil {

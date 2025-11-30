@@ -15,12 +15,12 @@
 package config
 
 import (
-	"flag"
 	"fmt"
 	"os"
 
 	"github.com/blinklabs-io/adder/plugin"
 	"github.com/kelseyhightower/envconfig"
+	"github.com/spf13/pflag"
 	"gopkg.in/yaml.v2"
 )
 
@@ -151,8 +151,7 @@ func (c *Config) Load(configFile string) error {
 	return nil
 }
 
-func (c *Config) ParseCmdlineArgs(programName string, args []string) error {
-	fs := flag.NewFlagSet(programName, flag.ExitOnError)
+func (c *Config) BindFlags(fs *pflag.FlagSet) error {
 	fs.StringVar(&c.ConfigFile, "config", "", "path to config file to load")
 	fs.BoolVar(&c.Version, "version", false, "show version and exit")
 	fs.StringVar(
@@ -167,13 +166,7 @@ func (c *Config) ParseCmdlineArgs(programName string, args []string) error {
 		DefaultOutputPlugin,
 		"output plugin to use, 'list' to show available",
 	)
-	if err := plugin.PopulateCmdlineOptions(fs); err != nil {
-		return err
-	}
-	if err := fs.Parse(args); err != nil {
-		return err
-	}
-	return nil
+	return plugin.PopulateCmdlineOptions(fs)
 }
 
 // GetConfig returns the global config instance
