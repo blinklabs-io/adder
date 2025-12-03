@@ -34,10 +34,22 @@ import (
 	"github.com/blinklabs-io/adder/pipeline"
 	"github.com/blinklabs-io/adder/plugin"
 	"github.com/inconshreveable/mousetrap"
+	"github.com/spf13/cobra"
 	"go.uber.org/automaxprocs/maxprocs"
 )
 
-var programName string = "adder"
+var (
+	programName string = "adder"
+	cfg                = config.GetConfig()
+	rootCmd            = &cobra.Command{
+		Use:          programName,
+		SilenceUsage: true,
+		Args:         cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return run()
+		},
+	}
+)
 
 func slogPrintf(format string, v ...any) {
 	slog.Info(fmt.Sprintf(format, v...))
@@ -46,6 +58,7 @@ func slogPrintf(format string, v ...any) {
 func init() {
 	if os.Args != nil && os.Args[0] != programName {
 		programName = os.Args[0]
+		rootCmd.Use = programName
 	}
 
 	// Bail if we were run via double click on Windows, borrowed from ngrok
@@ -64,24 +77,16 @@ func init() {
 			os.Exit(1)
 		}
 	}
+
+	if err := cfg.BindFlags(rootCmd.Flags()); err != nil {
+		panic(err)
+	}
 }
 
-func main() {
-	cfg := config.GetConfig()
-
-	if os.Args == nil {
-		fmt.Println("Failed to detect arguments, aborting")
-		os.Exit(1)
-	}
-
-	if err := cfg.ParseCmdlineArgs(programName, os.Args[1:]); err != nil {
-		fmt.Printf("Failed to parse commandline: %s\n", err)
-		os.Exit(1)
-	}
-
+func run() error {
 	if cfg.Version {
 		fmt.Printf("%s %s\n", programName, version.GetVersionString())
-		os.Exit(0)
+		return nil
 	}
 
 	if cfg.Input == "list" {
@@ -89,7 +94,7 @@ func main() {
 		for _, plugin := range plugin.GetPlugins(plugin.PluginTypeInput) {
 			fmt.Printf("%- 14s %s\n", plugin.Name, plugin.Description)
 		}
-		return
+		return nil
 	}
 
 	if cfg.Output == "list" {
@@ -97,25 +102,22 @@ func main() {
 		for _, plugin := range plugin.GetPlugins(plugin.PluginTypeOutput) {
 			fmt.Printf("%- 14s %s\n", plugin.Name, plugin.Description)
 		}
-		return
+		return nil
 	}
 
 	// Load config
 	if err := cfg.Load(cfg.ConfigFile); err != nil {
-		fmt.Printf("Failed to load config: %s\n", err)
-		os.Exit(1)
+		return fmt.Errorf("failed to load config: %w", err)
 	}
 
 	// Process config for plugins
 	if err := plugin.ProcessConfig(cfg.Plugin); err != nil {
-		fmt.Printf("Failed to process plugin config: %s\n", err)
-		os.Exit(1)
+		return fmt.Errorf("failed to process plugin config: %w", err)
 	}
 
 	// Process env vars for plugins
 	if err := plugin.ProcessEnvVars(); err != nil {
-		fmt.Printf("Failed to process env vars: %s\n", err)
-		os.Exit(1)
+		return fmt.Errorf("failed to process env vars: %w", err)
 	}
 
 	// Configure logging
@@ -128,7 +130,7 @@ func main() {
 	if err != nil {
 		// If we hit this, something really wrong happened
 		logger.Error(err.Error())
-		os.Exit(1)
+		return err
 	}
 
 	// Start debug listener
@@ -170,7 +172,7 @@ func main() {
 	input := plugin.GetPlugin(plugin.PluginTypeInput, cfg.Input)
 	if input == nil {
 		logger.Error("unknown input: " + cfg.Input)
-		os.Exit(1)
+		return fmt.Errorf("unknown input: %s", cfg.Input)
 	}
 	pipe.AddInput(input)
 
@@ -184,7 +186,7 @@ func main() {
 	output := plugin.GetPlugin(plugin.PluginTypeOutput, cfg.Output)
 	if output == nil {
 		logger.Error("unknown output: " + cfg.Output)
-		os.Exit(1)
+		return fmt.Errorf("unknown output: %s", cfg.Output)
 	}
 	// Check if output plugin implements APIRouteRegistrar
 	if registrar, ok := any(output).(api.APIRouteRegistrar); ok {
@@ -195,13 +197,13 @@ func main() {
 	// Start API after plugins are configured
 	if err := apiInstance.Start(); err != nil {
 		logger.Error(fmt.Sprintf("failed to start API: %s", err))
-		os.Exit(1)
+		return fmt.Errorf("failed to start API: %w", err)
 	}
 
 	// Start pipeline and wait for error
 	if err := pipe.Start(); err != nil {
 		logger.Error(fmt.Sprintf("failed to start pipeline: %s", err))
-		os.Exit(1)
+		return fmt.Errorf("failed to start pipeline: %w", err)
 	}
 
 	// Setup graceful shutdown
@@ -225,8 +227,15 @@ func main() {
 	// Graceful shutdown using Stop() method
 	if err := pipe.Stop(); err != nil {
 		logger.Error(fmt.Sprintf("failed to stop pipeline: %s", err))
-		os.Exit(1)
+		return fmt.Errorf("failed to stop pipeline: %w", err)
 	}
 
 	logger.Info("Adder stopped gracefully")
+	return nil
+}
+
+func main() {
+	if err := rootCmd.Execute(); err != nil {
+		os.Exit(1)
+	}
 }

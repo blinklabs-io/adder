@@ -15,11 +15,12 @@
 package plugin
 
 import (
-	"flag"
 	"fmt"
 	"os"
 	"strconv"
 	"strings"
+
+	"github.com/spf13/pflag"
 )
 
 type PluginOptionType int
@@ -42,7 +43,7 @@ type PluginOption struct {
 }
 
 func (p *PluginOption) AddToFlagSet(
-	fs *flag.FlagSet,
+	fs *pflag.FlagSet,
 	pluginType string,
 	pluginName string,
 ) error {

@@ -14,6 +14,8 @@ require (
 	github.com/gin-gonic/gin v1.11.0
 	github.com/inconshreveable/mousetrap v1.1.0
 	github.com/kelseyhightower/envconfig v1.4.0
+	github.com/spf13/cobra v1.8.1
+	github.com/spf13/pflag v1.0.6
 	github.com/stretchr/testify v1.11.1
 	github.com/swaggo/files v1.0.1
 	github.com/swaggo/gin-swagger v1.6.1
