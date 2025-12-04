@@ -15,7 +15,6 @@
 package event
 
 import (
-	"github.com/blinklabs-io/gouroboros/cbor"
 	"github.com/blinklabs-io/gouroboros/ledger"
 	lcommon "github.com/blinklabs-io/gouroboros/ledger/common"
 )
@@ -32,7 +31,7 @@ type TransactionEvent struct {
 	Transaction     ledger.Transaction            `json:"-"`
 	Witnesses       lcommon.TransactionWitnessSet `json:"witnesses,omitempty"`
 	Withdrawals     map[string]uint64             `json:"withdrawals,omitempty"`
-	Metadata        *cbor.LazyValue               `json:"metadata,omitempty"`
+	Metadata        lcommon.TransactionMetadatum  `json:"metadata,omitempty"`
 	BlockHash       string                        `json:"blockHash"`
 	ReferenceInputs []ledger.TransactionInput     `json:"referenceInputs,omitempty"`
 	Certificates    []ledger.Certificate          `json:"certificates,omitempty"`

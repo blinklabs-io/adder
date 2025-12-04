@@ -16,16 +16,18 @@ package push
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/big"
 	"os"
 
 	"github.com/blinklabs-io/adder/event"
 	"github.com/blinklabs-io/adder/internal/logging"
 	"github.com/blinklabs-io/adder/output/push/fcm"
 	"github.com/blinklabs-io/adder/plugin"
-	"github.com/blinklabs-io/gouroboros/cbor"
+	"github.com/blinklabs-io/gouroboros/ledger/common"
 	"golang.org/x/oauth2/google"
 )
 
@@ -306,40 +308,54 @@ func (p *PushOutput) OutputChan() <-chan event.Event {
 // This should probably go in gouroboros module
 // extractCIP20FromMetadata extracts the CIP20 message from the transaction metadata
 // and returns it as a JSON string.
-func extractCIP20FromMetadata(metadata *cbor.LazyValue) (string, error) {
+func extractCIP20FromMetadata(
+	metadata common.TransactionMetadatum,
+) (string, error) {
 	if metadata == nil {
 		return "", errors.New("metadata is nil")
 	}
 
-	if _, err := metadata.Decode(); err != nil {
-		return "", fmt.Errorf("could not decode metadata: %w", err)
-	}
-
-	metadataMap, ok := metadata.Value().(map[any]any)
+	metaMap, ok := metadata.(common.MetaMap)
 	if !ok {
-		return "", errors.New("metadata value is not of the expected map type")
+		return "", errors.New("metadata is not a MetaMap")
 	}
 
-	// Extract the nested value for key 674
-	nestedValue, found := metadataMap[uint64(674)]
+	var nestedValue common.TransactionMetadatum
+	found := false
+	for _, pair := range metaMap.Pairs {
+		if keyInt, ok := pair.Key.(common.MetaInt); ok &&
+			keyInt.Value.Cmp(big.NewInt(674)) == 0 {
+			nestedValue = pair.Value
+			found = true
+			break
+		}
+	}
 	if !found {
 		return "", errors.New("key 674 not found in metadata")
 	}
 
-	// Assert the nested value is a map
-	nestedMap, ok := nestedValue.(map[any]any)
+	nestedMap, ok := nestedValue.(common.MetaMap)
 	if !ok {
 		return "", errors.New("nested value for key 674 is not a map")
 	}
 
-	msgValue, found := nestedMap["msg"]
+	var msgValue common.TransactionMetadatum
+	found = false
+	for _, pair := range nestedMap.Pairs {
+		if keyText, ok := pair.Key.(common.MetaText); ok &&
+			keyText.Value == "msg" {
+			msgValue = pair.Value
+			found = true
+			break
+		}
+	}
 	if !found {
 		return "", errors.New("key 'msg' not found in nested metadata map")
 	}
 
 	msgStruct := map[string]any{
 		"674": map[string]any{
-			"msg": msgValue,
+			"msg": metadatumToAny(msgValue),
 		},
 	}
 
@@ -349,4 +365,44 @@ func extractCIP20FromMetadata(metadata *cbor.LazyValue) (string, error) {
 	}
 
 	return string(jsonBytes), nil
+}
+
+func keyToString(md common.TransactionMetadatum) string {
+	switch v := md.(type) {
+	case common.MetaInt:
+		return v.Value.String()
+	case common.MetaBytes:
+		return hex.EncodeToString(v.Value)
+	case common.MetaText:
+		return v.Value
+	default:
+		return fmt.Sprintf("%v", metadatumToAny(md))
+	}
+}
+
+func metadatumToAny(md common.TransactionMetadatum) any {
+	switch v := md.(type) {
+	case common.MetaInt:
+		return v.Value
+	case common.MetaBytes:
+		return v.Value
+	case common.MetaText:
+		return v.Value
+	case common.MetaList:
+		var list []any
+		for _, item := range v.Items {
+			list = append(list, metadatumToAny(item))
+		}
+		return list
+	case common.MetaMap:
+		m := make(map[string]any)
+		for _, pair := range v.Pairs {
+			keyStr := keyToString(pair.Key)
+			value := metadatumToAny(pair.Value)
+			m[keyStr] = value
+		}
+		return m
+	default:
+		return nil
+	}
 }

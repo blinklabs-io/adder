@@ -73,16 +73,16 @@ const (
 )
 
 type Config struct {
-	ByronGenesis      ByronGenesisConfig                `yaml:"byron_genesis"      envconfig:"BYRON_GENESIS"`
-	Plugin            map[string]map[string]map[any]any `yaml:"plugins"            envconfig:"PLUGINS"`
-	Logging           LoggingConfig                     `yaml:"logging"            envconfig:"LOGGING"`
+	ByronGenesis      ByronGenesisConfig                `yaml:"byron_genesis"       envconfig:"BYRON_GENESIS"`
+	Plugin            map[string]map[string]map[any]any `yaml:"plugins"             envconfig:"PLUGINS"`
+	Logging           LoggingConfig                     `yaml:"logging"             envconfig:"LOGGING"`
 	ConfigFile        string                            `yaml:"-"`
-	Input             string                            `yaml:"input"              envconfig:"INPUT"`
-	Output            string                            `yaml:"output"             envconfig:"OUTPUT"`
-	KupoUrl           string                            `yaml:"kupo_url"           envconfig:"KUPO_URL"`
-	Api               ApiConfig                         `yaml:"api"                envconfig:"API"`
-	Debug             DebugConfig                       `yaml:"debug"              envconfig:"DEBUG"`
-	ShelleyGenesis    ShelleyGenesisConfig              `yaml:"shelley_genesis"    envconfig:"SHELLEY_GENESIS"`
+	Input             string                            `yaml:"input"               envconfig:"INPUT"`
+	Output            string                            `yaml:"output"              envconfig:"OUTPUT"`
+	KupoUrl           string                            `yaml:"kupo_url"            envconfig:"KUPO_URL"`
+	Api               ApiConfig                         `yaml:"api"                 envconfig:"API"`
+	Debug             DebugConfig                       `yaml:"debug"               envconfig:"DEBUG"`
+	ShelleyGenesis    ShelleyGenesisConfig              `yaml:"shelley_genesis"     envconfig:"SHELLEY_GENESIS"`
 	ShelleyTransEpoch int32                             `yaml:"shelley_trans_epoch" envconfig:"SHELLEY_TRANS_EPOCH"`
 	Version           bool                              `yaml:"-"`
 }

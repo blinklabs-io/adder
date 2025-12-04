@@ -31,6 +31,7 @@ type MockBlockHeader struct {
 	hash          common.Blake2b256
 	prevHash      common.Blake2b256
 	issuerVkey    common.IssuerVkey
+	blockBodyHash common.Blake2b256
 }
 
 func (m MockBlockHeader) Hash() common.Blake2b256 {
@@ -65,6 +66,10 @@ func (m MockBlockHeader) Cbor() []byte {
 	return m.cborBytes
 }
 
+func (m MockBlockHeader) BlockBodyHash() common.Blake2b256 {
+	return m.blockBodyHash
+}
+
 // MockBlock implements Block interface
 type MockBlock struct {
 	MockBlockHeader
@@ -85,6 +90,10 @@ func (m MockBlock) Transactions() []common.Transaction {
 
 func (m MockBlock) Utxorpc() (*utxorpc.Block, error) {
 	return nil, nil
+}
+
+func (m MockBlock) BlockBodyHash() common.Blake2b256 {
+	return m.MockBlockHeader.BlockBodyHash()
 }
 
 func (m MockBlock) IsShelley() bool {
