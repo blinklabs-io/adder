@@ -18,10 +18,13 @@ import (
 	"github.com/blinklabs-io/adder/event"
 )
 
+// Plugin represents a pluggable component in the pipeline.
+// The pipeline injects an error channel via SetErrorChan; plugins send errors but never close channels.
+// A nil error channel means "no error reporting"; plugins must handle this gracefully.
 type Plugin interface {
 	Start() error
 	Stop() error
-	ErrorChan() chan error
+	SetErrorChan(chan<- error)
 	InputChan() chan<- event.Event
 	OutputChan() <-chan event.Event
 }
