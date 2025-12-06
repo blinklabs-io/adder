@@ -30,9 +30,6 @@ import (
 	"github.com/blinklabs-io/adder/event"
 )
 
-// MockLogger is a mock implementation of the plugin.Logger interface
-type MockLogger struct{}
-
 // MockAddress is a mock implementation of the ledger.Address interface
 type MockAddress struct {
 	common.Address // Embed the common.Address struct
@@ -86,7 +83,7 @@ func (m MockAddress) Type() uint8 {
 	return 0
 }
 
-func (m *MockAddress) UnmarshalCBOR(data []byte) error {
+func (m *MockAddress) UnmarshalCBOR(_ []byte) error {
 	return nil
 }
 
@@ -136,14 +133,8 @@ func (m MockOutput) ToPlutusData() data.PlutusData {
 }
 
 func (m MockOutput) String() string {
-	return ""
+	return "mockOutput"
 }
-
-func (l *MockLogger) Info(msg string, args ...any)  {}
-func (l *MockLogger) Error(msg string, args ...any) {}
-func (l *MockLogger) Debug(msg string, args ...any) {}
-func (l *MockLogger) Warn(msg string, args ...any)  {}
-func (l *MockLogger) Trace(msg string, args ...any) {}
 
 func TestNewChainSync(t *testing.T) {
 	c := New()
@@ -177,18 +168,6 @@ func TestChainSync_Stop(t *testing.T) {
 	case <-c.outputChan:
 	default:
 		t.Fatalf("expected outputChan to be closed")
-	}
-	select {
-	case <-c.errorChan:
-	default:
-		t.Fatalf("expected errorChan to be closed")
-	}
-}
-
-func TestChainSync_ErrorChan(t *testing.T) {
-	c := New()
-	if c.ErrorChan() == nil {
-		t.Fatalf("expected non-nil errorChan")
 	}
 }
 
@@ -233,15 +212,7 @@ func mockStakeCredentialValue(
 	}
 }
 
-func mockStakeCredentialPtr(
-	credType uint,
-	hashBytes []byte,
-) *common.Credential {
-	cred := mockStakeCredentialValue(credType, hashBytes)
-	return &cred
-}
-
-func mockAddress(addrStr string) common.Address {
+func mockAddress(_ string) common.Address {
 	return common.Address{}
 }
 
