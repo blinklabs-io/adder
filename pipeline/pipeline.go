@@ -33,6 +33,7 @@ type Pipeline struct {
 	outputs    []plugin.Plugin
 	wg         sync.WaitGroup
 	stopOnce   sync.Once
+	closeOnce  sync.Once // protects channel closes
 }
 
 func New() *Pipeline {
@@ -164,9 +165,12 @@ func (p *Pipeline) Stop() error {
 			}
 		}
 
-		close(p.errorChan)
-		close(p.filterChan)
-		close(p.outputChan)
+		// Close pipeline-owned channels safely
+		p.closeOnce.Do(func() {
+			close(p.errorChan)
+			close(p.filterChan)
+			close(p.outputChan)
+		})
 	})
 
 	return errors.Join(stopErrors...)
