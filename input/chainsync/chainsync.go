@@ -409,7 +409,12 @@ func (c *ChainSync) handleRollForward(
 	for t, transaction := range block.Transactions() {
 		resolvedInputs, err := resolveTransactionInputs(transaction, c)
 		if err != nil {
-			return err
+			slog.Error(
+				"failed to resolve transaction inputs via Kupo, emitting without resolved inputs",
+				"err",
+				err,
+			)
+			resolvedInputs = nil
 		}
 		if t < 0 || t > math.MaxUint32 {
 			return errors.New("invalid number of transactions")
@@ -491,7 +496,12 @@ func (c *ChainSync) handleBlockFetchBlock(
 	for t, transaction := range block.Transactions() {
 		resolvedInputs, err := resolveTransactionInputs(transaction, c)
 		if err != nil {
-			return err
+			slog.Error(
+				"failed to resolve transaction inputs via Kupo, emitting without resolved inputs",
+				"err",
+				err,
+			)
+			resolvedInputs = nil
 		}
 		if t < 0 || t > math.MaxUint32 {
 			return errors.New("invalid number of transactions")
