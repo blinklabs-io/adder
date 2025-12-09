@@ -30,22 +30,22 @@ output: log
 #kupo_url: http://localhost:1442
 
 # Shelley transition epoch
-# Default: 208 (mainnet)
-# Preview: 4
-# Preprod: 4
+# Mainnet: 208
+# Preview testnet: 4
+# Preprod testnet: 4
 shelley_trans_epoch: 208
 
 # Byron genesis configuration
 byron_genesis:
   # End slot of the Byron era
   # Mainnet: 4492799
-  # Preview: 0 (no Byron era)
-  # Preprod: 86399
+  # Preview testnet: 0 (no Byron era)
+  # Preprod testnet: 86399
   end_slot: 4492799
   
   # Byron epoch length in slots
   # Mainnet: 21600
-  # Preview/Preprod: 21600 (or 0 if no Byron)
+  # Preview/Preprod testnets: 86400 (or 0 if no Byron)
   epoch_length: 21600
   
   # Byron slots per epoch
@@ -56,8 +56,8 @@ byron_genesis:
 shelley_genesis:
   # Shelley epoch length in slots
   # Mainnet: 432000
-  # Preview: 86400
-  # Preprod: 86400
+  # Preview testnet: 86400
+  # Preprod testnet: 86400
   epoch_length: 432000
 
 # Plugin options
@@ -67,10 +67,12 @@ plugins:
   input:
     # Chainsync input plugin options
     chainsync:
-      network: preview
+      # Network to connect to (mainnet, preview, or preprod)
+      network: mainnet
+      # For testnet use: network: preview or network: preprod
       # Alternatively, specify socket path and network magic:
       #socket_path: /path/to/node.socket
-      #network_magic: 42
+      #network_magic: 764824073  # mainnet magic
 
   # Output plugin options
   output:
