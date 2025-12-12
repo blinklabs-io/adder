@@ -1,0 +1,82 @@
+---
+# Example config
+
+# Api server address
+api:
+  address: 0.0.0.0
+  port: 8080
+
+# Logging options
+logging:
+  # Log level
+  level: info
+
+# Debug options
+debug:
+  # Debug listener address
+  address: localhost
+
+  # Debug listener port
+  # Set this to a non-zero value to enable debug listener
+  port: 0
+
+# Input plugin to use
+input: chainsync
+
+# Output plugin to use
+output: log
+
+# Kupo URL for querying UTxOs (optional)
+#kupo_url: http://localhost:1442
+
+# Shelley transition epoch
+# Mainnet: 208
+# Preview testnet: 4
+# Preprod testnet: 4
+shelley_trans_epoch: 208
+
+# Byron genesis configuration
+byron_genesis:
+  # End slot of the Byron era
+  # Mainnet: 4492799
+  # Preview testnet: 0 (no Byron era)
+  # Preprod testnet: 86399
+  end_slot: 4492799
+  
+  # Byron epoch length in slots
+  # Mainnet: 21600
+  # Preview/Preprod testnets: 86400 (or 0 if no Byron)
+  epoch_length: 21600
+  
+  # Byron slots per epoch
+  # Usually same as epoch_length
+  byron_slots_per_epoch: 21600
+
+# Shelley genesis configuration
+shelley_genesis:
+  # Shelley epoch length in slots
+  # Mainnet: 432000
+  # Preview testnet: 86400
+  # Preprod testnet: 86400
+  epoch_length: 432000
+
+# Plugin options
+plugins:
+
+  # Input plugin options
+  input:
+    # Chainsync input plugin options
+    chainsync:
+      # Network to connect to (mainnet, preview, or preprod)
+      network: mainnet
+      # For testnet use: network: preview or network: preprod
+      # Alternatively, specify socket path and network magic:
+      #socket_path: /path/to/node.socket
+      #network_magic: 764824073  # mainnet magic
+
+  # Output plugin options
+  output:
+    # Log output plugin options
+    log:
+      # Logging level
+      level: info
