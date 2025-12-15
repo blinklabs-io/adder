@@ -32,7 +32,7 @@ import (
 )
 
 type PushOutput struct {
-	errorChan              chan error
+	errorChan              chan<- error
 	eventChan              chan event.Event
 	logger                 plugin.Logger
 	accessToken            string
@@ -54,7 +54,6 @@ type PushPayload struct {
 
 func New(options ...PushOptionFunc) *PushOutput {
 	p := &PushOutput{
-		errorChan: make(chan error),
 		eventChan: make(chan event.Event, 10),
 	}
 	for _, option := range options {
@@ -286,13 +285,12 @@ func (p *PushOutput) GetProjectId() error {
 // Stop the embedded output
 func (p *PushOutput) Stop() error {
 	close(p.eventChan)
-	close(p.errorChan)
 	return nil
 }
 
-// ErrorChan returns the input error channel
-func (p *PushOutput) ErrorChan() chan error {
-	return p.errorChan
+// SetErrorChan sets the error channel
+func (p *PushOutput) SetErrorChan(ch chan<- error) {
+	p.errorChan = ch
 }
 
 // InputChan returns the input event channel

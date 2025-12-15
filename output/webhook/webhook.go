@@ -39,7 +39,7 @@ const (
 )
 
 type WebhookOutput struct {
-	errorChan  chan error
+	errorChan  chan<- error
 	eventChan  chan event.Event
 	logger     plugin.Logger
 	format     string
@@ -51,7 +51,6 @@ type WebhookOutput struct {
 
 func New(options ...WebhookOptionFunc) *WebhookOutput {
 	w := &WebhookOutput{
-		errorChan:  make(chan error),
 		eventChan:  make(chan event.Event, 10),
 		format:     "adder",
 		url:        "http://localhost:3000",
@@ -303,13 +302,12 @@ func (w *WebhookOutput) SendWebhook(e *event.Event) error {
 // Stop the embedded output
 func (w *WebhookOutput) Stop() error {
 	close(w.eventChan)
-	close(w.errorChan)
 	return nil
 }
 
-// ErrorChan returns the input error channel
-func (w *WebhookOutput) ErrorChan() chan error {
-	return w.errorChan
+// SetErrorChan sets the error channel
+func (w *WebhookOutput) SetErrorChan(ch chan<- error) {
+	w.errorChan = ch
 }
 
 // InputChan returns the input event channel

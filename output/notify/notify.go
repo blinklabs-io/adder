@@ -28,7 +28,7 @@ import (
 var icon []byte
 
 type NotifyOutput struct {
-	errorChan chan error
+	errorChan chan<- error
 	eventChan chan event.Event
 	logger    plugin.Logger
 	title     string
@@ -36,7 +36,6 @@ type NotifyOutput struct {
 
 func New(options ...NotifyOptionFunc) *NotifyOutput {
 	n := &NotifyOutput{
-		errorChan: make(chan error),
 		eventChan: make(chan event.Event, 10),
 		title:     "Adder",
 	}
@@ -166,13 +165,12 @@ func (n *NotifyOutput) Start() error {
 // Stop the embedded output
 func (n *NotifyOutput) Stop() error {
 	close(n.eventChan)
-	close(n.errorChan)
 	return nil
 }
 
-// ErrorChan returns the input error channel
-func (n *NotifyOutput) ErrorChan() chan error {
-	return n.errorChan
+// SetErrorChan sets the error channel
+func (n *NotifyOutput) SetErrorChan(ch chan<- error) {
+	n.errorChan = ch
 }
 
 // InputChan returns the input event channel

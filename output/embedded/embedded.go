@@ -23,7 +23,7 @@ import (
 type CallbackFunc func(event.Event) error
 
 type EmbeddedOutput struct {
-	errorChan    chan error
+	errorChan    chan<- error
 	eventChan    chan event.Event
 	callbackFunc CallbackFunc
 	outputChan   chan event.Event
@@ -31,7 +31,6 @@ type EmbeddedOutput struct {
 
 func New(options ...EmbeddedOptionFunc) *EmbeddedOutput {
 	e := &EmbeddedOutput{
-		errorChan: make(chan error),
 		eventChan: make(chan event.Event, 10),
 	}
 	for _, option := range options {
@@ -51,7 +50,9 @@ func (e *EmbeddedOutput) Start() error {
 			}
 			if e.callbackFunc != nil {
 				if err := e.callbackFunc(evt); err != nil {
-					e.errorChan <- fmt.Errorf("callback function error: %w", err)
+					if e.errorChan != nil {
+						e.errorChan <- fmt.Errorf("callback function error: %w", err)
+					}
 					return
 				}
 			}
@@ -66,16 +67,15 @@ func (e *EmbeddedOutput) Start() error {
 // Stop the embedded output
 func (e *EmbeddedOutput) Stop() error {
 	close(e.eventChan)
-	close(e.errorChan)
 	if e.outputChan != nil {
 		close(e.outputChan)
 	}
 	return nil
 }
 
-// ErrorChan returns the input error channel
-func (e *EmbeddedOutput) ErrorChan() chan error {
-	return e.errorChan
+// SetErrorChan sets the error channel
+func (e *EmbeddedOutput) SetErrorChan(ch chan<- error) {
+	e.errorChan = ch
 }
 
 // InputChan returns the input event channel

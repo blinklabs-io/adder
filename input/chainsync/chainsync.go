@@ -91,7 +91,7 @@ type ChainSync struct {
 	kupoClient         *kugo.Client
 	oConn              *ouroboros.Connection
 	eventChan          chan event.Event
-	errorChan          chan error
+	errorChan          chan<- error
 	status             *ChainSyncStatus
 	dialFamily         string
 	kupoUrl            string
@@ -128,7 +128,6 @@ type StatusUpdateFunc func(ChainSyncStatus)
 // New returns a new ChainSync object with the specified options applied
 func New(options ...ChainSyncOptionFunc) *ChainSync {
 	c := &ChainSync{
-		errorChan:       make(chan error),
 		eventChan:       make(chan event.Event, 10),
 		intersectPoints: []ocommon.Point{},
 		status:          &ChainSyncStatus{},
@@ -169,13 +168,12 @@ func (c *ChainSync) Start() error {
 func (c *ChainSync) Stop() error {
 	err := c.oConn.Close()
 	close(c.eventChan)
-	close(c.errorChan)
 	return err
 }
 
-// ErrorChan returns the input error channel
-func (c *ChainSync) ErrorChan() chan error {
-	return c.errorChan
+// SetErrorChan sets the error channel
+func (c *ChainSync) SetErrorChan(ch chan<- error) {
+	c.errorChan = ch
 }
 
 // InputChan always returns nil
@@ -315,7 +313,14 @@ func (c *ChainSync) setupConnection() error {
 				}
 			} else {
 				// Pass error through our own error channel
-				c.errorChan <- err
+				if c.errorChan != nil {
+					c.errorChan <- err
+				} else if c.logger != nil {
+					c.logger.Warn(fmt.Sprintf(
+						"error occurred but no error channel set: %s",
+						err,
+					))
+				}
 			}
 		}
 	}()
