@@ -25,6 +25,7 @@ import (
 	"net/url"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/SundaeSwap-finance/kugo"
@@ -91,7 +92,8 @@ type ChainSync struct {
 	kupoClient         *kugo.Client
 	oConn              *ouroboros.Connection
 	eventChan          chan event.Event
-	errorChan          chan<- error
+	eventChanOnce      sync.Once
+	errorChan          chan error
 	status             *ChainSyncStatus
 	dialFamily         string
 	kupoUrl            string
@@ -128,7 +130,6 @@ type StatusUpdateFunc func(ChainSyncStatus)
 // New returns a new ChainSync object with the specified options applied
 func New(options ...ChainSyncOptionFunc) *ChainSync {
 	c := &ChainSync{
-		eventChan:       make(chan event.Event, 10),
 		intersectPoints: []ocommon.Point{},
 		status:          &ChainSyncStatus{},
 	}
@@ -142,6 +143,9 @@ func New(options ...ChainSyncOptionFunc) *ChainSync {
 
 // Start the chain sync input
 func (c *ChainSync) Start() error {
+	c.eventChan = make(chan event.Event, 10)
+	c.eventChanOnce = sync.Once{}
+	c.errorChan = make(chan error)
 	if err := c.setupConnection(); err != nil {
 		return err
 	}
@@ -166,14 +170,25 @@ func (c *ChainSync) Start() error {
 
 // Stop the chain sync input
 func (c *ChainSync) Stop() error {
-	err := c.oConn.Close()
-	close(c.eventChan)
+	var err error
+	if c.oConn != nil {
+		err = c.oConn.Close()
+		c.oConn = nil
+	}
+	if c.eventChan != nil {
+		close(c.eventChan)
+		c.eventChan = nil
+	}
+	if c.errorChan != nil {
+		close(c.errorChan)
+		c.errorChan = nil
+	}
 	return err
 }
 
-// SetErrorChan sets the error channel
-func (c *ChainSync) SetErrorChan(ch chan<- error) {
-	c.errorChan = ch
+// ErrorChan returns the input error channel
+func (c *ChainSync) ErrorChan() chan error {
+	return c.errorChan
 }
 
 // InputChan always returns nil
@@ -183,6 +198,11 @@ func (c *ChainSync) InputChan() chan<- event.Event {
 
 // OutputChan returns the output event channel
 func (c *ChainSync) OutputChan() <-chan event.Event {
+	c.eventChanOnce.Do(func() {
+		if c.eventChan == nil {
+			c.eventChan = make(chan event.Event, 10)
+		}
+	})
 	return c.eventChan
 }
 

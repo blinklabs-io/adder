@@ -26,7 +26,7 @@ import (
 )
 
 type ChainSync struct {
-	errorChan               chan<- error
+	errorChan               chan error
 	inputChan               chan event.Event
 	outputChan              chan event.Event
 	logger                  plugin.Logger
@@ -39,6 +39,7 @@ type ChainSync struct {
 // New returns a new ChainSync object with the specified options applied
 func New(options ...ChainSyncOptionFunc) *ChainSync {
 	c := &ChainSync{
+		errorChan:  make(chan error),
 		inputChan:  make(chan event.Event, 10),
 		outputChan: make(chan event.Event, 10),
 	}
@@ -329,14 +330,24 @@ func (c *ChainSync) Start() error {
 
 // Stop the chain sync filter
 func (c *ChainSync) Stop() error {
-	close(c.inputChan)
-	close(c.outputChan)
+	if c.inputChan != nil {
+		close(c.inputChan)
+		c.inputChan = nil
+	}
+	if c.outputChan != nil {
+		close(c.outputChan)
+		c.outputChan = nil
+	}
+	if c.errorChan != nil {
+		close(c.errorChan)
+		c.errorChan = nil
+	}
 	return nil
 }
 
-// SetErrorChan sets the error channel
-func (c *ChainSync) SetErrorChan(ch chan<- error) {
-	c.errorChan = ch
+// ErrorChan returns the filter error channel
+func (c *ChainSync) ErrorChan() chan error {
+	return c.errorChan
 }
 
 // InputChan returns the input event channel

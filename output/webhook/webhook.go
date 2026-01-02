@@ -24,6 +24,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/blinklabs-io/adder/event"
@@ -39,19 +40,19 @@ const (
 )
 
 type WebhookOutput struct {
-	errorChan  chan<- error
-	eventChan  chan event.Event
-	logger     plugin.Logger
-	format     string
-	url        string
-	username   string
-	password   string
-	skipVerify bool
+	eventChanOnce sync.Once
+	errorChan     chan error
+	eventChan     chan event.Event
+	logger        plugin.Logger
+	format        string
+	url           string
+	username      string
+	password      string
+	skipVerify    bool
 }
 
 func New(options ...WebhookOptionFunc) *WebhookOutput {
 	w := &WebhookOutput{
-		eventChan:  make(chan event.Event, 10),
 		format:     "adder",
 		url:        "http://localhost:3000",
 		skipVerify: false,
@@ -64,6 +65,9 @@ func New(options ...WebhookOptionFunc) *WebhookOutput {
 
 // Start the webhook output
 func (w *WebhookOutput) Start() error {
+	w.eventChan = make(chan event.Event, 10)
+	w.eventChanOnce = sync.Once{}
+	w.errorChan = make(chan error)
 	logger := logging.GetLogger()
 	logger.Info("starting webhook server")
 	go func() {
@@ -301,17 +305,29 @@ func (w *WebhookOutput) SendWebhook(e *event.Event) error {
 
 // Stop the embedded output
 func (w *WebhookOutput) Stop() error {
-	close(w.eventChan)
+	if w.eventChan != nil {
+		close(w.eventChan)
+		w.eventChan = nil
+	}
+	if w.errorChan != nil {
+		close(w.errorChan)
+		w.errorChan = nil
+	}
 	return nil
 }
 
-// SetErrorChan sets the error channel
-func (w *WebhookOutput) SetErrorChan(ch chan<- error) {
-	w.errorChan = ch
+// ErrorChan returns the input error channel
+func (w *WebhookOutput) ErrorChan() chan error {
+	return w.errorChan
 }
 
 // InputChan returns the input event channel
 func (w *WebhookOutput) InputChan() chan<- event.Event {
+	w.eventChanOnce.Do(func() {
+		if w.eventChan == nil {
+			w.eventChan = make(chan event.Event, 10)
+		}
+	})
 	return w.eventChan
 }
 
