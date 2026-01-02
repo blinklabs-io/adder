@@ -25,6 +25,7 @@ import (
 	"net/url"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/SundaeSwap-finance/kugo"
@@ -88,10 +89,12 @@ type ChainSync struct {
 	logger             plugin.Logger
 	statusUpdateFunc   StatusUpdateFunc
 	blockfetchDoneChan chan struct{}
+	doneChan           chan struct{}
+	wg                 sync.WaitGroup
 	kupoClient         *kugo.Client
 	oConn              *ouroboros.Connection
 	eventChan          chan event.Event
-	errorChan          chan<- error
+	errorChan          chan error
 	status             *ChainSyncStatus
 	dialFamily         string
 	kupoUrl            string
@@ -128,7 +131,6 @@ type StatusUpdateFunc func(ChainSyncStatus)
 // New returns a new ChainSync object with the specified options applied
 func New(options ...ChainSyncOptionFunc) *ChainSync {
 	c := &ChainSync{
-		eventChan:       make(chan event.Event, 10),
 		intersectPoints: []ocommon.Point{},
 		status:          &ChainSyncStatus{},
 	}
@@ -142,6 +144,14 @@ func New(options ...ChainSyncOptionFunc) *ChainSync {
 
 // Start the chain sync input
 func (c *ChainSync) Start() error {
+	// Guard against double-start: signal existing goroutines to stop and wait
+	if c.doneChan != nil {
+		close(c.doneChan)
+		c.wg.Wait()
+	}
+	c.eventChan = make(chan event.Event, 10)
+	c.errorChan = make(chan error)
+	c.doneChan = make(chan struct{})
 	if err := c.setupConnection(); err != nil {
 		return err
 	}
@@ -166,14 +176,33 @@ func (c *ChainSync) Start() error {
 
 // Stop the chain sync input
 func (c *ChainSync) Stop() error {
-	err := c.oConn.Close()
-	close(c.eventChan)
+	var err error
+	// Signal goroutines to stop first
+	if c.doneChan != nil {
+		close(c.doneChan)
+		c.doneChan = nil
+	}
+	// Close connection (this unblocks the error handler goroutine)
+	if c.oConn != nil {
+		err = c.oConn.Close()
+		c.oConn = nil
+	}
+	// Wait for goroutines to exit before closing channels
+	c.wg.Wait()
+	if c.eventChan != nil {
+		close(c.eventChan)
+		c.eventChan = nil
+	}
+	if c.errorChan != nil {
+		close(c.errorChan)
+		c.errorChan = nil
+	}
 	return err
 }
 
-// SetErrorChan sets the error channel
-func (c *ChainSync) SetErrorChan(ch chan<- error) {
-	c.errorChan = ch
+// ErrorChan returns the plugin's error channel
+func (c *ChainSync) ErrorChan() <-chan error {
+	return c.errorChan
 }
 
 // InputChan always returns nil
@@ -257,6 +286,7 @@ func (c *ChainSync) setupConnection() error {
 		c.logger.Info("connected to node at " + c.dialAddress)
 	}
 	// Start async error handler
+	c.wg.Add(1)
 	go func() {
 		err, ok := <-c.oConn.ErrorChan()
 		if ok {
@@ -298,6 +328,10 @@ func (c *ChainSync) setupConnection() error {
 					if len(c.cursorCache) > 0 {
 						c.intersectPoints = c.cursorCache[:]
 					}
+					// Decrement WaitGroup before calling Start() to avoid deadlock.
+					// Start() calls wg.Wait(), so this goroutine must release its
+					// count first. The new Start() will spawn a fresh error handler.
+					c.wg.Done()
 					// Restart the connection
 					if err := c.Start(); err != nil {
 						if c.logger != nil {
@@ -307,22 +341,38 @@ func (c *ChainSync) setupConnection() error {
 								err,
 							))
 						}
+						// Re-increment since we need to try again in this goroutine
+						c.wg.Add(1)
 						continue
 					}
-					break
+					// Successfully restarted - this goroutine exits,
+					// new goroutine from Start() takes over
+					return
 				}
 			} else {
-				// Pass error through our own error channel
-				if c.errorChan != nil {
-					c.errorChan <- err
-				} else if c.logger != nil {
-					c.logger.Warn(fmt.Sprintf(
-						"error occurred but no error channel set: %s",
-						err,
-					))
+				// Pass error through our own error channel, but check for shutdown
+				select {
+				case <-c.doneChan:
+					c.wg.Done()
+					return
+				default:
+					if c.errorChan != nil {
+						select {
+						case <-c.doneChan:
+							c.wg.Done()
+							return
+						case c.errorChan <- err:
+						}
+					} else if c.logger != nil {
+						c.logger.Warn(fmt.Sprintf(
+							"error occurred but no error channel set: %s",
+							err,
+						))
+					}
 				}
 			}
 		}
+		c.wg.Done()
 	}()
 	return nil
 }

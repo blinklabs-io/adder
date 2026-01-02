@@ -17,6 +17,7 @@ package chainsync
 import (
 	"encoding/hex"
 	"strings"
+	"sync"
 
 	"github.com/blinklabs-io/adder/event"
 	"github.com/blinklabs-io/adder/plugin"
@@ -26,9 +27,11 @@ import (
 )
 
 type ChainSync struct {
-	errorChan               chan<- error
+	errorChan               chan error
 	inputChan               chan event.Event
 	outputChan              chan event.Event
+	doneChan                chan struct{}
+	stopOnce                sync.Once
 	logger                  plugin.Logger
 	filterAddresses         []string
 	filterAssetFingerprints []string
@@ -38,10 +41,7 @@ type ChainSync struct {
 
 // New returns a new ChainSync object with the specified options applied
 func New(options ...ChainSyncOptionFunc) *ChainSync {
-	c := &ChainSync{
-		inputChan:  make(chan event.Event, 10),
-		outputChan: make(chan event.Event, 10),
-	}
+	c := &ChainSync{}
 	for _, option := range options {
 		option(c)
 	}
@@ -50,278 +50,292 @@ func New(options ...ChainSyncOptionFunc) *ChainSync {
 
 // Start the chain sync filter
 func (c *ChainSync) Start() error {
+	c.errorChan = make(chan error)
+	c.inputChan = make(chan event.Event, 10)
+	c.outputChan = make(chan event.Event, 10)
+	c.doneChan = make(chan struct{})
+	c.stopOnce = sync.Once{}
 	go func() {
 		// TODO: pre-process filter params to be more useful for direct comparison (#336)
 		for {
-			evt, ok := <-c.inputChan
-			// Channel has been closed, which means we're shutting down
-			if !ok {
+			select {
+			case <-c.doneChan:
 				return
-			}
-			switch v := evt.Payload.(type) {
-			case event.BlockEvent:
-				// Check pool filter
-				if len(c.filterPoolIds) > 0 {
-					filterMatched := false
-					for _, filterPoolId := range c.filterPoolIds {
-						isPoolBech32 := strings.HasPrefix(filterPoolId, "pool")
-						foundMatch := false
-						be := evt.Payload.(event.BlockEvent)
-						if be.IssuerVkey == filterPoolId {
-							foundMatch = true
-						} else if isPoolBech32 {
-							issuerBytes, err := hex.DecodeString(be.IssuerVkey)
-							if err != nil {
-								// eat this error... nom nom nom
-								continue
-							}
-							// lifted from gouroboros/ledger
-							convData, err := bech32.ConvertBits(issuerBytes, 8, 5, true)
-							if err != nil {
-								continue
-							}
-							encoded, err := bech32.Encode("pool", convData)
-							if err != nil {
-								continue
-							}
-							if encoded == filterPoolId {
-								foundMatch = true
-							}
-						}
-						if foundMatch {
-							filterMatched = true
-							break
-						}
-					}
-					// Skip the event if none of the filter values matched
-					if !filterMatched {
-						continue
-					}
+			case evt, ok := <-c.inputChan:
+				// Channel has been closed, which means we're shutting down
+				if !ok {
+					return
 				}
-			case event.TransactionEvent:
-				// Check address filter
-				if len(c.filterAddresses) > 0 {
-					filterMatched := false
-					for _, filterAddress := range c.filterAddresses {
-						isStakeAddress := strings.HasPrefix(filterAddress, "stake")
-						foundMatch := false
-						// Include resolved inputs as outputs for matching
-						allOutputs := append(v.Outputs, v.ResolvedInputs...)
-						for _, output := range allOutputs {
-							if output.Address().String() == filterAddress {
+				switch v := evt.Payload.(type) {
+				case event.BlockEvent:
+					// Check pool filter
+					if len(c.filterPoolIds) > 0 {
+						filterMatched := false
+						for _, filterPoolId := range c.filterPoolIds {
+							isPoolBech32 := strings.HasPrefix(filterPoolId, "pool")
+							foundMatch := false
+							be := evt.Payload.(event.BlockEvent)
+							if be.IssuerVkey == filterPoolId {
 								foundMatch = true
+							} else if isPoolBech32 {
+								issuerBytes, err := hex.DecodeString(be.IssuerVkey)
+								if err != nil {
+									// eat this error... nom nom nom
+									continue
+								}
+								// lifted from gouroboros/ledger
+								convData, err := bech32.ConvertBits(issuerBytes, 8, 5, true)
+								if err != nil {
+									continue
+								}
+								encoded, err := bech32.Encode("pool", convData)
+								if err != nil {
+									continue
+								}
+								if encoded == filterPoolId {
+									foundMatch = true
+								}
+							}
+							if foundMatch {
+								filterMatched = true
 								break
 							}
-							if isStakeAddress {
-								stakeAddr := output.Address().StakeAddress()
-								if stakeAddr == nil {
-									continue
-								}
-								if stakeAddr.String() == filterAddress {
+						}
+						// Skip the event if none of the filter values matched
+						if !filterMatched {
+							continue
+						}
+					}
+				case event.TransactionEvent:
+					// Check address filter
+					if len(c.filterAddresses) > 0 {
+						filterMatched := false
+						for _, filterAddress := range c.filterAddresses {
+							isStakeAddress := strings.HasPrefix(filterAddress, "stake")
+							foundMatch := false
+							// Include resolved inputs as outputs for matching
+							allOutputs := append(v.Outputs, v.ResolvedInputs...)
+							for _, output := range allOutputs {
+								if output.Address().String() == filterAddress {
 									foundMatch = true
 									break
 								}
-							}
-						}
-
-						if !foundMatch && isStakeAddress {
-							for _, certificate := range v.Certificates {
-								var credBytes []byte
-								switch cert := certificate.(type) {
-								case *common.StakeDelegationCertificate:
-									hash := cert.StakeCredential.Hash()
-									credBytes = hash[:]
-								case *common.StakeDeregistrationCertificate:
-									hash := cert.StakeCredential.Hash()
-									credBytes = hash[:]
-								default:
-									continue
-								}
-
-								convData, err := bech32.ConvertBits(credBytes, 8, 5, true)
-								if err != nil {
-									continue
-								}
-								encoded, err := bech32.Encode("stake", convData)
-								if err != nil {
-									continue
-								}
-								if encoded == filterAddress {
-									foundMatch = true
-									break
-								}
-							}
-						}
-
-						if foundMatch {
-							filterMatched = true
-							break
-						}
-					}
-					// Skip the event if none of the filter values matched
-					if !filterMatched {
-						continue
-					}
-				}
-				// Check policy ID filter
-				if len(c.filterPolicyIds) > 0 {
-					filterMatched := false
-					for _, filterPolicyId := range c.filterPolicyIds {
-						foundMatch := false
-						// Include resolved inputs as outputs for matching
-						allOutputs := append(v.Outputs, v.ResolvedInputs...)
-						for _, output := range allOutputs {
-							if output.Assets() != nil {
-								for _, policyId := range output.Assets().Policies() {
-									if policyId.String() == filterPolicyId {
+								if isStakeAddress {
+									stakeAddr := output.Address().StakeAddress()
+									if stakeAddr == nil {
+										continue
+									}
+									if stakeAddr.String() == filterAddress {
 										foundMatch = true
 										break
 									}
 								}
 							}
+
+							if !foundMatch && isStakeAddress {
+								for _, certificate := range v.Certificates {
+									var credBytes []byte
+									switch cert := certificate.(type) {
+									case *common.StakeDelegationCertificate:
+										hash := cert.StakeCredential.Hash()
+										credBytes = hash[:]
+									case *common.StakeDeregistrationCertificate:
+										hash := cert.StakeCredential.Hash()
+										credBytes = hash[:]
+									default:
+										continue
+									}
+
+									convData, err := bech32.ConvertBits(credBytes, 8, 5, true)
+									if err != nil {
+										continue
+									}
+									encoded, err := bech32.Encode("stake", convData)
+									if err != nil {
+										continue
+									}
+									if encoded == filterAddress {
+										foundMatch = true
+										break
+									}
+								}
+							}
+
 							if foundMatch {
+								filterMatched = true
 								break
 							}
 						}
-						if foundMatch {
-							filterMatched = true
-							break
+						// Skip the event if none of the filter values matched
+						if !filterMatched {
+							continue
 						}
 					}
-					// Skip the event if none of the filter values matched
-					if !filterMatched {
-						continue
-					}
-				}
-				// Check asset fingerprint filter
-				if len(c.filterAssetFingerprints) > 0 {
-					filterMatched := false
-					for _, filterAssetFingerprint := range c.filterAssetFingerprints {
-						foundMatch := false
-						// Include resolved inputs as outputs for matching
-						allOutputs := append(v.Outputs, v.ResolvedInputs...)
-						for _, output := range allOutputs {
-							if output.Assets() != nil {
-								for _, policyId := range output.Assets().Policies() {
-									for _, assetName := range output.Assets().Assets(policyId) {
-										assetFp := ledger.NewAssetFingerprint(policyId.Bytes(), assetName)
-										if assetFp.String() == filterAssetFingerprint {
+					// Check policy ID filter
+					if len(c.filterPolicyIds) > 0 {
+						filterMatched := false
+						for _, filterPolicyId := range c.filterPolicyIds {
+							foundMatch := false
+							// Include resolved inputs as outputs for matching
+							allOutputs := append(v.Outputs, v.ResolvedInputs...)
+							for _, output := range allOutputs {
+								if output.Assets() != nil {
+									for _, policyId := range output.Assets().Policies() {
+										if policyId.String() == filterPolicyId {
 											foundMatch = true
+											break
+										}
+									}
+								}
+								if foundMatch {
+									break
+								}
+							}
+							if foundMatch {
+								filterMatched = true
+								break
+							}
+						}
+						// Skip the event if none of the filter values matched
+						if !filterMatched {
+							continue
+						}
+					}
+					// Check asset fingerprint filter
+					if len(c.filterAssetFingerprints) > 0 {
+						filterMatched := false
+						for _, filterAssetFingerprint := range c.filterAssetFingerprints {
+							foundMatch := false
+							// Include resolved inputs as outputs for matching
+							allOutputs := append(v.Outputs, v.ResolvedInputs...)
+							for _, output := range allOutputs {
+								if output.Assets() != nil {
+									for _, policyId := range output.Assets().Policies() {
+										for _, assetName := range output.Assets().Assets(policyId) {
+											assetFp := ledger.NewAssetFingerprint(policyId.Bytes(), assetName)
+											if assetFp.String() == filterAssetFingerprint {
+												foundMatch = true
+											}
+										}
+										if foundMatch {
+											break
 										}
 									}
 									if foundMatch {
 										break
 									}
 								}
-								if foundMatch {
-									break
-								}
+							}
+							if foundMatch {
+								filterMatched = true
+								break
 							}
 						}
-						if foundMatch {
-							filterMatched = true
-							break
+						// Skip the event if none of the filter values matched
+						if !filterMatched {
+							continue
 						}
 					}
-					// Skip the event if none of the filter values matched
-					if !filterMatched {
-						continue
+					// Check pool filter
+					if len(c.filterPoolIds) > 0 {
+						filterMatched := false
+						for _, filterPoolId := range c.filterPoolIds {
+							if filterMatched {
+								break
+							}
+							isPoolBech32 := strings.HasPrefix(filterPoolId, "pool")
+							foundMatch := false
+							for _, certificate := range v.Certificates {
+								switch cert := certificate.(type) {
+								case *ledger.StakeDelegationCertificate:
+									b := &ledger.Blake2b224{}
+									copy(b[:], cert.PoolKeyHash[:])
+									if b.String() == filterPoolId {
+										foundMatch = true
+									} else if isPoolBech32 {
+										// lifted from gouroboros/ledger
+										convData, err := bech32.ConvertBits(certificate.Cbor(), 8, 5, true)
+										if err != nil {
+											continue
+										}
+										encoded, err := bech32.Encode("pool", convData)
+										if err != nil {
+											continue
+										}
+										if encoded == filterPoolId {
+											foundMatch = true
+										}
+									}
+									if foundMatch {
+										filterMatched = true
+										break
+									}
+								case *ledger.PoolRetirementCertificate:
+									b := &ledger.Blake2b224{}
+									copy(b[:], cert.PoolKeyHash[:])
+									if b.String() == filterPoolId {
+										foundMatch = true
+									} else if isPoolBech32 {
+										// lifted from gouroboros/ledger
+										convData, err := bech32.ConvertBits(certificate.Cbor(), 8, 5, true)
+										if err != nil {
+											continue
+										}
+										encoded, err := bech32.Encode("pool", convData)
+										if err != nil {
+											continue
+										}
+										if encoded == filterPoolId {
+											foundMatch = true
+										}
+									}
+									if foundMatch {
+										filterMatched = true
+										break
+									}
+								case *ledger.PoolRegistrationCertificate:
+									b := &ledger.Blake2b224{}
+									copy(b[:], cert.Operator[:])
+									if b.String() == filterPoolId {
+										foundMatch = true
+									} else if isPoolBech32 {
+										// lifted from gouroboros/ledger
+										convData, err := bech32.ConvertBits(certificate.Cbor(), 8, 5, true)
+										if err != nil {
+											continue
+										}
+										encoded, err := bech32.Encode("pool", convData)
+										if err != nil {
+											continue
+										}
+										if encoded == filterPoolId {
+											foundMatch = true
+										}
+									}
+									if foundMatch {
+										filterMatched = true
+										break
+									}
+								}
+							}
+							if foundMatch {
+								filterMatched = true
+								break
+							}
+						}
+						// Skip the event if none of the filter values matched
+						if !filterMatched {
+							continue
+						}
 					}
 				}
-				// Check pool filter
-				if len(c.filterPoolIds) > 0 {
-					filterMatched := false
-					for _, filterPoolId := range c.filterPoolIds {
-						if filterMatched {
-							break
-						}
-						isPoolBech32 := strings.HasPrefix(filterPoolId, "pool")
-						foundMatch := false
-						for _, certificate := range v.Certificates {
-							switch cert := certificate.(type) {
-							case *ledger.StakeDelegationCertificate:
-								b := &ledger.Blake2b224{}
-								copy(b[:], cert.PoolKeyHash[:])
-								if b.String() == filterPoolId {
-									foundMatch = true
-								} else if isPoolBech32 {
-									// lifted from gouroboros/ledger
-									convData, err := bech32.ConvertBits(certificate.Cbor(), 8, 5, true)
-									if err != nil {
-										continue
-									}
-									encoded, err := bech32.Encode("pool", convData)
-									if err != nil {
-										continue
-									}
-									if encoded == filterPoolId {
-										foundMatch = true
-									}
-								}
-								if foundMatch {
-									filterMatched = true
-									break
-								}
-							case *ledger.PoolRetirementCertificate:
-								b := &ledger.Blake2b224{}
-								copy(b[:], cert.PoolKeyHash[:])
-								if b.String() == filterPoolId {
-									foundMatch = true
-								} else if isPoolBech32 {
-									// lifted from gouroboros/ledger
-									convData, err := bech32.ConvertBits(certificate.Cbor(), 8, 5, true)
-									if err != nil {
-										continue
-									}
-									encoded, err := bech32.Encode("pool", convData)
-									if err != nil {
-										continue
-									}
-									if encoded == filterPoolId {
-										foundMatch = true
-									}
-								}
-								if foundMatch {
-									filterMatched = true
-									break
-								}
-							case *ledger.PoolRegistrationCertificate:
-								b := &ledger.Blake2b224{}
-								copy(b[:], cert.Operator[:])
-								if b.String() == filterPoolId {
-									foundMatch = true
-								} else if isPoolBech32 {
-									// lifted from gouroboros/ledger
-									convData, err := bech32.ConvertBits(certificate.Cbor(), 8, 5, true)
-									if err != nil {
-										continue
-									}
-									encoded, err := bech32.Encode("pool", convData)
-									if err != nil {
-										continue
-									}
-									if encoded == filterPoolId {
-										foundMatch = true
-									}
-								}
-								if foundMatch {
-									filterMatched = true
-									break
-								}
-							}
-						}
-						if foundMatch {
-							filterMatched = true
-							break
-						}
-					}
-					// Skip the event if none of the filter values matched
-					if !filterMatched {
-						continue
-					}
+				// Send event along, but check for shutdown
+				select {
+				case <-c.doneChan:
+					return
+				case c.outputChan <- evt:
 				}
 			}
-			c.outputChan <- evt
 		}
 	}()
 	return nil
@@ -329,14 +343,26 @@ func (c *ChainSync) Start() error {
 
 // Stop the chain sync filter
 func (c *ChainSync) Stop() error {
-	close(c.inputChan)
-	close(c.outputChan)
+	c.stopOnce.Do(func() {
+		if c.doneChan != nil {
+			close(c.doneChan)
+		}
+		if c.inputChan != nil {
+			close(c.inputChan)
+		}
+		if c.outputChan != nil {
+			close(c.outputChan)
+		}
+		if c.errorChan != nil {
+			close(c.errorChan)
+		}
+	})
 	return nil
 }
 
-// SetErrorChan sets the error channel
-func (c *ChainSync) SetErrorChan(ch chan<- error) {
-	c.errorChan = ch
+// ErrorChan returns the plugin's error channel
+func (c *ChainSync) ErrorChan() <-chan error {
+	return c.errorChan
 }
 
 // InputChan returns the input event channel

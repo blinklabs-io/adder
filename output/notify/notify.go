@@ -28,7 +28,7 @@ import (
 var icon []byte
 
 type NotifyOutput struct {
-	errorChan chan<- error
+	errorChan chan error
 	eventChan chan event.Event
 	logger    plugin.Logger
 	title     string
@@ -36,8 +36,7 @@ type NotifyOutput struct {
 
 func New(options ...NotifyOptionFunc) *NotifyOutput {
 	n := &NotifyOutput{
-		eventChan: make(chan event.Event, 10),
-		title:     "Adder",
+		title: "Adder",
 	}
 	for _, option := range options {
 		option(n)
@@ -47,6 +46,8 @@ func New(options ...NotifyOptionFunc) *NotifyOutput {
 
 // Start the notify output
 func (n *NotifyOutput) Start() error {
+	n.eventChan = make(chan event.Event, 10)
+	n.errorChan = make(chan error)
 	// Write our icon asset
 	userCacheDir, err := os.UserCacheDir()
 	if err != nil {
@@ -164,13 +165,20 @@ func (n *NotifyOutput) Start() error {
 
 // Stop the embedded output
 func (n *NotifyOutput) Stop() error {
-	close(n.eventChan)
+	if n.eventChan != nil {
+		close(n.eventChan)
+		n.eventChan = nil
+	}
+	if n.errorChan != nil {
+		close(n.errorChan)
+		n.errorChan = nil
+	}
 	return nil
 }
 
-// SetErrorChan sets the error channel
-func (n *NotifyOutput) SetErrorChan(ch chan<- error) {
-	n.errorChan = ch
+// ErrorChan returns the plugin's error channel
+func (n *NotifyOutput) ErrorChan() <-chan error {
+	return n.errorChan
 }
 
 // InputChan returns the input event channel

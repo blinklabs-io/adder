@@ -24,7 +24,7 @@ import (
 )
 
 type LogOutput struct {
-	errorChan    chan<- error
+	errorChan    chan error
 	eventChan    chan event.Event
 	logger       plugin.Logger
 	outputLogger *slog.Logger
@@ -33,8 +33,7 @@ type LogOutput struct {
 
 func New(options ...LogOptionFunc) *LogOutput {
 	l := &LogOutput{
-		eventChan: make(chan event.Event, 10),
-		level:     "info",
+		level: "info",
 	}
 	for _, option := range options {
 		option(l)
@@ -54,6 +53,8 @@ func New(options ...LogOptionFunc) *LogOutput {
 
 // Start the log output
 func (l *LogOutput) Start() error {
+	l.eventChan = make(chan event.Event, 10)
+	l.errorChan = make(chan error)
 	go func() {
 		for {
 			evt, ok := <-l.eventChan
@@ -79,13 +80,20 @@ func (l *LogOutput) Start() error {
 
 // Stop the log output
 func (l *LogOutput) Stop() error {
-	close(l.eventChan)
+	if l.eventChan != nil {
+		close(l.eventChan)
+		l.eventChan = nil
+	}
+	if l.errorChan != nil {
+		close(l.errorChan)
+		l.errorChan = nil
+	}
 	return nil
 }
 
-// SetErrorChan sets the error channel
-func (l *LogOutput) SetErrorChan(ch chan<- error) {
-	l.errorChan = ch
+// ErrorChan returns the plugin's error channel
+func (l *LogOutput) ErrorChan() <-chan error {
+	return l.errorChan
 }
 
 // InputChan returns the input event channel
