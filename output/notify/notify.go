@@ -18,6 +18,7 @@ import (
 	_ "embed"
 	"fmt"
 	"os"
+	"sync"
 
 	"github.com/blinklabs-io/adder/event"
 	"github.com/blinklabs-io/adder/plugin"
@@ -28,16 +29,16 @@ import (
 var icon []byte
 
 type NotifyOutput struct {
-	errorChan chan<- error
-	eventChan chan event.Event
-	logger    plugin.Logger
-	title     string
+	eventChanOnce sync.Once
+	errorChan     chan error
+	eventChan     chan event.Event
+	logger        plugin.Logger
+	title         string
 }
 
 func New(options ...NotifyOptionFunc) *NotifyOutput {
 	n := &NotifyOutput{
-		eventChan: make(chan event.Event, 10),
-		title:     "Adder",
+		title: "Adder",
 	}
 	for _, option := range options {
 		option(n)
@@ -47,6 +48,9 @@ func New(options ...NotifyOptionFunc) *NotifyOutput {
 
 // Start the notify output
 func (n *NotifyOutput) Start() error {
+	n.eventChan = make(chan event.Event, 10)
+	n.eventChanOnce = sync.Once{}
+	n.errorChan = make(chan error)
 	// Write our icon asset
 	userCacheDir, err := os.UserCacheDir()
 	if err != nil {
@@ -164,17 +168,29 @@ func (n *NotifyOutput) Start() error {
 
 // Stop the embedded output
 func (n *NotifyOutput) Stop() error {
-	close(n.eventChan)
+	if n.eventChan != nil {
+		close(n.eventChan)
+		n.eventChan = nil
+	}
+	if n.errorChan != nil {
+		close(n.errorChan)
+		n.errorChan = nil
+	}
 	return nil
 }
 
-// SetErrorChan sets the error channel
-func (n *NotifyOutput) SetErrorChan(ch chan<- error) {
-	n.errorChan = ch
+// ErrorChan returns the input error channel
+func (n *NotifyOutput) ErrorChan() chan error {
+	return n.errorChan
 }
 
 // InputChan returns the input event channel
 func (n *NotifyOutput) InputChan() chan<- event.Event {
+	n.eventChanOnce.Do(func() {
+		if n.eventChan == nil {
+			n.eventChan = make(chan event.Event, 10)
+		}
+	})
 	return n.eventChan
 }
 

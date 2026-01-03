@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"math/big"
 	"os"
+	"sync"
 
 	"github.com/blinklabs-io/adder/event"
 	"github.com/blinklabs-io/adder/internal/logging"
@@ -32,7 +33,8 @@ import (
 )
 
 type PushOutput struct {
-	errorChan              chan<- error
+	eventChanOnce          sync.Once
+	errorChan              chan error
 	eventChan              chan event.Event
 	logger                 plugin.Logger
 	accessToken            string
@@ -53,9 +55,7 @@ type PushPayload struct {
 }
 
 func New(options ...PushOptionFunc) *PushOutput {
-	p := &PushOutput{
-		eventChan: make(chan event.Event, 10),
-	}
+	p := &PushOutput{}
 	for _, option := range options {
 		option(p)
 	}
@@ -69,6 +69,9 @@ func New(options ...PushOptionFunc) *PushOutput {
 }
 
 func (p *PushOutput) Start() error {
+	p.eventChan = make(chan event.Event, 10)
+	p.eventChanOnce = sync.Once{}
+	p.errorChan = make(chan error)
 	logger := logging.GetLogger()
 	logger.Info("starting push notification server")
 	go func() {
@@ -284,17 +287,29 @@ func (p *PushOutput) GetProjectId() error {
 
 // Stop the embedded output
 func (p *PushOutput) Stop() error {
-	close(p.eventChan)
+	if p.eventChan != nil {
+		close(p.eventChan)
+		p.eventChan = nil
+	}
+	if p.errorChan != nil {
+		close(p.errorChan)
+		p.errorChan = nil
+	}
 	return nil
 }
 
-// SetErrorChan sets the error channel
-func (p *PushOutput) SetErrorChan(ch chan<- error) {
-	p.errorChan = ch
+// ErrorChan returns the input error channel
+func (p *PushOutput) ErrorChan() chan error {
+	return p.errorChan
 }
 
 // InputChan returns the input event channel
 func (p *PushOutput) InputChan() chan<- event.Event {
+	p.eventChanOnce.Do(func() {
+		if p.eventChan == nil {
+			p.eventChan = make(chan event.Event, 10)
+		}
+	})
 	return p.eventChan
 }
 

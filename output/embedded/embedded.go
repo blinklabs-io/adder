@@ -16,6 +16,7 @@ package embedded
 
 import (
 	"fmt"
+	"sync"
 
 	"github.com/blinklabs-io/adder/event"
 )
@@ -23,16 +24,15 @@ import (
 type CallbackFunc func(event.Event) error
 
 type EmbeddedOutput struct {
-	errorChan    chan<- error
-	eventChan    chan event.Event
-	callbackFunc CallbackFunc
-	outputChan   chan event.Event
+	eventChanOnce sync.Once
+	errorChan     chan error
+	eventChan     chan event.Event
+	callbackFunc  CallbackFunc
+	outputChan    chan event.Event
 }
 
 func New(options ...EmbeddedOptionFunc) *EmbeddedOutput {
-	e := &EmbeddedOutput{
-		eventChan: make(chan event.Event, 10),
-	}
+	e := &EmbeddedOutput{}
 	for _, option := range options {
 		option(e)
 	}
@@ -41,6 +41,9 @@ func New(options ...EmbeddedOptionFunc) *EmbeddedOutput {
 
 // Start the embedded output
 func (e *EmbeddedOutput) Start() error {
+	e.eventChan = make(chan event.Event, 10)
+	e.eventChanOnce = sync.Once{}
+	e.errorChan = make(chan error)
 	go func() {
 		for {
 			evt, ok := <-e.eventChan
@@ -66,20 +69,33 @@ func (e *EmbeddedOutput) Start() error {
 
 // Stop the embedded output
 func (e *EmbeddedOutput) Stop() error {
-	close(e.eventChan)
+	if e.eventChan != nil {
+		close(e.eventChan)
+		e.eventChan = nil
+	}
+	if e.errorChan != nil {
+		close(e.errorChan)
+		e.errorChan = nil
+	}
 	if e.outputChan != nil {
 		close(e.outputChan)
+		e.outputChan = nil
 	}
 	return nil
 }
 
-// SetErrorChan sets the error channel
-func (e *EmbeddedOutput) SetErrorChan(ch chan<- error) {
-	e.errorChan = ch
+// ErrorChan returns the input error channel
+func (e *EmbeddedOutput) ErrorChan() chan error {
+	return e.errorChan
 }
 
 // InputChan returns the input event channel
 func (e *EmbeddedOutput) InputChan() chan<- event.Event {
+	e.eventChanOnce.Do(func() {
+		if e.eventChan == nil {
+			e.eventChan = make(chan event.Event, 10)
+		}
+	})
 	return e.eventChan
 }
 

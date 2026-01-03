@@ -22,7 +22,7 @@ import (
 )
 
 type Event struct {
-	errorChan   chan<- error
+	errorChan   chan error
 	inputChan   chan event.Event
 	outputChan  chan event.Event
 	logger      plugin.Logger
@@ -32,6 +32,7 @@ type Event struct {
 // New returns a new Event object with the specified options applied
 func New(options ...EventOptionFunc) *Event {
 	e := &Event{
+		errorChan:  make(chan error),
 		inputChan:  make(chan event.Event, 10),
 		outputChan: make(chan event.Event, 10),
 	}
@@ -66,14 +67,24 @@ func (e *Event) Start() error {
 
 // Stop the event filter
 func (e *Event) Stop() error {
-	close(e.inputChan)
-	close(e.outputChan)
+	if e.inputChan != nil {
+		close(e.inputChan)
+		e.inputChan = nil
+	}
+	if e.outputChan != nil {
+		close(e.outputChan)
+		e.outputChan = nil
+	}
+	if e.errorChan != nil {
+		close(e.errorChan)
+		e.errorChan = nil
+	}
 	return nil
 }
 
-// SetErrorChan sets the error channel
-func (e *Event) SetErrorChan(ch chan<- error) {
-	e.errorChan = ch
+// ErrorChan returns the filter error channel
+func (e *Event) ErrorChan() chan error {
+	return e.errorChan
 }
 
 // InputChan returns the input event channel
