@@ -135,7 +135,7 @@ func formatWebhook(e *event.Event, format string) []byte {
 	case "discord":
 		var dwe DiscordWebhookEvent
 		var dme DiscordMessageEmbed
-		var dmes []*DiscordMessageEmbed
+		dmes := make([]*DiscordMessageEmbed, 0, 1)
 		var dmefs []*DiscordMessageEmbedField
 		switch e.Type {
 		case "chainsync.block":

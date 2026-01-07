@@ -144,8 +144,9 @@ func NewFromCmdlineOptions() plugin.Plugin {
 		WithDelayConfirmations(cmdlineOptions.delayConfirmations),
 	}
 	if cmdlineOptions.intersectPoint != "" {
-		intersectPoints := []ocommon.Point{}
-		for point := range strings.SplitSeq(cmdlineOptions.intersectPoint, ",") {
+		pointsSlice := strings.Split(cmdlineOptions.intersectPoint, ",")
+		intersectPoints := make([]ocommon.Point, 0, len(pointsSlice))
+		for _, point := range pointsSlice {
 			intersectPointParts := strings.Split(point, ".")
 			if len(intersectPointParts) != 2 {
 				panic("invalid intersect point format")
