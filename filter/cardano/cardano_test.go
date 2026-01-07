@@ -154,16 +154,13 @@ func TestCardano_Start(t *testing.T) {
 
 func TestCardano_Stop(t *testing.T) {
 	c := New()
-	err := c.Stop()
+	err := c.Start()
+	if err != nil {
+		t.Fatalf("expected no error on start, got %v", err)
+	}
+	err = c.Stop()
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
-	}
-	// Check if channels are nil after stop
-	if c.inputChan != nil {
-		t.Fatalf("expected inputChan to be nil after stop")
-	}
-	if c.outputChan != nil {
-		t.Fatalf("expected outputChan to be nil after stop")
 	}
 }
 

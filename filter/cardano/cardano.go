@@ -30,6 +30,7 @@ type Cardano struct {
 	inputChan  chan event.Event
 	outputChan chan event.Event
 	doneChan   chan struct{}
+	wg         sync.WaitGroup
 	stopOnce   sync.Once
 	logger     plugin.Logger
 	filterSet  filterSet
@@ -51,12 +52,14 @@ func (c *Cardano) Start() error {
 	c.outputChan = make(chan event.Event, 10)
 	c.doneChan = make(chan struct{})
 	c.stopOnce = sync.Once{}
+	c.wg.Add(1)
 	go c.processEvents()
 	return nil
 }
 
 // processEvents handles incoming events and applies filters
 func (c *Cardano) processEvents() {
+	defer c.wg.Done()
 	for {
 		select {
 		case <-c.doneChan:
@@ -287,6 +290,8 @@ func (c *Cardano) Stop() error {
 		if c.doneChan != nil {
 			close(c.doneChan)
 		}
+		// Wait for goroutine to exit before closing channels
+		c.wg.Wait()
 		if c.inputChan != nil {
 			close(c.inputChan)
 		}
