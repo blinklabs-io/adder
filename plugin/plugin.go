@@ -19,12 +19,11 @@ import (
 )
 
 // Plugin represents a pluggable component in the pipeline.
-// The pipeline injects an error channel via SetErrorChan; plugins send errors but never close channels.
-// A nil error channel means "no error reporting"; plugins must handle this gracefully.
+// Plugins own their error channel; the pipeline reads from it.
 type Plugin interface {
 	Start() error
 	Stop() error
-	SetErrorChan(chan<- error)
+	ErrorChan() <-chan error
 	InputChan() chan<- event.Event
 	OutputChan() <-chan event.Event
 }

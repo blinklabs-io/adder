@@ -16,25 +16,26 @@ package event
 
 import (
 	"slices"
+	"sync"
 
 	"github.com/blinklabs-io/adder/event"
 	"github.com/blinklabs-io/adder/plugin"
 )
 
 type Event struct {
-	errorChan   chan<- error
+	errorChan   chan error
 	inputChan   chan event.Event
 	outputChan  chan event.Event
+	doneChan    chan struct{}
+	wg          sync.WaitGroup
+	stopOnce    sync.Once
 	logger      plugin.Logger
 	filterTypes []string
 }
 
 // New returns a new Event object with the specified options applied
 func New(options ...EventOptionFunc) *Event {
-	e := &Event{
-		inputChan:  make(chan event.Event, 10),
-		outputChan: make(chan event.Event, 10),
-	}
+	e := &Event{}
 	for _, option := range options {
 		option(e)
 	}
@@ -43,22 +44,42 @@ func New(options ...EventOptionFunc) *Event {
 
 // Start the event filter
 func (e *Event) Start() error {
+	// Guard against double-start: wait for existing goroutine to exit
+	if e.doneChan != nil {
+		close(e.doneChan)
+		e.wg.Wait()
+	}
+	e.errorChan = make(chan error)
+	e.inputChan = make(chan event.Event, 10)
+	e.outputChan = make(chan event.Event, 10)
+	e.doneChan = make(chan struct{})
+	e.stopOnce = sync.Once{}
+	e.wg.Add(1)
 	go func() {
+		defer e.wg.Done()
 		for {
-			evt, ok := <-e.inputChan
-			// Channel has been closed, which means we're shutting down
-			if !ok {
+			select {
+			case <-e.doneChan:
 				return
-			}
-			// Drop events if we have a type filter configured and the event doesn't match
-			if len(e.filterTypes) > 0 {
-				matched := slices.Contains(e.filterTypes, evt.Type)
-				if !matched {
-					continue
+			case evt, ok := <-e.inputChan:
+				// Channel has been closed, which means we're shutting down
+				if !ok {
+					return
+				}
+				// Drop events if we have a type filter configured and the event doesn't match
+				if len(e.filterTypes) > 0 {
+					matched := slices.Contains(e.filterTypes, evt.Type)
+					if !matched {
+						continue
+					}
+				}
+				// Send event along, but check for shutdown
+				select {
+				case <-e.doneChan:
+					return
+				case e.outputChan <- evt:
 				}
 			}
-			// Send event along
-			e.outputChan <- evt
 		}
 	}()
 	return nil
@@ -66,14 +87,28 @@ func (e *Event) Start() error {
 
 // Stop the event filter
 func (e *Event) Stop() error {
-	close(e.inputChan)
-	close(e.outputChan)
+	e.stopOnce.Do(func() {
+		if e.doneChan != nil {
+			close(e.doneChan)
+		}
+		// Wait for goroutine to exit before closing channels
+		e.wg.Wait()
+		if e.inputChan != nil {
+			close(e.inputChan)
+		}
+		if e.outputChan != nil {
+			close(e.outputChan)
+		}
+		if e.errorChan != nil {
+			close(e.errorChan)
+		}
+	})
 	return nil
 }
 
-// SetErrorChan sets the error channel
-func (e *Event) SetErrorChan(ch chan<- error) {
-	e.errorChan = ch
+// ErrorChan returns the plugin's error channel
+func (e *Event) ErrorChan() <-chan error {
+	return e.errorChan
 }
 
 // InputChan returns the input event channel

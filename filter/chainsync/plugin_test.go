@@ -50,11 +50,24 @@ func TestPluginChannels(t *testing.T) {
 	// Create a new plugin instance
 	p := NewFromCmdlineOptions()
 
+	// Start the plugin (channels are created in Start())
+	err := p.Start()
+	assert.NoError(t, err, "Plugin should start without errors")
+	defer p.Stop()
+
 	// Verify that the input channel is not nil
-	assert.NotNil(t, p.InputChan(), "Input channel should not be nil")
+	assert.NotNil(
+		t,
+		p.InputChan(),
+		"Input channel should not be nil after Start()",
+	)
 
 	// Verify that the output channel is not nil
-	assert.NotNil(t, p.OutputChan(), "Output channel should not be nil")
+	assert.NotNil(
+		t,
+		p.OutputChan(),
+		"Output channel should not be nil after Start()",
+	)
 }
 
 func TestPluginEventProcessing(t *testing.T) {

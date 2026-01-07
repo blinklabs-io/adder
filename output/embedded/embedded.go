@@ -16,6 +16,7 @@ package embedded
 
 import (
 	"fmt"
+	"sync"
 
 	"github.com/blinklabs-io/adder/event"
 )
@@ -23,16 +24,16 @@ import (
 type CallbackFunc func(event.Event) error
 
 type EmbeddedOutput struct {
-	errorChan    chan<- error
+	errorChan    chan error
 	eventChan    chan event.Event
+	doneChan     chan struct{}
+	wg           sync.WaitGroup
 	callbackFunc CallbackFunc
 	outputChan   chan event.Event
 }
 
 func New(options ...EmbeddedOptionFunc) *EmbeddedOutput {
-	e := &EmbeddedOutput{
-		eventChan: make(chan event.Event, 10),
-	}
+	e := &EmbeddedOutput{}
 	for _, option := range options {
 		option(e)
 	}
@@ -41,23 +42,44 @@ func New(options ...EmbeddedOptionFunc) *EmbeddedOutput {
 
 // Start the embedded output
 func (e *EmbeddedOutput) Start() error {
+	// Guard against double-start: wait for existing goroutine to exit
+	if e.doneChan != nil {
+		close(e.doneChan)
+		e.wg.Wait()
+	}
+	e.eventChan = make(chan event.Event, 10)
+	e.errorChan = make(chan error)
+	e.doneChan = make(chan struct{})
+	e.wg.Add(1)
 	go func() {
+		defer e.wg.Done()
 		for {
-			evt, ok := <-e.eventChan
-			// Channel has been closed, which means we're shutting down
-			if !ok {
+			select {
+			case <-e.doneChan:
 				return
-			}
-			if e.callbackFunc != nil {
-				if err := e.callbackFunc(evt); err != nil {
-					if e.errorChan != nil {
-						e.errorChan <- fmt.Errorf("callback function error: %w", err)
-					}
+			case evt, ok := <-e.eventChan:
+				// Channel has been closed, which means we're shutting down
+				if !ok {
 					return
 				}
-			}
-			if e.outputChan != nil {
-				e.outputChan <- evt
+				if e.callbackFunc != nil {
+					if err := e.callbackFunc(evt); err != nil {
+						// Use select to safely send error without racing with Stop()
+						select {
+						case <-e.doneChan:
+							return
+						case e.errorChan <- fmt.Errorf("callback function error: %w", err):
+						}
+						return
+					}
+				}
+				if e.outputChan != nil {
+					select {
+					case <-e.doneChan:
+						return
+					case e.outputChan <- evt:
+					}
+				}
 			}
 		}
 	}()
@@ -66,16 +88,30 @@ func (e *EmbeddedOutput) Start() error {
 
 // Stop the embedded output
 func (e *EmbeddedOutput) Stop() error {
-	close(e.eventChan)
+	if e.doneChan != nil {
+		close(e.doneChan)
+		e.doneChan = nil
+	}
+	// Wait for goroutine to exit before closing channels
+	e.wg.Wait()
+	if e.eventChan != nil {
+		close(e.eventChan)
+		e.eventChan = nil
+	}
+	if e.errorChan != nil {
+		close(e.errorChan)
+		e.errorChan = nil
+	}
 	if e.outputChan != nil {
 		close(e.outputChan)
+		e.outputChan = nil
 	}
 	return nil
 }
 
-// SetErrorChan sets the error channel
-func (e *EmbeddedOutput) SetErrorChan(ch chan<- error) {
-	e.errorChan = ch
+// ErrorChan returns the plugin's error channel
+func (e *EmbeddedOutput) ErrorChan() <-chan error {
+	return e.errorChan
 }
 
 // InputChan returns the input event channel

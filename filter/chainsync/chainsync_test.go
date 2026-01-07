@@ -158,30 +158,36 @@ func TestChainSync_Stop(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
-	// Check if channels are closed
-	select {
-	case <-c.inputChan:
-	default:
-		t.Fatalf("expected inputChan to be closed")
+	// Check if channels are nil after stop
+	if c.inputChan != nil {
+		t.Fatalf("expected inputChan to be nil after stop")
 	}
-	select {
-	case <-c.outputChan:
-	default:
-		t.Fatalf("expected outputChan to be closed")
+	if c.outputChan != nil {
+		t.Fatalf("expected outputChan to be nil after stop")
 	}
 }
 
 func TestChainSync_InputChan(t *testing.T) {
 	c := New()
+	err := c.Start()
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	defer c.Stop()
 	if c.InputChan() == nil {
-		t.Fatalf("expected non-nil inputChan")
+		t.Fatalf("expected non-nil inputChan after Start()")
 	}
 }
 
 func TestChainSync_OutputChan(t *testing.T) {
 	c := New()
+	err := c.Start()
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	defer c.Stop()
 	if c.OutputChan() == nil {
-		t.Fatalf("expected non-nil outputChan")
+		t.Fatalf("expected non-nil outputChan after Start()")
 	}
 }
 

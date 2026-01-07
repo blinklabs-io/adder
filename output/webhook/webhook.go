@@ -24,6 +24,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/blinklabs-io/adder/event"
@@ -39,8 +40,10 @@ const (
 )
 
 type WebhookOutput struct {
-	errorChan  chan<- error
+	errorChan  chan error
 	eventChan  chan event.Event
+	doneChan   chan struct{}
+	wg         sync.WaitGroup
 	logger     plugin.Logger
 	format     string
 	url        string
@@ -51,7 +54,6 @@ type WebhookOutput struct {
 
 func New(options ...WebhookOptionFunc) *WebhookOutput {
 	w := &WebhookOutput{
-		eventChan:  make(chan event.Event, 10),
 		format:     "adder",
 		url:        "http://localhost:3000",
 		skipVerify: false,
@@ -64,43 +66,57 @@ func New(options ...WebhookOptionFunc) *WebhookOutput {
 
 // Start the webhook output
 func (w *WebhookOutput) Start() error {
+	// Guard against double-start: wait for existing goroutine to exit
+	if w.doneChan != nil {
+		close(w.doneChan)
+		w.wg.Wait()
+	}
+	w.eventChan = make(chan event.Event, 10)
+	w.errorChan = make(chan error)
+	w.doneChan = make(chan struct{})
 	logger := logging.GetLogger()
 	logger.Info("starting webhook server")
+	w.wg.Add(1)
 	go func() {
+		defer w.wg.Done()
 		for {
-			evt, ok := <-w.eventChan
-			// Channel has been closed, which means we're shutting down
-			if !ok {
+			select {
+			case <-w.doneChan:
 				return
-			}
-			payload := evt.Payload
-			if payload == nil {
-				panic(fmt.Errorf("ERROR: %v", payload))
-			}
-			context := evt.Context
-			switch evt.Type {
-			case "chainsync.block":
-				if context == nil {
-					panic(fmt.Errorf("ERROR: %v", context))
+			case evt, ok := <-w.eventChan:
+				// Channel has been closed, which means we're shutting down
+				if !ok {
+					return
 				}
-				be := payload.(event.BlockEvent)
-				bc := context.(event.BlockContext)
-				evt.Payload = be
-				evt.Context = bc
-			case "chainsync.rollback":
-				re := payload.(event.RollbackEvent)
-				evt.Payload = re
-			case "chainsync.transaction":
-				te := payload.(event.TransactionEvent)
-				evt.Payload = te
-			default:
-				logger.Error("unknown event type: " + evt.Type)
-				return
-			}
-			// TODO: error handle (#334)
-			err := w.SendWebhook(&evt)
-			if err != nil {
-				logger.Error(fmt.Sprintf("ERROR: %s", err))
+				payload := evt.Payload
+				if payload == nil {
+					panic(fmt.Errorf("ERROR: %v", payload))
+				}
+				context := evt.Context
+				switch evt.Type {
+				case "chainsync.block":
+					if context == nil {
+						panic(fmt.Errorf("ERROR: %v", context))
+					}
+					be := payload.(event.BlockEvent)
+					bc := context.(event.BlockContext)
+					evt.Payload = be
+					evt.Context = bc
+				case "chainsync.rollback":
+					re := payload.(event.RollbackEvent)
+					evt.Payload = re
+				case "chainsync.transaction":
+					te := payload.(event.TransactionEvent)
+					evt.Payload = te
+				default:
+					logger.Error("unknown event type: " + evt.Type)
+					return
+				}
+				// TODO: error handle (#334)
+				err := w.SendWebhook(&evt)
+				if err != nil {
+					logger.Error(fmt.Sprintf("ERROR: %s", err))
+				}
 			}
 		}
 	}()
@@ -299,15 +315,28 @@ func (w *WebhookOutput) SendWebhook(e *event.Event) error {
 	return nil
 }
 
-// Stop the embedded output
+// Stop the webhook output
 func (w *WebhookOutput) Stop() error {
-	close(w.eventChan)
+	if w.doneChan != nil {
+		close(w.doneChan)
+		w.doneChan = nil
+	}
+	// Wait for goroutine to exit before closing channels
+	w.wg.Wait()
+	if w.eventChan != nil {
+		close(w.eventChan)
+		w.eventChan = nil
+	}
+	if w.errorChan != nil {
+		close(w.errorChan)
+		w.errorChan = nil
+	}
 	return nil
 }
 
-// SetErrorChan sets the error channel
-func (w *WebhookOutput) SetErrorChan(ch chan<- error) {
-	w.errorChan = ch
+// ErrorChan returns the plugin's error channel
+func (w *WebhookOutput) ErrorChan() <-chan error {
+	return w.errorChan
 }
 
 // InputChan returns the input event channel
