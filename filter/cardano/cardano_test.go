@@ -11,7 +11,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package chainsync
+package cardano
 
 import (
 	"bytes"
@@ -136,14 +136,14 @@ func (m MockOutput) String() string {
 	return "mockOutput"
 }
 
-func TestNewChainSync(t *testing.T) {
+func TestNewCardano(t *testing.T) {
 	c := New()
 	if c == nil {
-		t.Fatalf("expected non-nil ChainSync instance")
+		t.Fatalf("expected non-nil Cardano instance")
 	}
 }
 
-func TestChainSync_Start(t *testing.T) {
+func TestCardano_Start(t *testing.T) {
 	c := New()
 	err := c.Start()
 	if err != nil {
@@ -152,7 +152,7 @@ func TestChainSync_Start(t *testing.T) {
 	// Additional checks can be added here
 }
 
-func TestChainSync_Stop(t *testing.T) {
+func TestCardano_Stop(t *testing.T) {
 	c := New()
 	err := c.Stop()
 	if err != nil {
@@ -167,7 +167,7 @@ func TestChainSync_Stop(t *testing.T) {
 	}
 }
 
-func TestChainSync_InputChan(t *testing.T) {
+func TestCardano_InputChan(t *testing.T) {
 	c := New()
 	err := c.Start()
 	if err != nil {
@@ -179,7 +179,7 @@ func TestChainSync_InputChan(t *testing.T) {
 	}
 }
 
-func TestChainSync_OutputChan(t *testing.T) {
+func TestCardano_OutputChan(t *testing.T) {
 	c := New()
 	err := c.Start()
 	if err != nil {
@@ -270,7 +270,7 @@ func TestFilterByAddress(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Create chainsync instance with address filter
+			// Create cardano instance with address filter
 			cs := New(WithAddresses([]string{tt.filterAddress}))
 
 			output := MockOutput{
@@ -317,7 +317,7 @@ func TestFilterByAddress(t *testing.T) {
 }
 
 func TestFilterByPolicyId(t *testing.T) {
-	// Setup ChainSync with policy ID filter
+	// Setup Cardano with policy ID filter
 	filterPolicyId := "random_policy_id"
 	policyIdHash := common.Blake2b224Hash([]byte(filterPolicyId))
 	cs := New(WithPolicies([]string{policyIdHash.String()}))
@@ -350,7 +350,7 @@ func TestFilterByPolicyId(t *testing.T) {
 
 	// Start the filter
 	err := cs.Start()
-	assert.NoError(t, err, "ChainSync filter should start without error")
+	assert.NoError(t, err, "Cardano filter should start without error")
 	defer cs.Stop()
 
 	// Send event to input channel
@@ -371,7 +371,7 @@ func TestFilterByPolicyId(t *testing.T) {
 }
 
 func TestFilterByAssetFingerprint(t *testing.T) {
-	// Setup ChainSync with asset fingerprint filter
+	// Setup Cardano with asset fingerprint filter
 	filterAssetFingerprint := "asset1e58wmplshqdkkq97tz02chq980456wgt35tfjr"
 	cs := New(WithAssetFingerprints([]string{filterAssetFingerprint}))
 
@@ -403,7 +403,7 @@ func TestFilterByAssetFingerprint(t *testing.T) {
 
 	// Start the filter
 	err := cs.Start()
-	assert.NoError(t, err, "ChainSync filter should start without error")
+	assert.NoError(t, err, "Cardano filter should start without error")
 	defer cs.Stop()
 
 	// Send event to input channel
@@ -424,19 +424,21 @@ func TestFilterByAssetFingerprint(t *testing.T) {
 }
 
 func TestFilterByPoolId(t *testing.T) {
-	// Setup ChainSync with pool ID filter
-	cs := New(WithPoolIds([]string{"pool1"}))
+	// Setup Cardano with pool ID filter using hex format
+	// The cardano filter uses O(1) lookups with pre-computed hex/bech32 conversions
+	poolHex := "abcd1234567890abcdef1234567890abcdef1234567890abcdef12345678"
+	cs := New(WithPoolIds([]string{poolHex}))
 
-	// Mock block event
+	// Mock block event - IssuerVkey should match the hex pool ID
 	evt := event.Event{
 		Payload: event.BlockEvent{
-			IssuerVkey: "pool1", // Match the filterPoolIds
+			IssuerVkey: poolHex, // Match the filterPoolIds
 		},
 	}
 
 	// Start the filter
 	err := cs.Start()
-	assert.NoError(t, err, "ChainSync filter should start without error")
+	assert.NoError(t, err, "Cardano filter should start without error")
 	defer cs.Stop()
 
 	// Send event to input channel
