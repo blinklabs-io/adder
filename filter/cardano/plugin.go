@@ -1,4 +1,4 @@
-// Copyright 2023 Blink Labs Software
+// Copyright 2025 Blink Labs Software
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package chainsync
+package cardano
 
 import (
 	"strings"
@@ -32,14 +32,14 @@ func init() {
 	plugin.Register(
 		plugin.PluginEntry{
 			Type:               plugin.PluginTypeFilter,
-			Name:               "chainsync",
-			Description:        "filters chainsync events",
+			Name:               "cardano",
+			Description:        "filters Cardano blockchain events by address, asset, policy, or pool",
 			NewFromOptionsFunc: NewFromCmdlineOptions,
 			Options: []plugin.PluginOption{
 				{
 					Name:         "address",
 					Type:         plugin.PluginOptionTypeString,
-					Description:  "specifies address to filter on",
+					Description:  "specifies address(es) to filter on (comma-separated)",
 					DefaultValue: "",
 					Dest:         &(cmdlineOptions.address),
 					CustomFlag:   "address",
@@ -47,7 +47,7 @@ func init() {
 				{
 					Name:         "asset",
 					Type:         plugin.PluginOptionTypeString,
-					Description:  "specifies the asset fingerprint (asset1xxx) to filter on",
+					Description:  "specifies asset fingerprint(s) to filter on (comma-separated)",
 					DefaultValue: "",
 					Dest:         &(cmdlineOptions.asset),
 					CustomFlag:   "asset",
@@ -55,7 +55,7 @@ func init() {
 				{
 					Name:         "policy",
 					Type:         plugin.PluginOptionTypeString,
-					Description:  "specifies asset policy ID to filter on",
+					Description:  "specifies asset policy ID(s) to filter on (comma-separated)",
 					DefaultValue: "",
 					Dest:         &(cmdlineOptions.policyId),
 					CustomFlag:   "policy",
@@ -63,7 +63,7 @@ func init() {
 				{
 					Name:         "pool",
 					Type:         plugin.PluginOptionTypeString,
-					Description:  "specifies Pool ID to filter on",
+					Description:  "specifies Pool ID(s) to filter on (comma-separated)",
 					DefaultValue: "",
 					Dest:         &(cmdlineOptions.poolId),
 					CustomFlag:   "pool",
@@ -74,9 +74,9 @@ func init() {
 }
 
 func NewFromCmdlineOptions() plugin.Plugin {
-	pluginOptions := []ChainSyncOptionFunc{
+	pluginOptions := []CardanoOptionFunc{
 		WithLogger(
-			logging.GetLogger().With("plugin", "filter.chainsync"),
+			logging.GetLogger().With("plugin", "filter.cardano"),
 		),
 	}
 	if cmdlineOptions.address != "" {
