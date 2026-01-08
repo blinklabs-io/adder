@@ -491,6 +491,26 @@ func (c *ChainSync) handleRollForward(
 			),
 		)
 		tmpEvents = append(tmpEvents, txEvt)
+		// Emit governance event if transaction contains governance data
+		if event.HasGovernanceData(transaction) {
+			govEvt := event.New(
+				"chainsync.governance",
+				time.Now(),
+				event.NewGovernanceContext(
+					block,
+					transaction,
+					//nolint:gosec // t is bounds-checked above
+					uint32(t),
+					c.networkMagic,
+				),
+				event.NewGovernanceEvent(
+					block,
+					transaction,
+					c.includeCbor,
+				),
+			)
+			tmpEvents = append(tmpEvents, govEvt)
+		}
 	}
 	updateTip := ochainsync.Tip{
 		Point: ocommon.Point{
@@ -578,6 +598,26 @@ func (c *ChainSync) handleBlockFetchBlock(
 			),
 		)
 		c.eventChan <- txEvt
+		// Emit governance event if transaction contains governance data
+		if event.HasGovernanceData(transaction) {
+			govEvt := event.New(
+				"chainsync.governance",
+				time.Now(),
+				event.NewGovernanceContext(
+					block,
+					transaction,
+					//nolint:gosec // t is bounds-checked above
+					uint32(t),
+					c.networkMagic,
+				),
+				event.NewGovernanceEvent(
+					block,
+					transaction,
+					c.includeCbor,
+				),
+			)
+			c.eventChan <- govEvt
+		}
 	}
 	c.updateStatus(
 		block.SlotNumber(),
