@@ -149,7 +149,11 @@ func NewFromCmdlineOptions() plugin.Plugin {
 		for _, point := range pointsSlice {
 			intersectPointParts := strings.Split(point, ".")
 			if len(intersectPointParts) != 2 {
-				panic("invalid intersect point format")
+				logging.GetLogger().Error(
+					"invalid intersect point format: expected '<slot>.<hash>'",
+					"point", point,
+				)
+				return nil
 			}
 			intersectSlot, err := strconv.ParseUint(
 				intersectPointParts[0],
@@ -157,11 +161,21 @@ func NewFromCmdlineOptions() plugin.Plugin {
 				64,
 			)
 			if err != nil {
-				panic("invalid intersect point format")
+				logging.GetLogger().Error(
+					"invalid intersect point format: slot must be a number",
+					"point", point,
+					"error", err,
+				)
+				return nil
 			}
 			intersectHashBytes, err := hex.DecodeString(intersectPointParts[1])
 			if err != nil {
-				panic("invalid intersect point format")
+				logging.GetLogger().Error(
+					"invalid intersect point format: hash must be valid hex",
+					"point", point,
+					"error", err,
+				)
+				return nil
 			}
 			intersectPoints = append(
 				intersectPoints,
