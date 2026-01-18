@@ -22,9 +22,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
-
-	"github.com/blinklabs-io/adder/internal/logging"
 )
 
 type Message struct {
@@ -59,10 +56,9 @@ func WithNotification(title string, body string) MessageOption {
 	}
 }
 
-func NewMessage(token string, opts ...MessageOption) *Message {
+func NewMessage(token string, opts ...MessageOption) (*Message, error) {
 	if token == "" {
-		logging.GetLogger().Error("Token is mandatory for FCM message")
-		os.Exit(1)
+		return nil, errors.New("token is mandatory for FCM message")
 	}
 
 	msg := &Message{
@@ -73,7 +69,7 @@ func NewMessage(token string, opts ...MessageOption) *Message {
 	for _, opt := range opts {
 		opt(&msg.MessageContent)
 	}
-	return msg
+	return msg, nil
 }
 
 func Send(accessToken string, projectId string, msg *Message) error {

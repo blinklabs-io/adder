@@ -52,12 +52,19 @@ func init() {
 }
 
 func NewFromCmdlineOptions() plugin.Plugin {
-	p := New(
+	p, err := New(
 		WithLogger(
 			logging.GetLogger().With("plugin", "output.push"),
 		),
 		WithAccessTokenUrl(cmdlineOptions.accessTokenUrl),
 		WithServiceAccountFilePath(cmdlineOptions.serviceAccountFilePath),
 	)
+	if err != nil {
+		logging.GetLogger().Error(
+			"failed to create push output plugin",
+			"error", err,
+		)
+		return nil
+	}
 	return p
 }

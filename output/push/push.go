@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math/big"
 	"os"
 
@@ -52,18 +53,16 @@ type PushPayload struct {
 	Notifications []Notification `json:"notifications"`
 }
 
-func New(options ...PushOptionFunc) *PushOutput {
+func New(options ...PushOptionFunc) (*PushOutput, error) {
 	p := &PushOutput{}
 	for _, option := range options {
 		option(p)
 	}
 
 	if err := p.GetProjectId(); err != nil {
-		logging.GetLogger().
-			Error(fmt.Sprintf("Failed to get project ID: %v", err))
-		os.Exit(1)
+		return nil, fmt.Errorf("failed to get project ID: %w", err)
 	}
-	return p
+	return p, nil
 }
 
 func (p *PushOutput) Start() error {
@@ -80,18 +79,21 @@ func (p *PushOutput) Start() error {
 			}
 			// Get access token per each event
 			if err := p.GetAccessToken(); err != nil {
-				return
+				slog.Error("failed to get access token", "error", err)
+				continue
 			}
 
 			switch evt.Type {
 			case "chainsync.block":
 				payload := evt.Payload
 				if payload == nil {
-					panic(fmt.Errorf("ERROR: %v", payload))
+					slog.Error("block event has nil payload")
+					continue
 				}
 				context := evt.Context
 				if context == nil {
-					panic(fmt.Errorf("ERROR: %v", context))
+					slog.Error("block event has nil context")
+					continue
 				}
 
 				be := payload.(event.BlockEvent)
@@ -119,7 +121,8 @@ func (p *PushOutput) Start() error {
 			case "chainsync.rollback":
 				payload := evt.Payload
 				if payload == nil {
-					panic(fmt.Errorf("ERROR: %v", payload))
+					slog.Error("rollback event has nil payload")
+					continue
 				}
 
 				re := payload.(event.RollbackEvent)
@@ -133,11 +136,13 @@ func (p *PushOutput) Start() error {
 			case "chainsync.transaction":
 				payload := evt.Payload
 				if payload == nil {
-					panic(fmt.Errorf("ERROR: %v", payload))
+					slog.Error("transaction event has nil payload")
+					continue
 				}
 				context := evt.Context
 				if context == nil {
-					panic(fmt.Errorf("ERROR: %v", context))
+					slog.Error("transaction event has nil context")
+					continue
 				}
 
 				te := payload.(event.TransactionEvent)
@@ -207,7 +212,7 @@ func (p *PushOutput) processFcmNotifications(title, body string) {
 	// Fetch new FCM tokens and add to p.fcmTokens
 	p.refreshFcmTokens()
 
-	// If no FCM tokens exist, log and exit
+	// If no FCM tokens exist, log and return
 	if len(p.fcmTokens) == 0 {
 		logging.GetLogger().Info("No FCM tokens found. Skipping notification.")
 		return
@@ -215,10 +220,15 @@ func (p *PushOutput) processFcmNotifications(title, body string) {
 
 	// Send notification to each FCM token
 	for _, fcmToken := range p.fcmTokens {
-		msg := fcm.NewMessage(
+		msg, err := fcm.NewMessage(
 			fcmToken,
 			fcm.WithNotification(title, body),
 		)
+		if err != nil {
+			logging.GetLogger().
+				Error(fmt.Sprintf("Failed to create message for token %s: %v", fcmToken, err))
+			continue
+		}
 
 		if err := fcm.Send(p.accessToken, p.projectID, msg); err != nil {
 			logging.GetLogger().
@@ -233,25 +243,17 @@ func (p *PushOutput) processFcmNotifications(title, body string) {
 func (p *PushOutput) GetAccessToken() error {
 	data, err := os.ReadFile(p.serviceAccountFilePath)
 	if err != nil {
-		logging.GetLogger().
-			Error(fmt.Sprintf("Failed to read the credential file: %v", err))
-		os.Exit(1)
-		return err
+		return fmt.Errorf("failed to read credential file: %w", err)
 	}
 
 	conf, err := google.JWTConfigFromJSON(data, p.accessTokenUrl)
 	if err != nil {
-		logging.GetLogger().
-			Error(fmt.Sprintf("Failed to parse the credential file: %v", err))
-		os.Exit(1)
-		return err
+		return fmt.Errorf("failed to parse credential file: %w", err)
 	}
 
 	token, err := conf.TokenSource(context.Background()).Token()
 	if err != nil {
-		logging.GetLogger().Error(fmt.Sprintf("Failed to get token: %v", err))
-		os.Exit(1)
-		return err
+		return fmt.Errorf("failed to get token: %w", err)
 	}
 
 	fmt.Println(token.AccessToken)
@@ -259,23 +261,17 @@ func (p *PushOutput) GetAccessToken() error {
 	return nil
 }
 
-// Get project ID from file
+// GetProjectId gets project ID from file
 func (p *PushOutput) GetProjectId() error {
 	data, err := os.ReadFile(p.serviceAccountFilePath)
 	if err != nil {
-		logging.GetLogger().
-			Error(fmt.Sprintf("Failed to read the credential file: %v", err))
-		os.Exit(1)
-		return err
+		return fmt.Errorf("failed to read credential file: %w", err)
 	}
 
 	// Get project ID from file
 	var v map[string]any
 	if err := json.Unmarshal(data, &v); err != nil {
-		logging.GetLogger().
-			Error(fmt.Sprintf("Failed to parse the credential file: %v", err))
-		os.Exit(1)
-		return err
+		return fmt.Errorf("failed to parse credential file: %w", err)
 	}
 	p.projectID = v["project_id"].(string)
 
