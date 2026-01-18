@@ -33,6 +33,8 @@ type Pipeline struct {
 	outputs    []plugin.Plugin
 	wg         sync.WaitGroup
 	stopOnce   sync.Once
+	running    bool
+	runningMu  sync.RWMutex
 }
 
 func New() *Pipeline {
@@ -134,6 +136,11 @@ func (p *Pipeline) Start() error {
 	}
 	p.wg.Add(1)
 	go p.outputChanLoop()
+
+	p.runningMu.Lock()
+	p.running = true
+	p.runningMu.Unlock()
+
 	return nil
 }
 
@@ -144,6 +151,10 @@ func (p *Pipeline) Stop() error {
 	var stopErrors []error
 
 	p.stopOnce.Do(func() {
+		p.runningMu.Lock()
+		p.running = false
+		p.runningMu.Unlock()
+
 		close(p.doneChan)
 		p.wg.Wait()
 
@@ -248,4 +259,11 @@ func (p *Pipeline) errorChanWait(errorChan <-chan error) {
 			}
 		}
 	}
+}
+
+// IsRunning returns true if the pipeline is currently running
+func (p *Pipeline) IsRunning() bool {
+	p.runningMu.RLock()
+	defer p.runningMu.RUnlock()
+	return p.running
 }
