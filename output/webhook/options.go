@@ -14,9 +14,11 @@
 
 package webhook
 
-import "github.com/blinklabs-io/adder/plugin"
+import (
+	"time"
 
-// import "github.com/blinklabs-io/adder/event"
+	"github.com/blinklabs-io/adder/plugin"
+)
 
 type WebhookOptionFunc func(*WebhookOutput)
 
@@ -47,5 +49,20 @@ func WithBasicAuth(username, password string) WebhookOptionFunc {
 func WithFormat(format string) WebhookOptionFunc {
 	return func(o *WebhookOutput) {
 		o.format = format
+	}
+}
+
+// WithRetryConfig specifies the retry configuration for webhook delivery
+func WithRetryConfig(maxRetries int, initialBackoff, maxBackoff time.Duration) WebhookOptionFunc {
+	return func(o *WebhookOutput) {
+		if maxRetries >= 0 {
+			o.maxRetries = maxRetries
+		}
+		if initialBackoff > 0 {
+			o.initialBackoff = initialBackoff
+		}
+		if maxBackoff > 0 {
+			o.maxBackoff = maxBackoff
+		}
 	}
 }
