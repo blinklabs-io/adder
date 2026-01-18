@@ -91,6 +91,51 @@ func TestHandleRollBackward(t *testing.T) {
 	assert.Equal(t, uint64(5), c.status.EpochNumber)
 }
 
+func TestInvalidIntersectPointFormat(t *testing.T) {
+	// Save original value
+	originalIntersectPoint := cmdlineOptions.intersectPoint
+	defer func() {
+		cmdlineOptions.intersectPoint = originalIntersectPoint
+	}()
+
+	tests := []struct {
+		name           string
+		intersectPoint string
+	}{
+		{
+			name:           "missing dot separator",
+			intersectPoint: "12345abc123",
+		},
+		{
+			name:           "too many parts",
+			intersectPoint: "12345.abc123.extra",
+		},
+		{
+			name:           "non-numeric slot",
+			intersectPoint: "notanumber.abc123def456",
+		},
+		{
+			name:           "invalid hex hash",
+			intersectPoint: "12345.notvalidhex!@#",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cmdlineOptions.intersectPoint = tt.intersectPoint
+			p := NewFromCmdlineOptions()
+			assert.Nil(t, p, "expected nil plugin for invalid intersect point: %s", tt.intersectPoint)
+		})
+	}
+
+	// Test valid intersect point returns non-nil
+	t.Run("valid intersect point", func(t *testing.T) {
+		cmdlineOptions.intersectPoint = "12345.abcdef0123456789"
+		p := NewFromCmdlineOptions()
+		assert.NotNil(t, p, "expected non-nil plugin for valid intersect point")
+	})
+}
+
 func TestGetKupoClient(t *testing.T) {
 	// Setup test server
 	ts := httptest.NewServer(

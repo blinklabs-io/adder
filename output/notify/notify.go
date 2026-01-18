@@ -17,6 +17,7 @@ package notify
 import (
 	_ "embed"
 	"fmt"
+	"log/slog"
 	"os"
 
 	"github.com/blinklabs-io/adder/event"
@@ -61,12 +62,12 @@ func (n *NotifyOutput) Start() error {
 			os.ModePerm,
 		)
 		if err != nil {
-			panic(err)
+			return fmt.Errorf("failed to create cache directory: %w", err)
 		}
 	}
 	filename := fmt.Sprintf("%s/%s/%s", userCacheDir, "adder", "icon.png")
 	if err := os.WriteFile(filename, icon, 0o600); err != nil {
-		panic(err)
+		return fmt.Errorf("failed to write icon file: %w", err)
 	}
 	go func() {
 		for {
@@ -79,11 +80,13 @@ func (n *NotifyOutput) Start() error {
 			case "chainsync.block":
 				payload := evt.Payload
 				if payload == nil {
-					panic(fmt.Errorf("ERROR: %v", payload))
+					slog.Error("block event has nil payload")
+					continue
 				}
 				context := evt.Context
 				if context == nil {
-					panic(fmt.Errorf("ERROR: %v", context))
+					slog.Error("block event has nil context")
+					continue
 				}
 
 				be := payload.(event.BlockEvent)
@@ -100,12 +103,14 @@ func (n *NotifyOutput) Start() error {
 					filename,
 				)
 				if err != nil {
-					panic(err)
+					slog.Error("failed to send block notification", "error", err)
+					continue
 				}
 			case "chainsync.rollback":
 				payload := evt.Payload
 				if payload == nil {
-					panic(fmt.Errorf("ERROR: %v", payload))
+					slog.Error("rollback event has nil payload")
+					continue
 				}
 
 				re := payload.(event.RollbackEvent)
@@ -118,16 +123,19 @@ func (n *NotifyOutput) Start() error {
 					filename,
 				)
 				if err != nil {
-					panic(err)
+					slog.Error("failed to send rollback notification", "error", err)
+					continue
 				}
 			case "chainsync.transaction":
 				payload := evt.Payload
 				if payload == nil {
-					panic(fmt.Errorf("ERROR: %v", payload))
+					slog.Error("transaction event has nil payload")
+					continue
 				}
 				context := evt.Context
 				if context == nil {
-					panic(fmt.Errorf("ERROR: %v", context))
+					slog.Error("transaction event has nil context")
+					continue
 				}
 
 				te := payload.(event.TransactionEvent)
@@ -146,7 +154,8 @@ func (n *NotifyOutput) Start() error {
 					filename,
 				)
 				if err != nil {
-					panic(err)
+					slog.Error("failed to send transaction notification", "error", err)
+					continue
 				}
 			default:
 				err := beeep.Notify(
@@ -155,7 +164,8 @@ func (n *NotifyOutput) Start() error {
 					filename,
 				)
 				if err != nil {
-					panic(err)
+					slog.Error("failed to send notification", "error", err, "event_type", evt.Type)
+					continue
 				}
 			}
 		}
