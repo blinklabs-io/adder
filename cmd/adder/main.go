@@ -168,6 +168,9 @@ func run() error {
 	// Create pipeline
 	pipe := pipeline.New()
 
+	// Register pipeline as health checker for API
+	api.RegisterHealthChecker(pipe)
+
 	// Configure input
 	input := plugin.GetPlugin(plugin.PluginTypeInput, cfg.Input)
 	if input == nil {

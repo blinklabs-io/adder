@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net/http"
 	"sync"
 	"time"
 
@@ -12,6 +13,11 @@ import (
 	swaggerFiles "github.com/swaggo/files"     // swagger embed files
 	ginSwagger "github.com/swaggo/gin-swagger" // gin-swagger middleware
 )
+
+// HealthChecker is an interface for components that can report their health status
+type HealthChecker interface {
+	IsRunning() bool
+}
 
 type API interface {
 	Start() error
@@ -58,6 +64,27 @@ var apiInstance = &APIv1{
 }
 
 var once sync.Once
+
+// healthCheckers holds registered health checkers
+var (
+	healthCheckers   []HealthChecker
+	healthCheckersMu sync.RWMutex
+)
+
+// RegisterHealthChecker adds a health checker to be queried during health checks
+func RegisterHealthChecker(hc HealthChecker) {
+	healthCheckersMu.Lock()
+	defer healthCheckersMu.Unlock()
+	healthCheckers = append(healthCheckers, hc)
+}
+
+// ResetHealthCheckers clears all registered health checkers.
+// This is intended for use in tests to prevent state leakage between tests.
+func ResetHealthCheckers() {
+	healthCheckersMu.Lock()
+	defer healthCheckersMu.Unlock()
+	healthCheckers = nil
+}
 
 func New(debug bool, options ...APIOption) *APIv1 {
 	once.Do(func() {
@@ -192,6 +219,28 @@ func accessLogger(param gin.LogFormatterParams) string {
 }
 
 func handleHealthcheck(c *gin.Context) {
-	// TODO: add some actual health checking here (#337)
-	c.JSON(200, gin.H{"failed": false})
+	healthCheckersMu.RLock()
+	// Make a copy of the slice to avoid races with concurrent RegisterHealthChecker calls
+	checkers := make([]HealthChecker, len(healthCheckers))
+	copy(checkers, healthCheckers)
+	healthCheckersMu.RUnlock()
+
+	// If no health checkers are registered, report as healthy
+	if len(checkers) == 0 {
+		c.JSON(http.StatusOK, gin.H{"failed": false})
+		return
+	}
+
+	// Check all registered health checkers
+	for _, hc := range checkers {
+		if !hc.IsRunning() {
+			c.JSON(http.StatusServiceUnavailable, gin.H{
+				"failed": true,
+				"reason": "pipeline is not running",
+			})
+			return
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{"failed": false})
 }
