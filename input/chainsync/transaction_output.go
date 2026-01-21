@@ -18,6 +18,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log/slog"
+	"math/big"
 
 	"github.com/SundaeSwap-finance/kugo"
 	"github.com/blinklabs-io/gouroboros/cbor"
@@ -29,16 +30,16 @@ import (
 
 // ResolvedTransactionOutput represents a concrete implementation of the TransactionOutput interface
 type ResolvedTransactionOutput struct {
-	AddressField common.Address             `json:"address"`
-	AssetsField  *common.MultiAsset[uint64] `json:"assets,omitempty"`
-	AmountField  uint64                     `json:"amount"`
+	AddressField common.Address                                  `json:"address"`
+	AssetsField  *common.MultiAsset[common.MultiAssetTypeOutput] `json:"assets,omitempty"`
+	AmountField  uint64                                          `json:"amount"`
 }
 
 func ExtractAssetDetailsFromMatch(
 	match kugo.Match,
-) (common.MultiAsset[uint64], uint64, error) {
+) (common.MultiAsset[common.MultiAssetTypeOutput], uint64, error) {
 	// Initialize the map that will store the assets
-	assetsMap := map[common.Blake2b224]map[cbor.ByteString]uint64{}
+	assetsMap := map[common.Blake2b224]map[cbor.ByteString]common.MultiAssetTypeOutput{}
 	totalLovelace := uint64(0)
 
 	// Iterate over all policies (asset types) in the Value map
@@ -57,7 +58,7 @@ func ExtractAssetDetailsFromMatch(
 		policyBlake := common.NewBlake2b224(policyIdBytes)
 
 		// Prepare the map for this policy's assets
-		policyAssets := make(map[cbor.ByteString]uint64)
+		policyAssets := make(map[cbor.ByteString]common.MultiAssetTypeOutput)
 
 		// Iterate over all assets within this policyId
 		for assetName, amount := range assets {
@@ -71,15 +72,14 @@ func ExtractAssetDetailsFromMatch(
 			}
 
 			byteStringAssetName := cbor.NewByteString([]byte(assetName))
-			assetAmount := amount.Uint64()
-			policyAssets[byteStringAssetName] = assetAmount
+			policyAssets[byteStringAssetName] = amount.BigInt()
 			slog.Debug("Get policyId, assetName, assetAmount from match.Value")
 			slog.Debug(
 				fmt.Sprintf(
-					"policyId: %s, assetName: %s, amount: %d\n",
+					"policyId: %s, assetName: %s, amount: %v\n",
 					policyId,
 					assetName,
-					assetAmount,
+					amount,
 				),
 			)
 		}
@@ -123,7 +123,7 @@ func NewResolvedTransactionOutput(
 		AddressField: addr,
 		AmountField:  amount,
 		// return assets if there are any, otherwise return nil
-		AssetsField: func() *common.MultiAsset[uint64] {
+		AssetsField: func() *common.MultiAsset[common.MultiAssetTypeOutput] {
 			if len(assets.Policies()) > 0 {
 				return &assets
 			}
@@ -136,11 +136,11 @@ func (txOut ResolvedTransactionOutput) Address() common.Address {
 	return txOut.AddressField
 }
 
-func (txOut ResolvedTransactionOutput) Amount() uint64 {
-	return txOut.AmountField
+func (txOut ResolvedTransactionOutput) Amount() *big.Int {
+	return new(big.Int).SetUint64(txOut.AmountField)
 }
 
-func (txOut ResolvedTransactionOutput) Assets() *common.MultiAsset[uint64] {
+func (txOut ResolvedTransactionOutput) Assets() *common.MultiAsset[common.MultiAssetTypeOutput] {
 	return txOut.AssetsField
 }
 

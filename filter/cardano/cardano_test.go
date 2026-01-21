@@ -16,6 +16,7 @@ package cardano
 import (
 	"bytes"
 	"encoding/hex"
+	"math/big"
 	"testing"
 	"time"
 
@@ -100,8 +101,8 @@ func (m MockOutput) Address() ledger.Address {
 	return m.address
 }
 
-func (m MockOutput) Amount() uint64 {
-	return m.amount
+func (m MockOutput) Amount() *big.Int {
+	return big.NewInt(int64(m.amount))
 }
 
 func (m MockOutput) Assets() *common.MultiAsset[common.MultiAssetTypeOutput] {
@@ -328,7 +329,7 @@ func TestFilterByPolicyId(t *testing.T) {
 	)
 	assetName := cbor.NewByteString([]byte("asset1"))
 	assetsData[policyId] = map[cbor.ByteString]common.MultiAssetTypeOutput{
-		assetName: 1, // Add asset with quantity 1
+		assetName: big.NewInt(1), // Add asset with quantity 1
 	}
 	assets := common.NewMultiAsset(assetsData)
 
@@ -381,7 +382,7 @@ func TestFilterByAssetFingerprint(t *testing.T) {
 	)
 	assetName := cbor.NewByteString([]byte("asset1"))
 	assetsData[policyId] = map[cbor.ByteString]common.MultiAssetTypeOutput{
-		assetName: 1, // Add asset with quantity 1
+		assetName: big.NewInt(1), // Add asset with quantity 1
 	}
 	assets := common.NewMultiAsset(assetsData)
 

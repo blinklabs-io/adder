@@ -16,6 +16,7 @@ package chainsync
 
 import (
 	"encoding/json"
+	"math/big"
 	"testing"
 
 	"github.com/blinklabs-io/gouroboros/cbor"
@@ -34,9 +35,9 @@ func TestResolvedTransactionOutput_MarshalJSON(t *testing.T) {
 
 	// Create assets for the resolved output
 	assets := common.NewMultiAsset(
-		map[common.Blake2b224]map[cbor.ByteString]uint64{
+		map[common.Blake2b224]map[cbor.ByteString]common.MultiAssetTypeOutput{
 			common.NewBlake2b224([]byte("policy1")): {
-				cbor.NewByteString([]byte("TokenA")): 100,
+				cbor.NewByteString([]byte("TokenA")): big.NewInt(100),
 			},
 		},
 	)
@@ -55,6 +56,7 @@ func TestResolvedTransactionOutput_MarshalJSON(t *testing.T) {
 	}
 
 	// Expected JSON string
+	// Note: *big.Int serializes to a string in JSON
 	expectedJSON := `{
       "address":"addr_test1wq5yehcpw4e3r32rltrww40e6ezdckr9v9l0ehptsxeynlg630pts",
       "amount":2000000,
@@ -64,7 +66,7 @@ func TestResolvedTransactionOutput_MarshalJSON(t *testing.T) {
               "nameHex":"546f6b656e41",
               "policyId":"706f6c69637931000000000000000000000000000000000000000000",
               "fingerprint":"asset174ghjk04g2dpjv8zuw6s99rm09wmfvmgtfl84n",
-              "amount":100
+              "amount":"100"
           }
       ]
   }`
