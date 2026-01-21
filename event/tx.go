@@ -70,7 +70,7 @@ func NewTransactionEvent(
 		BlockHash:   block.Hash().String(),
 		Inputs:      tx.Inputs(),
 		Outputs:     tx.Outputs(),
-		Fee:         tx.Fee(),
+		Fee:         tx.Fee().Uint64(),
 		Witnesses:   tx.Witnesses(),
 	}
 	if includeCbor {
@@ -94,7 +94,7 @@ func NewTransactionEvent(
 	if withdrawals := tx.Withdrawals(); len(withdrawals) > 0 {
 		evt.Withdrawals = make(map[string]uint64)
 		for addr, amount := range withdrawals {
-			evt.Withdrawals[addr.String()] = amount
+			evt.Withdrawals[addr.String()] = amount.Uint64()
 		}
 	}
 	return evt
