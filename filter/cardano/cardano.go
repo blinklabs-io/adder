@@ -88,6 +88,8 @@ func (c *Cardano) filterEvent(evt event.Event) bool {
 		return c.filterBlockEvent(v)
 	case event.TransactionEvent:
 		return c.filterTransactionEvent(v)
+	case event.GovernanceEvent:
+		return c.filterGovernanceEvent(v)
 	default:
 		// Pass through events we don't filter
 		return true
@@ -145,6 +147,13 @@ func (c *Cardano) filterTransactionEvent(te event.TransactionEvent) bool {
 	// Check pool filter
 	if c.filterSet.hasPoolFilter {
 		if !c.matchPoolFilterTx(te) {
+			return false
+		}
+	}
+
+	// Check DRep filter
+	if c.filterSet.hasDRepFilter {
+		if !c.matchDRepFilterTx(te) {
 			return false
 		}
 	}
@@ -249,6 +258,108 @@ func (c *Cardano) matchAssetFilter(te event.TransactionEvent) bool {
 			}
 		}
 	}
+	return false
+}
+
+// filterGovernanceEvent checks all applicable filters for governance events
+func (c *Cardano) filterGovernanceEvent(ge event.GovernanceEvent) bool {
+	// Check DRep filter
+	if c.filterSet.hasDRepFilter {
+		if !c.matchDRepFilterGovernance(ge) {
+			return false
+		}
+	}
+	// Future: pool filter, address filter for governance
+	return true
+}
+
+// matchDRepFilterGovernance checks if governance event contains matching DRep IDs
+func (c *Cardano) matchDRepFilterGovernance(ge event.GovernanceEvent) bool {
+	// Check DRep certificates (registrations, updates, retirements)
+	for _, cert := range ge.DRepCertificates {
+		if _, exists := c.filterSet.dreps.hexDRepIds[cert.DRepHash]; exists {
+			return true
+		}
+	}
+
+	// Check vote delegation certificates (delegations TO a DRep)
+	for _, cert := range ge.VoteDelegationCertificates {
+		if cert.DRepHash != "" {
+			if _, exists := c.filterSet.dreps.hexDRepIds[cert.DRepHash]; exists {
+				return true
+			}
+		}
+	}
+
+	// Check voting procedures (votes cast BY a DRep)
+	for _, vote := range ge.VotingProcedures {
+		if vote.VoterType == "DRep" {
+			if _, exists := c.filterSet.dreps.hexDRepIds[vote.VoterHash]; exists {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
+// matchDRepFilterTx checks transaction certificates against DRep filters
+func (c *Cardano) matchDRepFilterTx(te event.TransactionEvent) bool {
+	for _, certificate := range te.Certificates {
+		var drepHash []byte
+
+		switch cert := certificate.(type) {
+		case *common.RegistrationDrepCertificate:
+			drepHash = cert.DrepCredential.Credential[:]
+		case *common.DeregistrationDrepCertificate:
+			drepHash = cert.DrepCredential.Credential[:]
+		case *common.UpdateDrepCertificate:
+			drepHash = cert.DrepCredential.Credential[:]
+		case *common.VoteDelegationCertificate:
+			if cert.Drep.Type == common.DrepTypeAddrKeyHash ||
+				cert.Drep.Type == common.DrepTypeScriptHash {
+				drepHash = cert.Drep.Credential
+			}
+		case *common.StakeVoteDelegationCertificate:
+			if cert.Drep.Type == common.DrepTypeAddrKeyHash ||
+				cert.Drep.Type == common.DrepTypeScriptHash {
+				drepHash = cert.Drep.Credential
+			}
+		case *common.VoteRegistrationDelegationCertificate:
+			if cert.Drep.Type == common.DrepTypeAddrKeyHash ||
+				cert.Drep.Type == common.DrepTypeScriptHash {
+				drepHash = cert.Drep.Credential
+			}
+		case *common.StakeVoteRegistrationDelegationCertificate:
+			if cert.Drep.Type == common.DrepTypeAddrKeyHash ||
+				cert.Drep.Type == common.DrepTypeScriptHash {
+				drepHash = cert.Drep.Credential
+			}
+		default:
+			continue
+		}
+
+		if drepHash != nil {
+			hexStr := hex.EncodeToString(drepHash)
+			if _, exists := c.filterSet.dreps.hexDRepIds[hexStr]; exists {
+				return true
+			}
+		}
+	}
+
+	// Also check VotingProcedures from raw transaction if available
+	if te.Transaction != nil {
+		for voter := range te.Transaction.VotingProcedures() {
+			if voter.Type == common.VoterTypeDRepKeyHash ||
+				voter.Type == common.VoterTypeDRepScriptHash {
+				hexStr := hex.EncodeToString(voter.Hash[:])
+				if _, exists := c.filterSet.dreps.hexDRepIds[hexStr]; exists {
+					return true
+				}
+			}
+		}
+	}
+
 	return false
 }
 

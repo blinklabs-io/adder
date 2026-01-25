@@ -20,11 +20,13 @@ type filterSet struct {
 	pools     *poolFilter
 	policies  *policyFilter
 	assets    *assetFilter
+	dreps     *drepFilter
 
 	hasAddressFilter bool
 	hasPoolFilter    bool
 	hasPolicyFilter  bool
 	hasAssetFilter   bool
+	hasDRepFilter    bool
 }
 
 // addressFilter holds pre-computed address data for O(1) lookups
@@ -49,4 +51,11 @@ type policyFilter struct {
 // assetFilter holds asset fingerprints for O(1) lookup
 type assetFilter struct {
 	fingerprints map[string]struct{}
+}
+
+// drepFilter holds pre-computed DRep ID data for O(1) lookups
+type drepFilter struct {
+	hexDRepIds    map[string]struct{} // DRep IDs in hex format (primary lookup)
+	bech32DRepIds map[string]struct{} // DRep IDs in bech32 format (drep1xxx, drep_script1xxx)
+	hexToBech32   map[string]string   // Maps hex -> bech32 for reference
 }
