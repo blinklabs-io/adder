@@ -18,6 +18,7 @@ import (
 	"encoding/hex"
 	"math"
 
+	"github.com/blinklabs-io/gouroboros/cbor"
 	"github.com/blinklabs-io/gouroboros/ledger"
 	lcommon "github.com/blinklabs-io/gouroboros/ledger/common"
 	"github.com/blinklabs-io/gouroboros/ledger/conway"
@@ -54,13 +55,173 @@ type GovernanceEvent struct {
 	CommitteeCertificates []CommitteeCertificateData `json:"committeeCertificates,omitempty"`
 }
 
+// GovActionIdData represents a reference to a previous governance action
+type GovActionIdData struct {
+	TransactionId string `json:"transactionId"`
+	GovActionIdx  uint32 `json:"govActionIdx"`
+}
+
+// GovActionData contains the action-specific data (typed union - only one field populated)
+type GovActionData struct {
+	ParameterChange    *ParameterChangeActionData    `json:"parameterChange,omitempty"`
+	HardForkInitiation *HardForkInitiationActionData `json:"hardForkInitiation,omitempty"`
+	TreasuryWithdrawal *TreasuryWithdrawalActionData `json:"treasuryWithdrawal,omitempty"`
+	NoConfidence       *NoConfidenceActionData       `json:"noConfidence,omitempty"`
+	UpdateCommittee    *UpdateCommitteeActionData    `json:"updateCommittee,omitempty"`
+	NewConstitution    *NewConstitutionActionData    `json:"newConstitution,omitempty"`
+	Info               *InfoActionData               `json:"info,omitempty"`
+}
+
+// InfoActionData represents an Info governance action (no payload)
+type InfoActionData struct{}
+
+// NoConfidenceActionData represents a No Confidence governance action
+type NoConfidenceActionData struct {
+	PrevActionId *GovActionIdData `json:"prevActionId,omitempty"`
+}
+
+// HardForkInitiationActionData represents a Hard Fork Initiation governance action
+type HardForkInitiationActionData struct {
+	PrevActionId    *GovActionIdData `json:"prevActionId,omitempty"`
+	ProtocolVersion ProtocolVersion  `json:"protocolVersion"`
+}
+
+// ProtocolVersion represents a protocol version (major.minor)
+type ProtocolVersion struct {
+	Major uint `json:"major"`
+	Minor uint `json:"minor"`
+}
+
+// TreasuryWithdrawalActionData represents a Treasury Withdrawal governance action
+type TreasuryWithdrawalActionData struct {
+	Withdrawals []TreasuryWithdrawalItem `json:"withdrawals"`
+	PolicyHash  string                   `json:"policyHash,omitempty"`
+}
+
+// TreasuryWithdrawalItem represents a single treasury withdrawal destination
+type TreasuryWithdrawalItem struct {
+	Address string `json:"address"`
+	Amount  uint64 `json:"amount"`
+}
+
+// UpdateCommitteeActionData represents an Update Committee governance action
+type UpdateCommitteeActionData struct {
+	PrevActionId      *GovActionIdData  `json:"prevActionId,omitempty"`
+	MembersToRemove   []string          `json:"membersToRemove"`
+	MembersToAdd      []CommitteeMember `json:"membersToAdd"`
+	QuorumNumerator   uint64            `json:"quorumNumerator"`
+	QuorumDenominator uint64            `json:"quorumDenominator"`
+}
+
+// CommitteeMember represents a committee member with their term epoch
+type CommitteeMember struct {
+	Credential string `json:"credential"`
+	Epoch      uint   `json:"epoch"`
+}
+
+// NewConstitutionActionData represents a New Constitution governance action
+type NewConstitutionActionData struct {
+	PrevActionId *GovActionIdData `json:"prevActionId,omitempty"`
+	Anchor       AnchorData       `json:"anchor"`
+	ScriptHash   string           `json:"scriptHash,omitempty"`
+}
+
+// ParameterChangeActionData represents a Parameter Change governance action
+type ParameterChangeActionData struct {
+	PrevActionId *GovActionIdData             `json:"prevActionId,omitempty"`
+	PolicyHash   string                       `json:"policyHash,omitempty"`
+	ParamUpdate  *ProtocolParameterUpdateData `json:"paramUpdate,omitempty"`
+}
+
+// ProtocolParameterUpdateData contains protocol parameter changes
+type ProtocolParameterUpdateData struct {
+	// Fee parameters
+	MinFeeA *uint `json:"minFeeA,omitempty"`
+	MinFeeB *uint `json:"minFeeB,omitempty"`
+
+	// Block/tx limits
+	MaxBlockBodySize   *uint `json:"maxBlockBodySize,omitempty"`
+	MaxTxSize          *uint `json:"maxTxSize,omitempty"`
+	MaxBlockHeaderSize *uint `json:"maxBlockHeaderSize,omitempty"`
+
+	// Deposits
+	KeyDeposit  *uint `json:"keyDeposit,omitempty"`
+	PoolDeposit *uint `json:"poolDeposit,omitempty"`
+
+	// Pool parameters
+	MaxEpoch    *uint    `json:"maxEpoch,omitempty"`
+	NOpt        *uint    `json:"nOpt,omitempty"`
+	A0          *float64 `json:"a0,omitempty"`
+	Rho         *float64 `json:"rho,omitempty"`
+	Tau         *float64 `json:"tau,omitempty"`
+	MinPoolCost *uint64  `json:"minPoolCost,omitempty"`
+
+	// Plutus parameters
+	AdaPerUtxoByte       *uint64         `json:"adaPerUtxoByte,omitempty"`
+	MaxValueSize         *uint           `json:"maxValueSize,omitempty"`
+	CollateralPercentage *uint           `json:"collateralPercentage,omitempty"`
+	MaxCollateralInputs  *uint           `json:"maxCollateralInputs,omitempty"`
+	MaxTxExUnits         *ExUnitsData    `json:"maxTxExUnits,omitempty"`
+	MaxBlockExUnits      *ExUnitsData    `json:"maxBlockExUnits,omitempty"`
+	ExecutionCosts       *ExecutionCosts `json:"executionCosts,omitempty"`
+
+	// Governance parameters (Conway)
+	MinCommitteeSize           *uint    `json:"minCommitteeSize,omitempty"`
+	CommitteeTermLimit         *uint64  `json:"committeeTermLimit,omitempty"`
+	GovActionValidityPeriod    *uint64  `json:"govActionValidityPeriod,omitempty"`
+	GovActionDeposit           *uint64  `json:"govActionDeposit,omitempty"`
+	DRepDeposit                *uint64  `json:"drepDeposit,omitempty"`
+	DRepInactivityPeriod       *uint64  `json:"drepInactivityPeriod,omitempty"`
+	MinFeeRefScriptCostPerByte *float64 `json:"minFeeRefScriptCostPerByte,omitempty"`
+
+	// Voting thresholds
+	PoolVotingThresholds *PoolVotingThresholdsData `json:"poolVotingThresholds,omitempty"`
+	DRepVotingThresholds *DRepVotingThresholdsData `json:"drepVotingThresholds,omitempty"`
+}
+
+// ExUnitsData represents execution units (memory and steps)
+type ExUnitsData struct {
+	Mem   int64 `json:"mem"`
+	Steps int64 `json:"steps"`
+}
+
+// ExecutionCosts represents the price of execution units
+type ExecutionCosts struct {
+	MemPrice  *float64 `json:"memPrice,omitempty"`
+	StepPrice *float64 `json:"stepPrice,omitempty"`
+}
+
+// PoolVotingThresholdsData represents SPO voting thresholds
+type PoolVotingThresholdsData struct {
+	MotionNoConfidence *float64 `json:"motionNoConfidence,omitempty"`
+	CommitteeNormal    *float64 `json:"committeeNormal,omitempty"`
+	CommitteeNoConf    *float64 `json:"committeeNoConf,omitempty"`
+	HardForkInitiation *float64 `json:"hardForkInitiation,omitempty"`
+	SecurityGroup      *float64 `json:"securityGroup,omitempty"`
+}
+
+// DRepVotingThresholdsData represents DRep voting thresholds
+type DRepVotingThresholdsData struct {
+	MotionNoConfidence *float64 `json:"motionNoConfidence,omitempty"`
+	CommitteeNormal    *float64 `json:"committeeNormal,omitempty"`
+	CommitteeNoConf    *float64 `json:"committeeNoConf,omitempty"`
+	UpdateConstitution *float64 `json:"updateConstitution,omitempty"`
+	HardForkInitiation *float64 `json:"hardForkInitiation,omitempty"`
+	NetworkGroup       *float64 `json:"networkGroup,omitempty"`
+	EconomicGroup      *float64 `json:"economicGroup,omitempty"`
+	TechnicalGroup     *float64 `json:"technicalGroup,omitempty"`
+	GovernanceGroup    *float64 `json:"governanceGroup,omitempty"`
+	TreasuryWithdrawal *float64 `json:"treasuryWithdrawal,omitempty"`
+}
+
 // ProposalProcedureData represents a governance proposal
 type ProposalProcedureData struct {
-	Index         uint32     `json:"index"`
-	Deposit       uint64     `json:"deposit"`
-	RewardAccount string     `json:"rewardAccount"`
-	ActionType    string     `json:"actionType"`
-	Anchor        AnchorData `json:"anchor,omitempty"`
+	Index         uint32        `json:"index"`
+	Deposit       uint64        `json:"deposit"`
+	RewardAccount string        `json:"rewardAccount"`
+	ActionType    string        `json:"actionType"`
+	ActionData    GovActionData `json:"actionData"`
+	Anchor        AnchorData    `json:"anchor,omitempty"`
 }
 
 // VotingProcedureData represents a vote cast
@@ -200,6 +361,7 @@ func extractProposalProcedures(tx ledger.Transaction) []ProposalProcedureData {
 			Deposit:       prop.Deposit(),
 			RewardAccount: prop.RewardAccount().String(),
 			ActionType:    getGovActionType(prop.GovAction()),
+			ActionData:    extractGovActionData(prop.GovAction()),
 		}
 		// prop.Anchor() returns a value type (GovAnchor, not *GovAnchor),
 		// so we check for empty URL to determine if anchor data is present
@@ -410,4 +572,224 @@ func extractVoteDelegation(
 	}
 
 	return data
+}
+
+// extractGovActionId converts a gouroboros GovActionId to our JSON-friendly struct
+func extractGovActionId(id *lcommon.GovActionId) *GovActionIdData {
+	if id == nil {
+		return nil
+	}
+	return &GovActionIdData{
+		TransactionId: hex.EncodeToString(id.TransactionId[:]),
+		GovActionIdx:  id.GovActionIdx,
+	}
+}
+
+// extractGovActionData extracts action-specific data from a GovAction
+func extractGovActionData(action lcommon.GovAction) GovActionData {
+	var data GovActionData
+
+	switch a := action.(type) {
+	case *lcommon.InfoGovAction:
+		data.Info = &InfoActionData{}
+
+	case *lcommon.NoConfidenceGovAction:
+		data.NoConfidence = &NoConfidenceActionData{
+			PrevActionId: extractGovActionId(a.ActionId),
+		}
+
+	case *lcommon.HardForkInitiationGovAction:
+		data.HardForkInitiation = &HardForkInitiationActionData{
+			PrevActionId: extractGovActionId(a.ActionId),
+			ProtocolVersion: ProtocolVersion{
+				Major: a.ProtocolVersion.Major,
+				Minor: a.ProtocolVersion.Minor,
+			},
+		}
+
+	case *lcommon.TreasuryWithdrawalGovAction:
+		data.TreasuryWithdrawal = extractTreasuryWithdrawalAction(a)
+
+	case *lcommon.UpdateCommitteeGovAction:
+		data.UpdateCommittee = extractUpdateCommitteeAction(a)
+
+	case *lcommon.NewConstitutionGovAction:
+		data.NewConstitution = extractNewConstitutionAction(a)
+
+	case *conway.ConwayParameterChangeGovAction:
+		data.ParameterChange = extractParameterChangeAction(a)
+	}
+
+	return data
+}
+
+func extractTreasuryWithdrawalAction(a *lcommon.TreasuryWithdrawalGovAction) *TreasuryWithdrawalActionData {
+	data := &TreasuryWithdrawalActionData{
+		Withdrawals: make([]TreasuryWithdrawalItem, 0, len(a.Withdrawals)),
+	}
+	if len(a.PolicyHash) > 0 {
+		data.PolicyHash = hex.EncodeToString(a.PolicyHash)
+	}
+	for addr, amount := range a.Withdrawals {
+		data.Withdrawals = append(data.Withdrawals, TreasuryWithdrawalItem{
+			Address: addr.String(),
+			Amount:  amount,
+		})
+	}
+	return data
+}
+
+func extractUpdateCommitteeAction(a *lcommon.UpdateCommitteeGovAction) *UpdateCommitteeActionData {
+	data := &UpdateCommitteeActionData{
+		PrevActionId:    extractGovActionId(a.ActionId),
+		MembersToRemove: make([]string, 0, len(a.Credentials)),
+		MembersToAdd:    make([]CommitteeMember, 0, len(a.CredEpochs)),
+	}
+
+	// Extract quorum as numerator/denominator
+	if a.Quorum.Num() != nil {
+		data.QuorumNumerator = a.Quorum.Num().Uint64()
+	}
+	if a.Quorum.Denom() != nil {
+		data.QuorumDenominator = a.Quorum.Denom().Uint64()
+	}
+
+	// Members to remove
+	for _, cred := range a.Credentials {
+		data.MembersToRemove = append(data.MembersToRemove, hex.EncodeToString(cred.Hash().Bytes()))
+	}
+
+	// Members to add with term epochs
+	for cred, epoch := range a.CredEpochs {
+		data.MembersToAdd = append(data.MembersToAdd, CommitteeMember{
+			Credential: hex.EncodeToString(cred.Hash().Bytes()),
+			Epoch:      epoch,
+		})
+	}
+
+	return data
+}
+
+func extractNewConstitutionAction(a *lcommon.NewConstitutionGovAction) *NewConstitutionActionData {
+	data := &NewConstitutionActionData{
+		PrevActionId: extractGovActionId(a.ActionId),
+		Anchor: AnchorData{
+			Url:      a.Constitution.Anchor.Url,
+			DataHash: hex.EncodeToString(a.Constitution.Anchor.DataHash[:]),
+		},
+	}
+	if len(a.Constitution.ScriptHash) > 0 {
+		data.ScriptHash = hex.EncodeToString(a.Constitution.ScriptHash)
+	}
+	return data
+}
+
+func extractParameterChangeAction(a *conway.ConwayParameterChangeGovAction) *ParameterChangeActionData {
+	data := &ParameterChangeActionData{
+		PrevActionId: extractGovActionId(a.ActionId),
+	}
+	if len(a.PolicyHash) > 0 {
+		data.PolicyHash = hex.EncodeToString(a.PolicyHash)
+	}
+	data.ParamUpdate = extractProtocolParameterUpdate(&a.ParamUpdate)
+	return data
+}
+
+func extractProtocolParameterUpdate(u *conway.ConwayProtocolParameterUpdate) *ProtocolParameterUpdateData {
+	data := &ProtocolParameterUpdateData{
+		MinFeeA:                    u.MinFeeA,
+		MinFeeB:                    u.MinFeeB,
+		MaxBlockBodySize:           u.MaxBlockBodySize,
+		MaxTxSize:                  u.MaxTxSize,
+		MaxBlockHeaderSize:         u.MaxBlockHeaderSize,
+		KeyDeposit:                 u.KeyDeposit,
+		PoolDeposit:                u.PoolDeposit,
+		MaxEpoch:                   u.MaxEpoch,
+		NOpt:                       u.NOpt,
+		A0:                         rationalToFloat(u.A0),
+		Rho:                        rationalToFloat(u.Rho),
+		Tau:                        rationalToFloat(u.Tau),
+		MinPoolCost:                u.MinPoolCost,
+		AdaPerUtxoByte:             u.AdaPerUtxoByte,
+		MaxValueSize:               u.MaxValueSize,
+		CollateralPercentage:       u.CollateralPercentage,
+		MaxCollateralInputs:        u.MaxCollateralInputs,
+		MinCommitteeSize:           u.MinCommitteeSize,
+		CommitteeTermLimit:         u.CommitteeTermLimit,
+		GovActionValidityPeriod:    u.GovActionValidityPeriod,
+		GovActionDeposit:           u.GovActionDeposit,
+		DRepDeposit:                u.DRepDeposit,
+		DRepInactivityPeriod:       u.DRepInactivityPeriod,
+		MinFeeRefScriptCostPerByte: rationalToFloat(u.MinFeeRefScriptCostPerByte),
+	}
+
+	// ExUnits
+	if u.MaxTxExUnits != nil {
+		data.MaxTxExUnits = &ExUnitsData{
+			Mem:   u.MaxTxExUnits.Memory,
+			Steps: u.MaxTxExUnits.Steps,
+		}
+	}
+	if u.MaxBlockExUnits != nil {
+		data.MaxBlockExUnits = &ExUnitsData{
+			Mem:   u.MaxBlockExUnits.Memory,
+			Steps: u.MaxBlockExUnits.Steps,
+		}
+	}
+
+	// Execution costs
+	if u.ExecutionCosts != nil {
+		data.ExecutionCosts = &ExecutionCosts{
+			MemPrice:  rationalToFloat(u.ExecutionCosts.MemPrice),
+			StepPrice: rationalToFloat(u.ExecutionCosts.StepPrice),
+		}
+	}
+
+	// Voting thresholds
+	if u.PoolVotingThresholds != nil {
+		data.PoolVotingThresholds = extractPoolVotingThresholds(u.PoolVotingThresholds)
+	}
+	if u.DRepVotingThresholds != nil {
+		data.DRepVotingThresholds = extractDRepVotingThresholds(u.DRepVotingThresholds)
+	}
+
+	return data
+}
+
+func extractPoolVotingThresholds(t *conway.PoolVotingThresholds) *PoolVotingThresholdsData {
+	return &PoolVotingThresholdsData{
+		MotionNoConfidence: rationalToFloat(&t.MotionNoConfidence),
+		CommitteeNormal:    rationalToFloat(&t.CommitteeNormal),
+		CommitteeNoConf:    rationalToFloat(&t.CommitteeNoConfidence),
+		HardForkInitiation: rationalToFloat(&t.HardForkInitiation),
+		SecurityGroup:      rationalToFloat(&t.PpSecurityGroup),
+	}
+}
+
+func extractDRepVotingThresholds(t *conway.DRepVotingThresholds) *DRepVotingThresholdsData {
+	return &DRepVotingThresholdsData{
+		MotionNoConfidence: rationalToFloat(&t.MotionNoConfidence),
+		CommitteeNormal:    rationalToFloat(&t.CommitteeNormal),
+		CommitteeNoConf:    rationalToFloat(&t.CommitteeNoConfidence),
+		UpdateConstitution: rationalToFloat(&t.UpdateToConstitution),
+		HardForkInitiation: rationalToFloat(&t.HardForkInitiation),
+		NetworkGroup:       rationalToFloat(&t.PpNetworkGroup),
+		EconomicGroup:      rationalToFloat(&t.PpEconomicGroup),
+		TechnicalGroup:     rationalToFloat(&t.PpTechnicalGroup),
+		GovernanceGroup:    rationalToFloat(&t.PpGovGroup),
+		TreasuryWithdrawal: rationalToFloat(&t.TreasuryWithdrawal),
+	}
+}
+
+func rationalToFloat(r *cbor.Rat) *float64 {
+	if r == nil {
+		return nil
+	}
+	num := r.Num()
+	denom := r.Denom()
+	if num == nil || denom == nil || denom.Uint64() == 0 {
+		return nil
+	}
+	result := float64(num.Int64()) / float64(denom.Uint64())
+	return &result
 }
