@@ -128,3 +128,53 @@ func WithAssetFingerprints(fingerprints []string) CardanoOptionFunc {
 		c.filterSet.hasAssetFilter = true
 	}
 }
+
+// WithDRepIds pre-computes both hex and bech32 representations for DRep filtering
+func WithDRepIds(drepIds []string) CardanoOptionFunc {
+	return func(c *Cardano) {
+		if c.filterSet.dreps == nil {
+			c.filterSet.dreps = &drepFilter{
+				hexDRepIds:    make(map[string]struct{}),
+				bech32DRepIds: make(map[string]struct{}),
+				hexToBech32:   make(map[string]string),
+			}
+		}
+
+		for _, drepId := range drepIds {
+			if drepId == "" {
+				continue
+			}
+
+			if strings.HasPrefix(drepId, "drep") {
+				// bech32 format (drep1xxx or drep_script1xxx)
+				c.filterSet.dreps.bech32DRepIds[drepId] = struct{}{}
+				// Try to decode and compute hex representation
+				if _, data, err := bech32.Decode(drepId); err == nil {
+					if decoded, err := bech32.ConvertBits(data, 5, 8, false); err == nil {
+						hexId := hex.EncodeToString(decoded)
+						c.filterSet.dreps.hexDRepIds[hexId] = struct{}{}
+						c.filterSet.dreps.hexToBech32[hexId] = drepId
+					}
+				}
+			} else {
+				// Assume hex format - store hex
+				c.filterSet.dreps.hexDRepIds[drepId] = struct{}{}
+				// Compute both bech32 variants (drep and drep_script)
+				if hexBytes, err := hex.DecodeString(drepId); err == nil {
+					if convData, err := bech32.ConvertBits(hexBytes, 8, 5, true); err == nil {
+						// Store as key hash version
+						if encoded, err := bech32.Encode("drep", convData); err == nil {
+							c.filterSet.dreps.bech32DRepIds[encoded] = struct{}{}
+							c.filterSet.dreps.hexToBech32[drepId] = encoded
+						}
+						// Also store as script hash version
+						if encoded, err := bech32.Encode("drep_script", convData); err == nil {
+							c.filterSet.dreps.bech32DRepIds[encoded] = struct{}{}
+						}
+					}
+				}
+			}
+		}
+		c.filterSet.hasDRepFilter = true
+	}
+}
