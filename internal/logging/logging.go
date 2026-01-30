@@ -22,7 +22,14 @@ import (
 	"github.com/blinklabs-io/adder/internal/config"
 )
 
-var globalLogger *slog.Logger
+// defaultLogger returns a non-nil logger so globalLogger is never nil at declaration (satisfies nilaway).
+func defaultLogger() *slog.Logger {
+	return slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+		Level: slog.LevelInfo,
+	})).With("component", "main")
+}
+
+var globalLogger = defaultLogger()
 
 func Configure() {
 	cfg := config.GetConfig()
