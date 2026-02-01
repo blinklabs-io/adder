@@ -18,6 +18,7 @@ import (
 	"testing"
 
 	"github.com/blinklabs-io/adder/event"
+	"github.com/go-telegram/bot/models"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -136,9 +137,9 @@ func TestTruncateMessage(t *testing.T) {
 			msg += "aaaaaaaaaa" // 5000 chars
 		}
 		result := truncateMessage(msg, 4096)
-		assert.LessOrEqual(t, len(result), 4096)
+		assert.LessOrEqual(t, utf16Len(result), 4096, "result must be within Telegram UTF-16 limit")
 		assert.Contains(t, result, "… [truncated]")
-		assert.True(t, len(result) < len(msg))
+		assert.True(t, utf16Len(result) < utf16Len(msg))
 	})
 
 	t.Run("maxLen zero returns as-is", func(t *testing.T) {
@@ -168,7 +169,7 @@ func TestFormatBlockMessage(t *testing.T) {
 		NetworkMagic: mainnetNetworkMagic,
 	}
 
-	result := formatBlockMessage(be, bc, "https://cexplorer.io")
+	result := formatBlockMessage(be, bc, "https://cexplorer.io", models.ParseModeHTML)
 
 	assert.Contains(t, result, "New Cardano Block")
 	assert.Contains(t, result, "Conway")
@@ -176,6 +177,82 @@ func TestFormatBlockMessage(t *testing.T) {
 	assert.Contains(t, result, "67890")
 	assert.Contains(t, result, "42")
 	assert.Contains(t, result, "1024")
+	assert.Contains(t, result, "<b>") // HTML bold
+	assert.Contains(t, result, "<a href=")
+}
+
+func TestFormatBlockMessageMarkdown(t *testing.T) {
+	be := event.BlockEvent{
+		BlockHash:        "abc",
+		IssuerVkey:       "def",
+		TransactionCount: 1,
+		BlockBodySize:    100,
+	}
+	bc := event.BlockContext{
+		Era: "Conway", BlockNumber: 1, SlotNumber: 1, NetworkMagic: mainnetNetworkMagic,
+	}
+	result := formatBlockMessage(be, bc, "https://cexplorer.io", models.ParseModeMarkdownV1)
+	assert.Contains(t, result, "*Block Number:*") // Markdown bold (single asterisk per Telegram API)
+	assert.Contains(t, result, "](https")         // Markdown link
+}
+
+func TestEscapeMarkdownV2(t *testing.T) {
+	assert.Equal(t, `\.`, escapeMarkdownV2("."))
+	assert.Equal(t, `1\.500000`, escapeMarkdownV2("1.500000"))
+	assert.Equal(t, `abc\.\.\.xyz`, escapeMarkdownV2("abc...xyz"))
+	assert.Equal(t, `\(test\)`, escapeMarkdownV2("(test)"))
+}
+
+func TestEscapeMarkdownV2URL(t *testing.T) {
+	// Only \ and ) must be escaped in URL; dots and other chars stay
+	assert.Equal(t, "https://example.com/path", escapeMarkdownV2URL("https://example.com/path"))
+	assert.Equal(t, `https://example.com/path\)`, escapeMarkdownV2URL("https://example.com/path)"))
+	// One backslash in URL becomes two in output (escaped for MarkdownV2)
+	assert.Equal(t, `https://example.com/path\\`, escapeMarkdownV2URL("https://example.com/path\\"))
+}
+
+func TestEscapeForMode(t *testing.T) {
+	assert.Equal(t, "Conway", escapeForMode("Conway", models.ParseModeHTML))
+	assert.Equal(t, "Conway", escapeForMode("Conway", models.ParseModeMarkdownV1))
+	assert.Equal(t, `1\.500000`, escapeForMode("1.500000", models.ParseModeMarkdown))
+}
+
+func TestFormatBlockMessageMarkdownV2(t *testing.T) {
+	be := event.BlockEvent{
+		BlockHash:        "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
+		IssuerVkey:       "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+		TransactionCount: 1,
+		BlockBodySize:    100,
+	}
+	bc := event.BlockContext{
+		Era: "Conway", BlockNumber: 1, SlotNumber: 1, NetworkMagic: mainnetNetworkMagic,
+	}
+	result := formatBlockMessage(be, bc, "https://cexplorer.io", models.ParseModeMarkdown)
+	assert.Contains(t, result, "*Block Number:*") // MarkdownV2 bold (single asterisk)
+	assert.Contains(t, result, "](https")         // link with unescaped URL
+	assert.Contains(t, result, `\.\.\.`)          // truncated hash has escaped dots
+	assert.Contains(t, result, "Conway")          // Era not escaped for display (Era has no special chars in "Conway")
+}
+
+func TestFormatRollbackMessageMarkdownV2(t *testing.T) {
+	re := event.RollbackEvent{
+		BlockHash:  "abcdef1234567890abcdef1234567890",
+		SlotNumber: 12345,
+	}
+	result := formatRollbackMessage(re, models.ParseModeMarkdown)
+	assert.Contains(t, result, "*Slot Number:*") // MarkdownV2 bold (single asterisk)
+	assert.Contains(t, result, `\.\.\.`)         // truncated hash
+}
+
+func TestFormatTransactionMessageMarkdownV2(t *testing.T) {
+	te := event.TransactionEvent{Fee: 200_000}
+	tc := event.TransactionContext{
+		TransactionHash: "txhash1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
+		BlockNumber:     100, SlotNumber: 200, NetworkMagic: mainnetNetworkMagic,
+	}
+	result := formatTransactionMessage(te, tc, "https://cexplorer.io", models.ParseModeMarkdown)
+	assert.Contains(t, result, "*Transaction Hash:*") // MarkdownV2 bold (single asterisk)
+	assert.Contains(t, result, `0\.200000`)           // Fee in ADA with escaped dot
 }
 
 func TestFormatRollbackMessage(t *testing.T) {
@@ -184,7 +261,7 @@ func TestFormatRollbackMessage(t *testing.T) {
 		SlotNumber: 12345,
 	}
 
-	result := formatRollbackMessage(re)
+	result := formatRollbackMessage(re, models.ParseModeHTML)
 
 	assert.Contains(t, result, "Rollback")
 	assert.Contains(t, result, "12345")
@@ -202,7 +279,7 @@ func TestFormatTransactionMessage(t *testing.T) {
 		NetworkMagic:    mainnetNetworkMagic,
 	}
 
-	result := formatTransactionMessage(te, tc, "https://cexplorer.io")
+	result := formatTransactionMessage(te, tc, "https://cexplorer.io", models.ParseModeHTML)
 
 	assert.Contains(t, result, "New Cardano Transaction")
 	assert.Contains(t, result, "100")
@@ -249,6 +326,18 @@ func TestWithOptions(t *testing.T) {
 		tg := &TelegramOutput{}
 		WithParseMode("HTML")(tg)
 		assert.Equal(t, "HTML", string(tg.parseMode))
+	})
+
+	t.Run("WithParseMode Markdown", func(t *testing.T) {
+		tg := &TelegramOutput{}
+		WithParseMode("Markdown")(tg)
+		assert.Equal(t, "Markdown", string(tg.parseMode))
+	})
+
+	t.Run("WithParseMode MarkdownV2", func(t *testing.T) {
+		tg := &TelegramOutput{}
+		WithParseMode("MarkdownV2")(tg)
+		assert.Equal(t, "MarkdownV2", string(tg.parseMode))
 	})
 
 	t.Run("WithDisableLinkPreview", func(t *testing.T) {

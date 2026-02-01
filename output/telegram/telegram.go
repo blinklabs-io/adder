@@ -18,10 +18,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strconv"
+	"strings"
 	"sync"
 	"time"
-	"unicode/utf8"
 
 	"github.com/blinklabs-io/adder/event"
 	"github.com/blinklabs-io/adder/internal/logging"
@@ -183,7 +182,7 @@ func (t *TelegramOutput) processEvent(evt *event.Event) {
 		}
 
 		baseURL := getBaseURL(bc.NetworkMagic)
-		message = formatBlockMessage(be, bc, baseURL)
+		message = formatBlockMessage(be, bc, baseURL, t.parseMode)
 
 	case "chainsync.rollback":
 		re, ok := payload.(event.RollbackEvent)
@@ -191,7 +190,7 @@ func (t *TelegramOutput) processEvent(evt *event.Event) {
 			logger.Error("rollback event has invalid payload type")
 			return
 		}
-		message = formatRollbackMessage(re)
+		message = formatRollbackMessage(re, t.parseMode)
 
 	case "chainsync.transaction":
 		evtCtx := evt.Context
@@ -211,7 +210,7 @@ func (t *TelegramOutput) processEvent(evt *event.Event) {
 		}
 
 		baseURL := getBaseURL(tc.NetworkMagic)
-		message = formatTransactionMessage(te, tc, baseURL)
+		message = formatTransactionMessage(te, tc, baseURL, t.parseMode)
 
 	default:
 		logger.Error("unknown event type: " + evt.Type)
@@ -223,34 +222,37 @@ func (t *TelegramOutput) processEvent(evt *event.Event) {
 }
 
 // formatBlockMessage formats a block event for Telegram
-func formatBlockMessage(be event.BlockEvent, bc event.BlockContext, baseURL string) string {
+func formatBlockMessage(be event.BlockEvent, bc event.BlockContext, baseURL string, mode models.ParseMode) string {
+	blockURL := baseURL + "/block/" + be.BlockHash
 	return fmt.Sprintf(
-		"<b>🧱 New Cardano Block</b>\n\n"+
-			"<b>Era:</b> %s\n"+
-			"<b>Block Number:</b> %d\n"+
-			"<b>Slot Number:</b> %d\n"+
-			"<b>Block Hash:</b> <a href=\"%s/block/%s\">%s</a>\n"+
-			"<b>Issuer:</b> %s\n"+
-			"<b>Transactions:</b> %d\n"+
-			"<b>Body Size:</b> %d bytes",
-		bc.Era,
-		bc.BlockNumber,
-		bc.SlotNumber,
-		baseURL, be.BlockHash, truncateHash(be.BlockHash),
-		truncateHash(be.IssuerVkey),
-		be.TransactionCount,
-		be.BlockBodySize,
+		"%s\n\n"+
+			"%s %s\n"+
+			"%s %d\n"+
+			"%s %d\n"+
+			"%s %s\n"+
+			"%s %s\n"+
+			"%s %d\n"+
+			"%s %d bytes",
+		bold("🧱 New Cardano Block", mode),
+		bold("Era:", mode), escapeForMode(bc.Era, mode),
+		bold("Block Number:", mode), bc.BlockNumber,
+		bold("Slot Number:", mode), bc.SlotNumber,
+		bold("Block Hash:", mode), link(blockURL, truncateHash(be.BlockHash), mode),
+		bold("Issuer:", mode), escapeForMode(truncateHash(be.IssuerVkey), mode),
+		bold("Transactions:", mode), be.TransactionCount,
+		bold("Body Size:", mode), be.BlockBodySize,
 	)
 }
 
 // formatRollbackMessage formats a rollback event for Telegram
-func formatRollbackMessage(re event.RollbackEvent) string {
+func formatRollbackMessage(re event.RollbackEvent, mode models.ParseMode) string {
 	return fmt.Sprintf(
-		"<b>⚠️ Cardano Rollback</b>\n\n"+
-			"<b>Slot Number:</b> %d\n"+
-			"<b>Block Hash:</b> %s",
-		re.SlotNumber,
-		truncateHash(re.BlockHash),
+		"%s\n\n"+
+			"%s %d\n"+
+			"%s %s",
+		bold("⚠️ Cardano Rollback", mode),
+		bold("Slot Number:", mode), re.SlotNumber,
+		bold("Block Hash:", mode), escapeForMode(truncateHash(re.BlockHash), mode),
 	)
 }
 
@@ -259,22 +261,93 @@ func formatTransactionMessage(
 	te event.TransactionEvent,
 	tc event.TransactionContext,
 	baseURL string,
+	mode models.ParseMode,
 ) string {
+	txURL := baseURL + "/tx/" + tc.TransactionHash
 	return fmt.Sprintf(
-		"<b>💳 New Cardano Transaction</b>\n\n"+
-			"<b>Block Number:</b> %d\n"+
-			"<b>Slot Number:</b> %d\n"+
-			"<b>Transaction Hash:</b> <a href=\"%s/tx/%s\">%s</a>\n"+
-			"<b>Inputs:</b> %d\n"+
-			"<b>Outputs:</b> %d\n"+
-			"<b>Fee:</b> %s ADA",
-		tc.BlockNumber,
-		tc.SlotNumber,
-		baseURL, tc.TransactionHash, truncateHash(tc.TransactionHash),
-		len(te.Inputs),
-		len(te.Outputs),
-		formatLovelace(te.Fee),
+		"%s\n\n"+
+			"%s %d\n"+
+			"%s %d\n"+
+			"%s %s\n"+
+			"%s %d\n"+
+			"%s %d\n"+
+			"%s %s ADA",
+		bold("💳 New Cardano Transaction", mode),
+		bold("Block Number:", mode), tc.BlockNumber,
+		bold("Slot Number:", mode), tc.SlotNumber,
+		bold("Transaction Hash:", mode), link(txURL, truncateHash(tc.TransactionHash), mode),
+		bold("Inputs:", mode), len(te.Inputs),
+		bold("Outputs:", mode), len(te.Outputs),
+		bold("Fee:", mode), escapeForMode(formatLovelace(te.Fee), mode),
 	)
+}
+
+// escapeMarkdownV2 escapes MarkdownV2 special characters: _ * [ ] ( ) ~ ` > # + - = | { } . ! \
+// See https://core.telegram.org/bots/api#markdownv2-style
+func escapeMarkdownV2(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		switch r {
+		case '_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!', '\\':
+			b.WriteRune('\\')
+			b.WriteRune(r)
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+// escapeMarkdownV2URL escapes only \ and ) inside a MarkdownV2 link URL.
+// In [text](url), the URL must only escape these so the closing ')' is not consumed.
+func escapeMarkdownV2URL(url string) string {
+	var b strings.Builder
+	for _, r := range url {
+		if r == '\\' || r == ')' {
+			b.WriteRune('\\')
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
+}
+
+// escapeForMode escapes s for MarkdownV2 when mode is ParseModeMarkdown; otherwise returns s unchanged.
+func escapeForMode(s string, mode models.ParseMode) string {
+	if mode == models.ParseModeMarkdown {
+		return escapeMarkdownV2(s)
+	}
+	return s
+}
+
+// bold returns s as bold for the given parse mode.
+// Telegram API: Markdown and MarkdownV2 use single asterisk for bold: *bold*
+// https://core.telegram.org/bots/api#markdownv2-style
+func bold(s string, mode models.ParseMode) string {
+	switch mode {
+	case models.ParseModeHTML:
+		return "<b>" + s + "</b>"
+	case models.ParseModeMarkdownV1:
+		return "*" + s + "*"
+	case models.ParseModeMarkdown:
+		return "*" + escapeMarkdownV2(s) + "*"
+	default:
+		return "<b>" + s + "</b>"
+	}
+}
+
+// link returns a link for the given parse mode.
+// For MarkdownV2: link text is fully escaped; URL is escaped only for \ and ) per Telegram API.
+func link(url, text string, mode models.ParseMode) string {
+	switch mode {
+	case models.ParseModeHTML:
+		return fmt.Sprintf("<a href=\"%s\">%s</a>", url, text)
+	case models.ParseModeMarkdownV1:
+		return fmt.Sprintf("[%s](%s)", text, url)
+	case models.ParseModeMarkdown:
+		return fmt.Sprintf("[%s](%s)", escapeMarkdownV2(text), escapeMarkdownV2URL(url))
+	default:
+		return fmt.Sprintf("<a href=\"%s\">%s</a>", url, text)
+	}
 }
 
 // truncateHash truncates a hash for display
@@ -285,28 +358,58 @@ func truncateHash(hash string) string {
 	return hash[:8] + "..." + hash[len(hash)-8:]
 }
 
-// truncateMessage ensures text fits within Telegram's message length limit.
-// It truncates on rune boundaries and appends "… [truncated]" when shortened.
+// utf16Len returns the length of s in UTF-16 code units (Telegram's count).
+func utf16Len(s string) int {
+	n := 0
+	for _, r := range s {
+		if r < 0x10000 {
+			n++
+		} else {
+			n += 2
+		}
+	}
+	return n
+}
+
+// truncateMessage ensures text fits within Telegram's message length limit
+// (maxLen is in UTF-16 code units). It truncates on rune boundaries and
+// appends "… [truncated]" when shortened.
 func truncateMessage(text string, maxLen int) string {
-	if maxLen <= 0 || len(text) <= maxLen {
+	if maxLen <= 0 {
 		return text
 	}
 	suffix := "… [truncated]"
-	keep := maxLen - len(suffix)
-	if keep <= 0 {
-		return text[:maxLen]
+	suffixUnits := utf16Len(suffix)
+	if utf16Len(text) <= maxLen {
+		return text
 	}
-	trunc := text[:keep]
-	for len(trunc) > 0 && !utf8.ValidString(trunc) {
-		trunc = trunc[:len(trunc)-1]
+	keepUnits := maxLen - suffixUnits
+	if keepUnits <= 0 {
+		return suffix
 	}
-	return trunc + suffix
+	var runes []rune
+	units := 0
+	for _, r := range text {
+		need := 1
+		if r >= 0x10000 {
+			need = 2
+		}
+		if units+need > keepUnits {
+			break
+		}
+		runes = append(runes, r)
+		units += need
+	}
+	return string(runes) + suffix
 }
 
-// formatLovelace formats lovelace amount to ADA
+// formatLovelace formats lovelace amount to ADA using integer division so
+// large amounts are not rounded by float64.
 func formatLovelace(lovelace uint64) string {
-	ada := float64(lovelace) / 1_000_000
-	return strconv.FormatFloat(ada, 'f', 6, 64)
+	const lovelacePerADA = 1_000_000
+	ada := lovelace / lovelacePerADA
+	frac := lovelace % lovelacePerADA
+	return fmt.Sprintf("%d.%06d", ada, frac)
 }
 
 // getBaseURL returns the block explorer URL based on network magic
@@ -327,6 +430,9 @@ func getBaseURL(networkMagic uint32) string {
 func (t *TelegramOutput) SendMessage(message string) error {
 	logger := t.log()
 
+	if t.bot == nil {
+		return errors.New("telegram bot not initialized; use telegram.New()")
+	}
 	if t.chatID == 0 {
 		return errors.New("no chat ID configured")
 	}
