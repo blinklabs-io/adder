@@ -101,10 +101,19 @@ func (t *TelegramOutput) log() plugin.Logger {
 
 // Start the Telegram output
 func (t *TelegramOutput) Start() error {
-	// Guard against double-start: wait for existing goroutine to exit
+	// Guard against double-start: wait for existing goroutine to exit, then close old channels
 	if t.doneChan != nil {
 		close(t.doneChan)
+		t.doneChan = nil
 		t.wg.Wait()
+	}
+	if t.eventChan != nil {
+		close(t.eventChan)
+		t.eventChan = nil
+	}
+	if t.errorChan != nil {
+		close(t.errorChan)
+		t.errorChan = nil
 	}
 
 	t.eventChan = make(chan event.Event, 10)
