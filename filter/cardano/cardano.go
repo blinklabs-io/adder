@@ -16,6 +16,7 @@ package cardano
 
 import (
 	"bytes"
+	"encoding/hex"
 	"sync"
 
 	"github.com/blinklabs-io/adder/event"
@@ -196,6 +197,57 @@ func (c *Cardano) matchAddressFilter(te event.TransactionEvent) bool {
 	return false
 }
 
+// matchAddressFilterGovernance checks if governance event matches address filters
+func (c *Cardano) matchAddressFilterGovernance(ge event.GovernanceEvent) bool {
+	// Check proposal procedures for reward account matches
+	for _, prop := range ge.ProposalProcedures {
+		// RewardAccount is a stake/reward address string
+		if _, exists := c.filterSet.addresses.stakeAddresses[prop.RewardAccount]; exists {
+			return true
+		}
+
+		// Check treasury withdrawal addresses if this is a treasury withdrawal action
+		if prop.ActionData.TreasuryWithdrawal != nil {
+			for _, withdrawal := range prop.ActionData.TreasuryWithdrawal.Withdrawals {
+				// Check against payment addresses
+				if _, exists := c.filterSet.addresses.paymentAddresses[withdrawal.Address]; exists {
+					return true
+				}
+				// Also check against stake addresses (some withdrawals may use stake addresses)
+				if _, exists := c.filterSet.addresses.stakeAddresses[withdrawal.Address]; exists {
+					return true
+				}
+			}
+		}
+	}
+
+	// Check vote delegation certificates for stake credential matches
+	if len(c.filterSet.addresses.stakeCredentialHashes) > 0 {
+		for _, cert := range ge.VoteDelegationCertificates {
+			// StakeCredential is a hex string of the credential hash (28 bytes)
+			credBytes, err := hex.DecodeString(cert.StakeCredential)
+			if err != nil {
+				continue
+			}
+			for _, filterHash := range c.filterSet.addresses.stakeCredentialHashes {
+				// filterHash may include header byte from bech32 decoding
+				// Compare against last 28 bytes (the actual credential hash)
+				var hashToCompare []byte
+				if len(filterHash) > 28 {
+					hashToCompare = filterHash[len(filterHash)-28:]
+				} else {
+					hashToCompare = filterHash
+				}
+				if bytes.Equal(credBytes, hashToCompare) {
+					return true
+				}
+			}
+		}
+	}
+
+	return false
+}
+
 // matchStakeCertificates checks certificates against stake credential hashes
 func (c *Cardano) matchStakeCertificates(certificates []ledger.Certificate) bool {
 	for _, certificate := range certificates {
@@ -213,7 +265,15 @@ func (c *Cardano) matchStakeCertificates(certificates []ledger.Certificate) bool
 
 		// Use pre-decoded stake credential hashes with bytes.Equal comparison
 		for _, filterHash := range c.filterSet.addresses.stakeCredentialHashes {
-			if bytes.Equal(credBytes, filterHash) {
+			// filterHash may include header byte from bech32 decoding
+			// Compare against last 28 bytes (the actual credential hash)
+			var hashToCompare []byte
+			if len(filterHash) > 28 {
+				hashToCompare = filterHash[len(filterHash)-28:]
+			} else {
+				hashToCompare = filterHash
+			}
+			if bytes.Equal(credBytes, hashToCompare) {
 				return true
 			}
 		}
@@ -262,13 +322,20 @@ func (c *Cardano) matchAssetFilter(te event.TransactionEvent) bool {
 
 // filterGovernanceEvent checks all applicable filters for governance events
 func (c *Cardano) filterGovernanceEvent(ge event.GovernanceEvent) bool {
+	// Check address filter
+	if c.filterSet.hasAddressFilter {
+		if !c.matchAddressFilterGovernance(ge) {
+			return false
+		}
+	}
+
 	// Check DRep filter
 	if c.filterSet.hasDRepFilter {
 		if !c.matchDRepFilterGovernance(ge) {
 			return false
 		}
 	}
-	// Future: pool filter, address filter for governance
+
 	return true
 }
 

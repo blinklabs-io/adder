@@ -774,3 +774,182 @@ func TestFilterByPoolId(t *testing.T) {
 		t.Fatal("Test timed out waiting for filtered event")
 	}
 }
+
+func TestFilterByAddressGovernanceEvent(t *testing.T) {
+	// Use a stake/reward address format for proposal reward accounts
+	stakeAddr := "stake1uyehkck0lajq8gr28t9uxnuvgcqrc6070x3k9r8048z8y5gh6ffgw"
+	// 28 bytes = 56 hex chars for stake credential hash
+	stakeCredHex := "abcd1234567890abcdef1234567890abcdef1234567890abcdef1234"
+
+	t.Run("matches proposal reward account", func(t *testing.T) {
+		cs := New(WithAddresses([]string{stakeAddr}))
+
+		evt := event.Event{
+			Payload: event.GovernanceEvent{
+				ProposalProcedures: []event.ProposalProcedureData{
+					{
+						Index:         0,
+						Deposit:       100000000,
+						RewardAccount: stakeAddr,
+						ActionType:    "Info",
+					},
+				},
+			},
+		}
+
+		err := cs.Start()
+		assert.NoError(t, err)
+		defer cs.Stop()
+
+		cs.InputChan() <- evt
+
+		select {
+		case filteredEvt := <-cs.OutputChan():
+			assert.Equal(t, evt, filteredEvt)
+		case <-time.After(1 * time.Second):
+			t.Error("Expected event to pass filter but it didn't")
+		}
+	})
+
+	t.Run("matches treasury withdrawal address", func(t *testing.T) {
+		// Use a payment address for treasury withdrawal
+		paymentAddr := "addr1qx2fxv2umyhttkxyxp8x0dlpdt3k6cwng5pxj3jhsydzer3jcu5d8ps7zex2k2xt3uqxgjqnnj83ws8lhrn648jjxtwq2ytjqp"
+		cs := New(WithAddresses([]string{paymentAddr}))
+
+		evt := event.Event{
+			Payload: event.GovernanceEvent{
+				ProposalProcedures: []event.ProposalProcedureData{
+					{
+						Index:         0,
+						Deposit:       100000000000,
+						RewardAccount: "stake1...", // Different from filter
+						ActionType:    "TreasuryWithdrawal",
+						ActionData: event.GovActionData{
+							TreasuryWithdrawal: &event.TreasuryWithdrawalActionData{
+								Withdrawals: []event.TreasuryWithdrawalItem{
+									{
+										Address: paymentAddr,
+										Amount:  50000000000,
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		}
+
+		err := cs.Start()
+		assert.NoError(t, err)
+		defer cs.Stop()
+
+		cs.InputChan() <- evt
+
+		select {
+		case filteredEvt := <-cs.OutputChan():
+			assert.Equal(t, evt, filteredEvt)
+		case <-time.After(1 * time.Second):
+			t.Error("Expected event to pass filter but it didn't")
+		}
+	})
+
+	t.Run("matches vote delegation stake credential", func(t *testing.T) {
+		// Create a stake address that decodes to a credential hash
+		realStakeAddr := "stake1uyehkck0lajq8gr28t9uxnuvgcqrc6070x3k9r8048z8y5gh6ffgw"
+		cs := New(WithAddresses([]string{realStakeAddr}))
+
+		// Decode the stake address to get the actual credential hash
+		_, data, err := bech32.DecodeNoLimit(realStakeAddr)
+		assert.NoError(t, err)
+		converted, err := bech32.ConvertBits(data, 5, 8, false)
+		assert.NoError(t, err)
+		// Skip the first byte (header) to get the credential hash
+		credHash := hex.EncodeToString(converted[1:])
+
+		evt := event.Event{
+			Payload: event.GovernanceEvent{
+				VoteDelegationCertificates: []event.VoteDelegationCertificateData{
+					{
+						CertificateType: "VoteDelegation",
+						StakeCredential: credHash,
+						DRepType:        "KeyHash",
+						DRepHash:        "someDRepHash",
+					},
+				},
+			},
+		}
+
+		err = cs.Start()
+		assert.NoError(t, err)
+		defer cs.Stop()
+
+		cs.InputChan() <- evt
+
+		select {
+		case filteredEvt := <-cs.OutputChan():
+			assert.Equal(t, evt, filteredEvt)
+		case <-time.After(1 * time.Second):
+			t.Error("Expected event to pass filter but it didn't")
+		}
+	})
+
+	t.Run("does not match when address not in filter", func(t *testing.T) {
+		cs := New(WithAddresses([]string{stakeAddr}))
+
+		otherStakeAddr := "stake1uxxx..."
+		evt := event.Event{
+			Payload: event.GovernanceEvent{
+				ProposalProcedures: []event.ProposalProcedureData{
+					{
+						Index:         0,
+						RewardAccount: otherStakeAddr,
+						ActionType:    "Info",
+					},
+				},
+			},
+		}
+
+		err := cs.Start()
+		assert.NoError(t, err)
+		defer cs.Stop()
+
+		cs.InputChan() <- evt
+
+		select {
+		case <-cs.OutputChan():
+			t.Error("Expected event to be filtered out but it passed through")
+		case <-time.After(100 * time.Millisecond):
+			// Expected no event
+		}
+	})
+
+	t.Run("does not match governance event with no address data", func(t *testing.T) {
+		cs := New(WithAddresses([]string{stakeAddr}))
+
+		evt := event.Event{
+			Payload: event.GovernanceEvent{
+				// Only voting procedures, no addresses
+				VotingProcedures: []event.VotingProcedureData{
+					{
+						VoterType: "DRep",
+						VoterHash: stakeCredHex,
+						Vote:      "Yes",
+					},
+				},
+			},
+		}
+
+		err := cs.Start()
+		assert.NoError(t, err)
+		defer cs.Stop()
+
+		cs.InputChan() <- evt
+
+		select {
+		case <-cs.OutputChan():
+			t.Error("Expected event to be filtered out but it passed through")
+		case <-time.After(100 * time.Millisecond):
+			// Expected no event
+		}
+	})
+}
