@@ -42,6 +42,7 @@ type poolFilter struct {
 	bech32PoolIds map[string]struct{} // Pool IDs in bech32 format (pool1xxx)
 	hexToBech32   map[string]string   // Maps hex -> bech32
 	bytesPoolIds  map[string][]byte   // Pre-computed byte slices for direct comparison (hex string -> bytes)
+	bytesLookup   map[string]struct{} // Byte string keys for O(1) lookup without hex encoding
 }
 
 // policyFilter holds policy IDs for O(1) lookup
@@ -60,4 +61,5 @@ type drepFilter struct {
 	bech32DRepIds map[string]struct{} // DRep IDs in bech32 format (drep1xxx, drep_script1xxx)
 	hexToBech32   map[string]string   // Maps hex -> bech32 for reference
 	bytesDRepIds  map[string][]byte   // Pre-computed byte slices for direct comparison (hex string -> bytes)
+	bytesLookup   map[string]struct{} // Byte string keys for O(1) lookup without hex encoding
 }

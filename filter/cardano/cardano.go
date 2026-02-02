@@ -16,7 +16,6 @@ package cardano
 
 import (
 	"bytes"
-	"encoding/hex"
 	"sync"
 
 	"github.com/blinklabs-io/adder/event"
@@ -340,9 +339,8 @@ func (c *Cardano) matchDRepFilterTx(te event.TransactionEvent) bool {
 		}
 
 		if drepHash != nil {
-			// O(1) hex map lookup
-			hexStr := hex.EncodeToString(drepHash)
-			if _, exists := c.filterSet.dreps.hexDRepIds[hexStr]; exists {
+			// O(1) lookup using byte string key (no encoding needed)
+			if _, exists := c.filterSet.dreps.bytesLookup[string(drepHash)]; exists {
 				return true
 			}
 		}
@@ -354,9 +352,8 @@ func (c *Cardano) matchDRepFilterTx(te event.TransactionEvent) bool {
 			if voter.Type == common.VoterTypeDRepKeyHash ||
 				voter.Type == common.VoterTypeDRepScriptHash {
 				voterHash := voter.Hash[:]
-				// O(1) hex map lookup
-				hexStr := hex.EncodeToString(voterHash)
-				if _, exists := c.filterSet.dreps.hexDRepIds[hexStr]; exists {
+				// O(1) lookup using byte string key (no encoding needed)
+				if _, exists := c.filterSet.dreps.bytesLookup[string(voterHash)]; exists {
 					return true
 				}
 			}
@@ -382,9 +379,8 @@ func (c *Cardano) matchPoolFilterTx(te event.TransactionEvent) bool {
 			continue
 		}
 
-		// O(1) hex map lookup
-		hexStr := hex.EncodeToString(poolKeyHash)
-		if _, exists := c.filterSet.pools.hexPoolIds[hexStr]; exists {
+		// O(1) lookup using byte string key (no encoding needed)
+		if _, exists := c.filterSet.pools.bytesLookup[string(poolKeyHash)]; exists {
 			return true
 		}
 	}

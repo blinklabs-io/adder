@@ -68,6 +68,7 @@ func WithPoolIds(poolIds []string) CardanoOptionFunc {
 				bech32PoolIds: make(map[string]struct{}),
 				hexToBech32:   make(map[string]string),
 				bytesPoolIds:  make(map[string][]byte),
+				bytesLookup:   make(map[string]struct{}),
 			}
 		}
 
@@ -82,7 +83,8 @@ func WithPoolIds(poolIds []string) CardanoOptionFunc {
 						c.filterSet.pools.hexPoolIds[hexId] = struct{}{}
 						c.filterSet.pools.hexToBech32[hexId] = poolId
 						// Pre-compute byte slice for direct comparison
-						c.filterSet.pools.bytesPoolIds[hexId] = decoded
+						c.filterSet.pools.bytesPoolIds[hexId] = decoded // Store as byte string for O(1) lookup without encoding
+						c.filterSet.pools.bytesLookup[string(decoded)] = struct{}{}
 					}
 				}
 			} else {
@@ -91,6 +93,8 @@ func WithPoolIds(poolIds []string) CardanoOptionFunc {
 				if hexBytes, err := hex.DecodeString(poolId); err == nil {
 					// Pre-compute byte slice for direct comparison
 					c.filterSet.pools.bytesPoolIds[poolId] = hexBytes
+					// Store as byte string for O(1) lookup without encoding
+					c.filterSet.pools.bytesLookup[string(hexBytes)] = struct{}{}
 					if convData, err := bech32.ConvertBits(hexBytes, 8, 5, true); err == nil {
 						if encoded, err := bech32.Encode("pool", convData); err == nil {
 							c.filterSet.pools.bech32PoolIds[encoded] = struct{}{}
@@ -143,6 +147,7 @@ func WithDRepIds(drepIds []string) CardanoOptionFunc {
 				bech32DRepIds: make(map[string]struct{}),
 				hexToBech32:   make(map[string]string),
 				bytesDRepIds:  make(map[string][]byte),
+				bytesLookup:   make(map[string]struct{}),
 			}
 		}
 
@@ -161,7 +166,8 @@ func WithDRepIds(drepIds []string) CardanoOptionFunc {
 						c.filterSet.dreps.hexDRepIds[hexId] = struct{}{}
 						c.filterSet.dreps.hexToBech32[hexId] = drepId
 						// Pre-compute byte slice for direct comparison
-						c.filterSet.dreps.bytesDRepIds[hexId] = decoded
+						c.filterSet.dreps.bytesDRepIds[hexId] = decoded // Store as byte string for O(1) lookup without encoding
+						c.filterSet.dreps.bytesLookup[string(decoded)] = struct{}{}
 					}
 				}
 			} else {
@@ -171,6 +177,8 @@ func WithDRepIds(drepIds []string) CardanoOptionFunc {
 				if hexBytes, err := hex.DecodeString(drepId); err == nil {
 					// Pre-compute byte slice for direct comparison
 					c.filterSet.dreps.bytesDRepIds[drepId] = hexBytes
+					// Store as byte string for O(1) lookup without encoding
+					c.filterSet.dreps.bytesLookup[string(hexBytes)] = struct{}{}
 					if convData, err := bech32.ConvertBits(hexBytes, 8, 5, true); err == nil {
 						// Store as key hash version
 						if encoded, err := bech32.Encode("drep", convData); err == nil {
