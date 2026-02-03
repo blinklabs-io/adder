@@ -16,7 +16,6 @@ package cardano
 
 import (
 	"bytes"
-	"encoding/hex"
 	"sync"
 
 	"github.com/blinklabs-io/adder/event"
@@ -340,8 +339,8 @@ func (c *Cardano) matchDRepFilterTx(te event.TransactionEvent) bool {
 		}
 
 		if drepHash != nil {
-			hexStr := hex.EncodeToString(drepHash)
-			if _, exists := c.filterSet.dreps.hexDRepIds[hexStr]; exists {
+			// O(1) lookup using byte string key (no encoding needed)
+			if _, exists := c.filterSet.dreps.bytesLookup[string(drepHash)]; exists {
 				return true
 			}
 		}
@@ -352,8 +351,9 @@ func (c *Cardano) matchDRepFilterTx(te event.TransactionEvent) bool {
 		for voter := range te.Transaction.VotingProcedures() {
 			if voter.Type == common.VoterTypeDRepKeyHash ||
 				voter.Type == common.VoterTypeDRepScriptHash {
-				hexStr := hex.EncodeToString(voter.Hash[:])
-				if _, exists := c.filterSet.dreps.hexDRepIds[hexStr]; exists {
+				voterHash := voter.Hash[:]
+				// O(1) lookup using byte string key (no encoding needed)
+				if _, exists := c.filterSet.dreps.bytesLookup[string(voterHash)]; exists {
 					return true
 				}
 			}
@@ -379,16 +379,8 @@ func (c *Cardano) matchPoolFilterTx(te event.TransactionEvent) bool {
 			continue
 		}
 
-		// Compute hex string from certificate hash for O(1) lookup
-		hexStr := hex.EncodeToString(poolKeyHash)
-
-		// O(1) lookup: check if this hex maps to a filtered pool
-		if _, exists := c.filterSet.pools.hexToBech32[hexStr]; exists {
-			return true
-		}
-
-		// Also check direct hex match in hexPoolIds
-		if _, exists := c.filterSet.pools.hexPoolIds[hexStr]; exists {
+		// O(1) lookup using byte string key (no encoding needed)
+		if _, exists := c.filterSet.pools.bytesLookup[string(poolKeyHash)]; exists {
 			return true
 		}
 	}
