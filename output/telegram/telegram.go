@@ -61,6 +61,7 @@ type TelegramOutput struct {
 	initialBackoff time.Duration
 	maxBackoff     time.Duration
 	backoffFactor  float64
+	pollCancel     context.CancelFunc
 }
 
 // New creates a new TelegramOutput with the provided options
@@ -82,13 +83,46 @@ func New(options ...TelegramOptionFunc) (*TelegramOutput, error) {
 		return nil, errors.New("telegram bot token is required")
 	}
 
-	b, err := bot.New(t.botToken)
+	cmdHandler := commandHandler(t.chatID)
+	b, err := bot.New(t.botToken,
+		bot.WithDefaultHandler(cmdHandler),
+		bot.WithAllowedUpdates(bot.AllowedUpdates{models.AllowedUpdateMessage}),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create telegram bot: %w", err)
 	}
 	t.bot = b
 
 	return t, nil
+}
+
+// commandHandler returns a handler that replies to /start, /help, and /settings (Telegram global commands).
+// Replies are sent only in the configured chat (chatID) so the bot stays send-only and minimal.
+func commandHandler(chatID int64) func(context.Context, *bot.Bot, *models.Update) {
+	return func(ctx context.Context, b *bot.Bot, update *models.Update) {
+		if update.Message == nil || update.Message.Text == "" {
+			return
+		}
+		if chatID != 0 && update.Message.Chat.ID != chatID {
+			return
+		}
+		text := strings.TrimSpace(update.Message.Text)
+		var reply string
+		switch {
+		case text == "/start" || strings.HasPrefix(text, "/start "):
+			reply = "This bot sends Cardano event notifications. Use /help for more."
+		case text == "/help":
+			reply = "This bot sends Cardano chain event notifications (blocks, transactions, rollbacks) to this chat. It is run by Adder and has no in-chat settings."
+		case text == "/settings":
+			reply = "No configurable settings."
+		default:
+			return
+		}
+		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: update.Message.Chat.ID,
+			Text:   reply,
+		})
+	}
 }
 
 // log returns the plugin logger, or the global logger if unset.
@@ -101,7 +135,11 @@ func (t *TelegramOutput) log() plugin.Logger {
 
 // Start the Telegram output
 func (t *TelegramOutput) Start() error {
-	// Guard against double-start: wait for existing goroutine to exit, then close old channels
+	// Guard against double-start: stop poll loop, wait for goroutines to exit, then close old channels
+	if t.pollCancel != nil {
+		t.pollCancel()
+		t.pollCancel = nil
+	}
 	if t.doneChan != nil {
 		close(t.doneChan)
 		t.doneChan = nil
@@ -140,6 +178,25 @@ func (t *TelegramOutput) Start() error {
 	} else {
 		logger.Info("Telegram bot authorized")
 	}
+
+	// Set global commands per Telegram bot requirements (https://core.telegram.org/bots/features#global-commands)
+	globalCommands := []models.BotCommand{
+		{Command: "start", Description: "Start the bot and see an introduction"},
+		{Command: "help", Description: "Show help and list of commands"},
+		{Command: "settings", Description: "View bot settings"},
+	}
+	if _, err := t.bot.SetMyCommands(ctx, &bot.SetMyCommandsParams{Commands: globalCommands}); err != nil {
+		logger.Warn("failed to set Telegram bot commands: " + err.Error())
+	}
+
+	// Start long polling so the bot can react to /start, /help, /settings
+	pollCtx, pollCancel := context.WithCancel(context.Background())
+	t.pollCancel = pollCancel
+	t.wg.Add(1)
+	go func() {
+		defer t.wg.Done()
+		t.bot.Start(pollCtx)
+	}()
 
 	t.wg.Add(1)
 	go func() {
@@ -537,11 +594,15 @@ func (t *TelegramOutput) sendMessageWithRetry(message string) {
 
 // Stop the Telegram output
 func (t *TelegramOutput) Stop() error {
+	if t.pollCancel != nil {
+		t.pollCancel()
+		t.pollCancel = nil
+	}
 	if t.doneChan != nil {
 		close(t.doneChan)
 		t.doneChan = nil
 	}
-	// Wait for goroutine to exit before closing channels
+	// Wait for goroutines to exit before closing channels
 	t.wg.Wait()
 	if t.eventChan != nil {
 		close(t.eventChan)
