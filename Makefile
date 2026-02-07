@@ -5,7 +5,7 @@ ROOT_DIR=$(shell dirname $(realpath $(firstword $(MAKEFILE_LIST))))
 GO_FILES=$(shell find $(ROOT_DIR) -name '*.go')
 
 # Gather list of expected binaries
-BINARIES=$(shell cd $(ROOT_DIR)/cmd && ls -1 | grep -v ^common)
+BINARIES=$(shell cd $(ROOT_DIR)/cmd && ls -1 | grep -v ^common | grep -v ^adder-tray)
 
 # Extract Go module name from go.mod
 GOMODULE=$(shell grep ^module $(ROOT_DIR)/go.mod | awk '{ print $$2 }')
@@ -13,7 +13,7 @@ GOMODULE=$(shell grep ^module $(ROOT_DIR)/go.mod | awk '{ print $$2 }')
 # Set version strings based on git tag and current ref
 GO_LDFLAGS=-ldflags "-s -w -X '$(GOMODULE)/internal/version.Version=$(shell git describe --tags --exact-match 2>/dev/null)' -X '$(GOMODULE)/internal/version.CommitHash=$(shell git rev-parse --short HEAD)'"
 
-.PHONY: build mod-tidy clean test
+.PHONY: build build-tray mod-tidy clean test
 
 # Alias for building program binary
 build: $(BINARIES)
@@ -38,6 +38,15 @@ swagger:
 
 test: mod-tidy
 	go test -v -race ./...
+
+# Build adder-tray binary
+# CGO is required on macOS for system tray support; Linux and
+# Windows use pure Go implementations.
+build-tray: mod-tidy $(GO_FILES)
+	go build \
+		$(GO_LDFLAGS) \
+		-o adder-tray$(if $(filter windows,$(GOOS)),.exe,) \
+		./cmd/adder-tray
 
 # Build our program binaries
 # Depends on GO_FILES to determine when rebuild is needed
