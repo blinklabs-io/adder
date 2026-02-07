@@ -25,9 +25,9 @@ func WithLogger(logger plugin.Logger) LogOptionFunc {
 	}
 }
 
-// WithLevel specifies the logging level
-func WithLevel(level string) LogOptionFunc {
+// WithFormat specifies the output format ("text" or "json")
+func WithFormat(format string) LogOptionFunc {
 	return func(o *LogOutput) {
-		o.level = level
+		o.format = format
 	}
 }
