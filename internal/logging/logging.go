@@ -24,7 +24,7 @@ import (
 
 // defaultLogger returns a non-nil logger so globalLogger is never nil at declaration (satisfies nilaway).
 func defaultLogger() *slog.Logger {
-	return slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+	return slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{
 		Level: slog.LevelInfo,
 	})).With("component", "main")
 }
@@ -47,7 +47,7 @@ func Configure() {
 		level = slog.LevelInfo
 	}
 
-	handler := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+	handler := slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{
 		ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
 			if a.Key == slog.TimeKey {
 				// Format the time attribute to use RFC3339 or your custom format

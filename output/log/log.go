@@ -15,38 +15,37 @@
 package log
 
 import (
+	"encoding/json"
 	"fmt"
-	"log/slog"
+	"os"
 
 	"github.com/blinklabs-io/adder/event"
 	"github.com/blinklabs-io/adder/internal/logging"
 	"github.com/blinklabs-io/adder/plugin"
 )
 
+const (
+	FormatText = "text"
+	FormatJSON = "json"
+)
+
 type LogOutput struct {
-	errorChan    chan error
-	eventChan    chan event.Event
-	logger       plugin.Logger
-	outputLogger *slog.Logger
-	level        string
+	errorChan chan error
+	eventChan chan event.Event
+	doneChan  chan struct{}
+	logger    plugin.Logger
+	format    string
 }
 
 func New(options ...LogOptionFunc) *LogOutput {
 	l := &LogOutput{
-		level: "info",
+		format: FormatText,
 	}
 	for _, option := range options {
 		option(l)
 	}
 	if l.logger == nil {
 		l.logger = logging.GetLogger()
-	}
-
-	// Use the provided *slog.Logger if available, otherwise fall back to global logger
-	if providedLogger, ok := l.logger.(*slog.Logger); ok {
-		l.outputLogger = providedLogger.With("type", "event")
-	} else {
-		l.outputLogger = logging.GetLogger().With("type", "event")
 	}
 	return l
 }
@@ -55,33 +54,105 @@ func New(options ...LogOptionFunc) *LogOutput {
 func (l *LogOutput) Start() error {
 	l.eventChan = make(chan event.Event, 10)
 	l.errorChan = make(chan error)
+	l.doneChan = make(chan struct{})
+	// Capture channels locally to avoid races with Stop()
+	eventChan := l.eventChan
+	doneChan := l.doneChan
 	go func() {
-		for {
-			evt, ok := <-l.eventChan
-			// Channel has been closed, which means we're shutting down
-			if !ok {
-				return
-			}
-			switch l.level {
-			case "info":
-				l.outputLogger.Info("", "event", fmt.Sprintf("%+v", evt))
-			case "warn":
-				l.outputLogger.Warn("", "event", fmt.Sprintf("%+v", evt))
-			case "error":
-				l.outputLogger.Error("", "event", fmt.Sprintf("%+v", evt))
+		defer close(doneChan)
+		for evt := range eventChan {
+			switch l.format {
+			case FormatJSON:
+				l.writeJSON(evt)
 			default:
-				// Use INFO level if log level isn't recognized
-				l.outputLogger.Info("", "event", fmt.Sprintf("%+v", evt))
+				l.writeText(evt)
 			}
 		}
 	}()
 	return nil
 }
 
+// writeText writes events in a human-readable format to stdout.
+func (l *LogOutput) writeText(evt event.Event) {
+	ts := evt.Timestamp.Format("2006-01-02 15:04:05")
+
+	var line string
+	switch payload := evt.Payload.(type) {
+	case event.BlockEvent:
+		ctx, _ := evt.Context.(event.BlockContext)
+		line = fmt.Sprintf(
+			"%s %-12s slot=%-10d block=%-8d hash=%s era=%-7s txs=%d size=%d",
+			ts, "BLOCK",
+			ctx.SlotNumber, ctx.BlockNumber,
+			payload.BlockHash,
+			ctx.Era,
+			payload.TransactionCount,
+			payload.BlockBodySize,
+		)
+	case event.TransactionEvent:
+		ctx, _ := evt.Context.(event.TransactionContext)
+		line = fmt.Sprintf(
+			"%s %-12s slot=%-10d block=%-8d tx=%s fee=%d inputs=%d outputs=%d",
+			ts, "TX",
+			ctx.SlotNumber, ctx.BlockNumber,
+			ctx.TransactionHash,
+			payload.Fee,
+			len(payload.Inputs), len(payload.Outputs),
+		)
+	case event.RollbackEvent:
+		line = fmt.Sprintf(
+			"%s %-12s slot=%-10d hash=%s",
+			ts, "ROLLBACK",
+			payload.SlotNumber,
+			payload.BlockHash,
+		)
+	case event.GovernanceEvent:
+		ctx, _ := evt.Context.(event.GovernanceContext)
+		certs := len(payload.DRepCertificates) +
+			len(payload.VoteDelegationCertificates) +
+			len(payload.CommitteeCertificates)
+		line = fmt.Sprintf(
+			"%s %-12s slot=%-10d block=%-8d tx=%s proposals=%d votes=%d certs=%d",
+			ts, "GOVERNANCE",
+			ctx.SlotNumber, ctx.BlockNumber,
+			ctx.TransactionHash,
+			len(payload.ProposalProcedures),
+			len(payload.VotingProcedures),
+			certs,
+		)
+	default:
+		line = fmt.Sprintf(
+			"%s %-12s %+v",
+			ts, evt.Type, evt.Payload,
+		)
+	}
+
+	fmt.Fprintln(os.Stdout, line)
+}
+
+// writeJSON writes events as newline-delimited JSON to stdout.
+// Errors are written to stderr to avoid corrupting the JSON stream.
+func (l *LogOutput) writeJSON(evt event.Event) {
+	data, err := json.Marshal(evt)
+	if err != nil {
+		fmt.Fprintf(
+			os.Stderr,
+			"error: failed to marshal event: %v\n",
+			err,
+		)
+		return
+	}
+	os.Stdout.Write(append(data, '\n'))
+}
+
 // Stop the log output
 func (l *LogOutput) Stop() error {
 	if l.eventChan != nil {
 		close(l.eventChan)
+		// Wait for the goroutine to finish processing
+		if l.doneChan != nil {
+			<-l.doneChan
+		}
 		l.eventChan = nil
 	}
 	if l.errorChan != nil {

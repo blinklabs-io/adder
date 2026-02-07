@@ -63,8 +63,8 @@ func convertKVs(kvs []ogmigo.KeyValue) []any {
 }
 
 func NewKugoCustomLogger(level LogLevel) *KugoCustomLogger {
-	// Create a new slog logger that logs to stdout using JSON format
-	handler := slog.NewJSONHandler(os.Stdout, nil)
+	// Create a new slog logger that logs to stderr using JSON format
+	handler := slog.NewJSONHandler(os.Stderr, nil)
 	logger := slog.New(handler)
 
 	return &KugoCustomLogger{

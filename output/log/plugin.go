@@ -20,7 +20,7 @@ import (
 )
 
 var cmdlineOptions struct {
-	level string
+	format string
 }
 
 func init() {
@@ -32,11 +32,11 @@ func init() {
 			NewFromOptionsFunc: NewFromCmdlineOptions,
 			Options: []plugin.PluginOption{
 				{
-					Name:         "level",
+					Name:         "format",
 					Type:         plugin.PluginOptionTypeString,
-					Description:  "specifies the log level to use",
-					DefaultValue: "info",
-					Dest:         &(cmdlineOptions.level),
+					Description:  "specifies the output format: text (human-readable, default) or json (machine-parseable)",
+					DefaultValue: "text",
+					Dest:         &(cmdlineOptions.format),
 				},
 			},
 		},
@@ -48,7 +48,7 @@ func NewFromCmdlineOptions() plugin.Plugin {
 		WithLogger(
 			logging.GetLogger().With("plugin", "output.log"),
 		),
-		WithLevel(cmdlineOptions.level),
+		WithFormat(cmdlineOptions.format),
 	)
 	return p
 }

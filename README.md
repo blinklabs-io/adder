@@ -99,8 +99,43 @@ transaction:
 }
 ```
 
-Each event is output individually. The log output prints each event to stdout
-using Go's standard `slog` logging library.
+Each event is output individually. The log output supports two formats:
+
+- **text** (default) — human-readable, one line per event:
+
+  ```text
+  2026-02-07 09:18:40 BLOCK        slot=12345678  block=9876543  hash=abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234 era=Conway  txs=5 size=1234
+  2026-02-07 09:18:41 TX           slot=12345678  block=9876543  tx=deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef fee=180000 inputs=2 outputs=3
+  2026-02-07 09:18:42 ROLLBACK     slot=12345678  hash=aabbccddaabbccddaabbccddaabbccddaabbccddaabbccddaabbccddaabbccdd
+  2026-02-07 09:18:43 GOVERNANCE   slot=12345678  block=9876543  tx=1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd proposals=1 votes=2 certs=1
+  ```
+
+- **json** — newline-delimited JSON, one JSON object per event (suitable for
+  piping to `jq` or other tooling):
+
+  ```json
+  {"type":"chainsync.block","timestamp":"2026-02-07T09:18:40Z","context":{"blockNumber":9876543,"slotNumber":12345678},"payload":{"blockHash":"abc12345..."}}
+  ```
+
+Select the format with `--output-log-format`:
+
+```bash
+adder --output-log-format json
+```
+
+Event data is written to **stdout** and application logs are written to
+**stderr**. This means you can capture only event output:
+
+```bash
+# Save events to a file, see app logs in terminal
+adder > events.txt
+
+# Pipe events to jq, suppress app logs
+adder --output-log-format json 2>/dev/null | jq .
+
+# See only app logs, discard event data
+adder > /dev/null
+```
 
 ## Configuration
 
@@ -123,6 +158,7 @@ Flags:
                                       specifies the TCP address of the node to connect to
 ...
       --output string                 output plugin to use, 'list' to show available (default "log")
+      --output-log-format string      output format: "text" or "json" (default "text")
       --output-log-level string       specifies the log level to use (default "info")
   -h, --help                          help for adder
 ```
@@ -181,6 +217,7 @@ plugins:
   output:
     log:
       level: info
+      format: text
 ```
 
 ## Filtering
