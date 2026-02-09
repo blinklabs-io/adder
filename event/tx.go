@@ -59,6 +59,54 @@ func NewTransactionContext(
 	return ctx
 }
 
+// NewMempoolTransactionContext creates a context for a mempool (unconfirmed) transaction.
+// SlotNumber is the mempool snapshot slot from the node; BlockNumber and TransactionIdx are zero.
+func NewMempoolTransactionContext(
+	tx ledger.Transaction,
+	slotNumber uint64,
+	networkMagic uint32,
+) TransactionContext {
+	return TransactionContext{
+		TransactionHash: tx.Hash().String(),
+		SlotNumber:      slotNumber,
+		NetworkMagic:    networkMagic,
+	}
+}
+
+// NewTransactionEventFromTx builds a TransactionEvent from a transaction only (no block).
+// Used for mempool transactions; BlockHash is left empty.
+func NewTransactionEventFromTx(tx ledger.Transaction, includeCbor bool) TransactionEvent {
+	evt := TransactionEvent{
+		Transaction: tx,
+		Inputs:     tx.Inputs(),
+		Outputs:     tx.Outputs(),
+		Fee:         tx.Fee().Uint64(),
+		Witnesses:   tx.Witnesses(),
+	}
+	if includeCbor {
+		evt.TransactionCbor = tx.Cbor()
+	}
+	if tx.Certificates() != nil {
+		evt.Certificates = tx.Certificates()
+	}
+	if tx.Metadata() != nil {
+		evt.Metadata = tx.Metadata()
+	}
+	if tx.ReferenceInputs() != nil {
+		evt.ReferenceInputs = tx.ReferenceInputs()
+	}
+	if tx.TTL() != 0 {
+		evt.TTL = tx.TTL()
+	}
+	if withdrawals := tx.Withdrawals(); len(withdrawals) > 0 {
+		evt.Withdrawals = make(map[string]uint64)
+		for addr, amount := range withdrawals {
+			evt.Withdrawals[addr.String()] = amount.Uint64()
+		}
+	}
+	return evt
+}
+
 func NewTransactionEvent(
 	block ledger.Block,
 	tx ledger.Transaction,
