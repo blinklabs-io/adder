@@ -68,6 +68,10 @@ func (m *Mempool) Start() error {
 		close(m.doneChan)
 		m.wg.Wait()
 	}
+	if m.oConn != nil {
+		_ = m.oConn.Close()
+		m.oConn = nil
+	}
 	if m.eventChan != nil {
 		close(m.eventChan)
 		m.eventChan = nil
