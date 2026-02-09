@@ -114,3 +114,12 @@ func WithDelayConfirmations(count uint) ChainSyncOptionFunc {
 		c.delayConfirmations = count
 	}
 }
+
+// WithReconnectCallback specifies a function to call after a successful
+// auto-reconnect. This allows consumers to detect reconnection events
+// and take action (e.g., logging, re-syncing state, resetting watchdogs).
+func WithReconnectCallback(callback func()) ChainSyncOptionFunc {
+	return func(c *ChainSync) {
+		c.reconnectCallback = callback
+	}
+}

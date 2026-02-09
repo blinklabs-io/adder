@@ -114,6 +114,7 @@ type ChainSync struct {
 	ntcTcp             bool
 	intersectTip       bool
 	autoReconnect      bool
+	reconnectCallback  func()
 }
 
 type ChainSyncStatus struct {
@@ -149,8 +150,16 @@ func (c *ChainSync) Start() error {
 		close(c.doneChan)
 		c.wg.Wait()
 	}
-	c.eventChan = make(chan event.Event, 10)
-	c.errorChan = make(chan error)
+	// Only create new channels if they don't exist yet.
+	// During auto-reconnect, Stop() is not called so existing channels
+	// remain valid. Reusing them preserves pipeline goroutine references
+	// that would otherwise be orphaned by a channel swap.
+	if c.eventChan == nil {
+		c.eventChan = make(chan event.Event, 10)
+	}
+	if c.errorChan == nil {
+		c.errorChan = make(chan error)
+	}
 	c.doneChan = make(chan struct{})
 	if err := c.setupConnection(); err != nil {
 		return err
@@ -345,8 +354,11 @@ func (c *ChainSync) setupConnection() error {
 						c.wg.Add(1)
 						continue
 					}
-					// Successfully restarted - this goroutine exits,
-					// new goroutine from Start() takes over
+					// Successfully restarted - fire callback if set,
+					// then exit (new goroutine from Start() takes over)
+					if c.reconnectCallback != nil {
+						c.reconnectCallback()
+					}
 					return
 				}
 			} else {
