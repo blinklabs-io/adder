@@ -97,7 +97,7 @@ func init() {
 
 func NewFromCmdlineOptions() plugin.Plugin {
 	var nm uint32
-	if cmdlineOptions.networkMagic > 0 && cmdlineOptions.networkMagic < math.MaxUint32 {
+	if cmdlineOptions.networkMagic > 0 && cmdlineOptions.networkMagic <= math.MaxUint32 {
 		nm = uint32(cmdlineOptions.networkMagic)
 	}
 	return New(

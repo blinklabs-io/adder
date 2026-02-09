@@ -27,7 +27,10 @@ import (
 	localtxmonitor "github.com/blinklabs-io/gouroboros/protocol/localtxmonitor"
 )
 
-const defaultPollInterval = 5 * time.Second
+const (
+	defaultPollInterval = 5 * time.Second
+	maxSeenTxHashes     = 100_000
+)
 
 type Mempool struct {
 	logger          plugin.Logger
@@ -40,13 +43,14 @@ type Mempool struct {
 	pollIntervalStr string
 	pollInterval    time.Duration
 
-	eventChan   chan event.Event
-	errorChan   chan error
-	doneChan    chan struct{}
-	wg          sync.WaitGroup
-	oConn       *ouroboros.Connection
-	dialFamily  string
-	dialAddress string
+	eventChan    chan event.Event
+	errorChan    chan error
+	doneChan     chan struct{}
+	wg           sync.WaitGroup
+	oConn        *ouroboros.Connection
+	dialFamily   string
+	dialAddress  string
+	seenTxHashes map[string]struct{}
 }
 
 // New returns a new Mempool input plugin
@@ -64,6 +68,15 @@ func (m *Mempool) Start() error {
 		close(m.doneChan)
 		m.wg.Wait()
 	}
+	if m.eventChan != nil {
+		close(m.eventChan)
+		m.eventChan = nil
+	}
+	if m.errorChan != nil {
+		close(m.errorChan)
+		m.errorChan = nil
+	}
+
 	m.eventChan = make(chan event.Event, 10)
 	m.errorChan = make(chan error, 1)
 	m.doneChan = make(chan struct{})
@@ -178,18 +191,18 @@ func (m *Mempool) setupConnection() error {
 	m.wg.Add(1)
 	go func() {
 		defer m.wg.Done()
-		err, ok := <-m.oConn.ErrorChan()
-		if !ok {
-			return
-		}
-		select {
-		case <-m.doneChan:
-			return
-		default:
-			if m.errorChan != nil {
+		for {
+			select {
+			case <-m.doneChan:
+				return
+			case err, ok := <-m.oConn.ErrorChan():
+				if !ok {
+					return
+				}
 				select {
+				case <-m.doneChan:
+					return
 				case m.errorChan <- err:
-				default:
 				}
 			}
 		}
@@ -243,6 +256,12 @@ func (m *Mempool) pollOnce() {
 	if numTxs == 0 {
 		return
 	}
+	if m.seenTxHashes == nil {
+		m.seenTxHashes = make(map[string]struct{})
+	}
+	if len(m.seenTxHashes) > maxSeenTxHashes {
+		m.seenTxHashes = make(map[string]struct{})
+	}
 
 	for {
 		select {
@@ -267,6 +286,11 @@ func (m *Mempool) pollOnce() {
 			}
 			continue
 		}
+		txHash := tx.Hash().String()
+		if _, seen := m.seenTxHashes[txHash]; seen {
+			continue
+		}
+		m.seenTxHashes[txHash] = struct{}{}
 		ctx := event.NewMempoolTransactionContext(tx, 0, m.networkMagic)
 		payload := event.NewTransactionEventFromTx(tx, m.includeCbor)
 		evt := event.New("mempool.transaction", time.Now(), ctx, payload)
