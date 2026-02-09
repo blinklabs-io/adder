@@ -40,7 +40,7 @@ type Mempool struct {
 	pollIntervalStr string
 	pollInterval    time.Duration
 
-	eventChan chan event.Event
+	eventChan   chan event.Event
 	errorChan   chan error
 	doneChan    chan struct{}
 	wg          sync.WaitGroup

@@ -78,7 +78,7 @@ func NewMempoolTransactionContext(
 func NewTransactionEventFromTx(tx ledger.Transaction, includeCbor bool) TransactionEvent {
 	evt := TransactionEvent{
 		Transaction: tx,
-		Inputs:     tx.Inputs(),
+		Inputs:      tx.Inputs(),
 		Outputs:     tx.Outputs(),
 		Fee:         tx.Fee().Uint64(),
 		Witnesses:   tx.Witnesses(),

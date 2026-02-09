@@ -22,13 +22,13 @@ import (
 )
 
 var cmdlineOptions struct {
-	network        string
-	address        string
-	socketPath     string
-	networkMagic   uint
-	ntcTcp         bool
-	includeCbor    bool
-	pollInterval   string
+	network      string
+	address      string
+	socketPath   string
+	networkMagic uint
+	ntcTcp       bool
+	includeCbor  bool
+	pollInterval string
 }
 
 func init() {
