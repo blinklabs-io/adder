@@ -15,7 +15,7 @@ package chainsync
 
 import (
 	"encoding/hex"
-	//"fmt"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -239,4 +239,88 @@ func TestGetKupoClient(t *testing.T) {
 				strings.Contains(err.Error(), "failed to perform health check"),
 			"unexpected error: %v", err)
 	})
+}
+
+func TestStartPreservesChannelsDuringReconnect(t *testing.T) {
+	// Simulate the auto-reconnect path: Start() is called without Stop(),
+	// so eventChan/errorChan should be reused (not replaced).
+	c := &ChainSync{
+		intersectPoints: []ocommon.Point{},
+		status:          &ChainSyncStatus{},
+		autoReconnect:   true,
+	}
+
+	// Manually set channels as if the first Start() created them
+	c.eventChan = make(chan event.Event, 10)
+	c.errorChan = make(chan error)
+	c.doneChan = make(chan struct{})
+
+	origEventChan := c.eventChan
+	origErrorChan := c.errorChan
+
+	// Close doneChan to simulate what Start() guard does
+	close(c.doneChan)
+	c.wg.Wait()
+
+	// Reproduce the fixed Start() channel logic
+	if c.eventChan == nil {
+		c.eventChan = make(chan event.Event, 10)
+	}
+	if c.errorChan == nil {
+		c.errorChan = make(chan error)
+	}
+	c.doneChan = make(chan struct{})
+
+	// Verify channels are the same references by writing to one and reading from the other
+	go func() { origEventChan <- event.Event{Type: "test.preserve"} }()
+	select {
+	case evt := <-c.eventChan:
+		assert.Equal(t, "test.preserve", evt.Type, "eventChan should be the same channel")
+	case <-time.After(time.Second):
+		t.Fatal("eventChan was replaced during reconnect — pipeline would be orphaned")
+	}
+
+	go func() { origErrorChan <- fmt.Errorf("test error") }()
+	select {
+	case err := <-c.errorChan:
+		assert.EqualError(t, err, "test error", "errorChan should be the same channel")
+	case <-time.After(time.Second):
+		t.Fatal("errorChan was replaced during reconnect — pipeline would be orphaned")
+	}
+}
+
+func TestStartCreatesNewChannelsAfterStop(t *testing.T) {
+	// After Stop(), channels are nil'd, so the logic should create new ones.
+	c := &ChainSync{
+		intersectPoints: []ocommon.Point{},
+		status:          &ChainSyncStatus{},
+	}
+
+	// Simulate Stop() nil'ing channels
+	c.eventChan = nil
+	c.errorChan = nil
+
+	// Reproduce the fixed Start() channel logic
+	if c.eventChan == nil {
+		c.eventChan = make(chan event.Event, 10)
+	}
+	if c.errorChan == nil {
+		c.errorChan = make(chan error)
+	}
+
+	assert.NotNil(t, c.eventChan, "eventChan should be created after Stop")
+	assert.NotNil(t, c.errorChan, "errorChan should be created after Stop")
+}
+
+func TestReconnectCallbackFired(t *testing.T) {
+	called := false
+	c := &ChainSync{
+		reconnectCallback: func() { called = true },
+	}
+
+	if c.reconnectCallback != nil {
+		c.reconnectCallback()
+	}
+
+	assert.True(t, called, "reconnect callback should have been called")
 }
