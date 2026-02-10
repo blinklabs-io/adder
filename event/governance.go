@@ -412,46 +412,11 @@ func extractGovernanceCertificates(tx ledger.Transaction) (
 	committee []CommitteeCertificateData,
 ) {
 	for _, cert := range tx.Certificates() {
+		if data, ok := extractDRepCertificate(cert); ok {
+			drep = append(drep, data)
+			continue
+		}
 		switch c := cert.(type) {
-		// DRep certificates
-		case *lcommon.RegistrationDrepCertificate:
-			data := DRepCertificateData{
-				CertificateType: "Registration",
-				DRepHash:        hex.EncodeToString(c.DrepCredential.Hash().Bytes()),
-				DRepId:          c.DrepCredential.Hash().Bech32("drep"),
-				Deposit:         c.Amount,
-			}
-			// Certificate anchors are pointer types (*GovAnchor), so we check for nil
-			if c.Anchor != nil {
-				data.Anchor = AnchorData{
-					Url:      c.Anchor.Url,
-					DataHash: hex.EncodeToString(c.Anchor.DataHash[:]),
-				}
-			}
-			drep = append(drep, data)
-
-		case *lcommon.DeregistrationDrepCertificate:
-			drep = append(drep, DRepCertificateData{
-				CertificateType: "Deregistration",
-				DRepHash:        hex.EncodeToString(c.DrepCredential.Hash().Bytes()),
-				DRepId:          c.DrepCredential.Hash().Bech32("drep"),
-				Deposit:         c.Amount,
-			})
-
-		case *lcommon.UpdateDrepCertificate:
-			data := DRepCertificateData{
-				CertificateType: "Update",
-				DRepHash:        hex.EncodeToString(c.DrepCredential.Hash().Bytes()),
-				DRepId:          c.DrepCredential.Hash().Bech32("drep"),
-			}
-			if c.Anchor != nil {
-				data.Anchor = AnchorData{
-					Url:      c.Anchor.Url,
-					DataHash: hex.EncodeToString(c.Anchor.DataHash[:]),
-				}
-			}
-			drep = append(drep, data)
-
 		// Vote delegation certificates
 		case *lcommon.VoteDelegationCertificate:
 			voteDel = append(voteDel, extractVoteDelegation("VoteDelegation", c.StakeCredential, c.Drep, 0))
@@ -492,6 +457,68 @@ func extractGovernanceCertificates(tx ledger.Transaction) (
 		}
 	}
 	return
+}
+
+// ExtractDRepCertificates extracts DRep certificates from a transaction
+func ExtractDRepCertificates(tx ledger.Transaction) []DRepCertificateData {
+	if len(tx.Certificates()) == 0 {
+		return nil
+	}
+
+	var result []DRepCertificateData
+	for _, cert := range tx.Certificates() {
+		if data, ok := extractDRepCertificate(cert); ok {
+			result = append(result, data)
+		}
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	return result
+}
+
+func extractDRepCertificate(cert ledger.Certificate) (DRepCertificateData, bool) {
+	switch c := cert.(type) {
+	case *lcommon.RegistrationDrepCertificate:
+		data := DRepCertificateData{
+			CertificateType: DRepCertificateTypeRegistration,
+			DRepHash:        hex.EncodeToString(c.DrepCredential.Hash().Bytes()),
+			DRepId:          c.DrepCredential.Hash().Bech32("drep"),
+			Deposit:         c.Amount,
+		}
+		// Certificate anchors are pointer types (*GovAnchor), so we check for nil
+		if c.Anchor != nil {
+			data.Anchor = AnchorData{
+				Url:      c.Anchor.Url,
+				DataHash: hex.EncodeToString(c.Anchor.DataHash[:]),
+			}
+		}
+		return data, true
+
+	case *lcommon.DeregistrationDrepCertificate:
+		return DRepCertificateData{
+			CertificateType: DRepCertificateTypeDeregistration,
+			DRepHash:        hex.EncodeToString(c.DrepCredential.Hash().Bytes()),
+			DRepId:          c.DrepCredential.Hash().Bech32("drep"),
+			Deposit:         c.Amount,
+		}, true
+
+	case *lcommon.UpdateDrepCertificate:
+		data := DRepCertificateData{
+			CertificateType: DRepCertificateTypeUpdate,
+			DRepHash:        hex.EncodeToString(c.DrepCredential.Hash().Bytes()),
+			DRepId:          c.DrepCredential.Hash().Bech32("drep"),
+		}
+		if c.Anchor != nil {
+			data.Anchor = AnchorData{
+				Url:      c.Anchor.Url,
+				DataHash: hex.EncodeToString(c.Anchor.DataHash[:]),
+			}
+		}
+		return data, true
+	}
+
+	return DRepCertificateData{}, false
 }
 
 // Helper functions
