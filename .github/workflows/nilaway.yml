@@ -19,7 +19,5 @@ jobs:
       - uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5 # v6.2.0 https://github.com/actions/setup-go/releases/tag/v6.2.0
         with:
           go-version: 1.25.x
-      - name: install nilaway
-        run: go install go.uber.org/nilaway/cmd/nilaway@latest
       - name: run nilaway
-        run: nilaway ./...
+        run: go run go.uber.org/nilaway/cmd/nilaway ./...

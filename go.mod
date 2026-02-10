@@ -2,7 +2,7 @@ module github.com/blinklabs-io/adder
 
 go 1.24.0
 
-toolchain go1.24.4
+toolchain go1.24.3
 
 require (
 	fyne.io/systray v1.12.0
@@ -24,6 +24,7 @@ require (
 	github.com/swaggo/swag v1.16.6
 	github.com/utxorpc/go-codegen v0.18.1
 	go.uber.org/automaxprocs v1.6.0
+	go.uber.org/nilaway v0.0.0-20260207005031-919d6741d2eb
 	golang.org/x/oauth2 v0.34.0
 	gopkg.in/yaml.v2 v2.4.0
 	gopkg.in/yaml.v3 v3.0.1
@@ -74,6 +75,7 @@ require (
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
+	github.com/klauspost/compress v1.18.0 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/leodido/go-urn v1.4.0 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
