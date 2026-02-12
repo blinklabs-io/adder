@@ -61,7 +61,12 @@ func New(opts ...MempoolOptionFunc) *Mempool {
 	return m
 }
 
-// Start connects to the node and starts polling the mempool
+// Start connects to the node and starts polling the mempool.
+// Safe to call again to restart (e.g. when the pipeline is restarted via
+// Stop() then Start()). Event and error channels are reused when non-nil so
+// that the pipeline's goroutines reading from OutputChan()/ErrorChan() never
+// see a closed channel; after Stop() they are nil so the next Start() creates
+// new channels and the pipeline obtains fresh references.
 func (m *Mempool) Start() error {
 	if m.doneChan != nil {
 		close(m.doneChan)
@@ -71,17 +76,12 @@ func (m *Mempool) Start() error {
 		_ = m.oConn.Close()
 		m.oConn = nil
 	}
-	if m.eventChan != nil {
-		close(m.eventChan)
-		m.eventChan = nil
+	if m.eventChan == nil {
+		m.eventChan = make(chan event.Event, 10)
 	}
-	if m.errorChan != nil {
-		close(m.errorChan)
-		m.errorChan = nil
+	if m.errorChan == nil {
+		m.errorChan = make(chan error, 1)
 	}
-
-	m.eventChan = make(chan event.Event, 10)
-	m.errorChan = make(chan error, 1)
 	m.doneChan = make(chan struct{})
 
 	if err := m.setupConnection(); err != nil {
