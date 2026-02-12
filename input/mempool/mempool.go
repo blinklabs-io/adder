@@ -29,7 +29,6 @@ import (
 
 const (
 	defaultPollInterval = 5 * time.Second
-	maxSeenTxHashes     = 100_000
 )
 
 type Mempool struct {
@@ -185,6 +184,7 @@ func (m *Mempool) setupConnection() error {
 		return err
 	}
 	if err := oConn.Dial(m.dialFamily, m.dialAddress); err != nil {
+		_ = oConn.Close()
 		return err
 	}
 	m.oConn = oConn
@@ -263,10 +263,14 @@ func (m *Mempool) pollOnce() {
 	if m.seenTxHashes == nil {
 		m.seenTxHashes = make(map[string]struct{})
 	}
-	if len(m.seenTxHashes) > maxSeenTxHashes {
-		m.seenTxHashes = make(map[string]struct{})
-	}
 
+	// Collect all txs this poll. We only need to remember last poll's hashes
+	// to emit events only for newly seen transactions.
+	type pollTx struct {
+		hash string
+		tx   ledger.Transaction
+	}
+	var pollTxs []pollTx
 	for {
 		select {
 		case <-m.doneChan:
@@ -291,12 +295,20 @@ func (m *Mempool) pollOnce() {
 			continue
 		}
 		txHash := tx.Hash().String()
-		if _, seen := m.seenTxHashes[txHash]; seen {
+		pollTxs = append(pollTxs, pollTx{hash: txHash, tx: tx})
+	}
+
+	thisPollHashes := make(map[string]struct{}, len(pollTxs))
+	for _, p := range pollTxs {
+		thisPollHashes[p.hash] = struct{}{}
+	}
+
+	for _, p := range pollTxs {
+		if _, seen := m.seenTxHashes[p.hash]; seen {
 			continue
 		}
-		m.seenTxHashes[txHash] = struct{}{}
-		ctx := event.NewMempoolTransactionContext(tx, 0, m.networkMagic)
-		payload := event.NewTransactionEventFromTx(tx, m.includeCbor)
+		ctx := event.NewMempoolTransactionContext(p.tx, 0, m.networkMagic)
+		payload := event.NewTransactionEventFromTx(p.tx, m.includeCbor)
 		evt := event.New("mempool.transaction", time.Now(), ctx, payload)
 		select {
 		case <-m.doneChan:
@@ -304,6 +316,9 @@ func (m *Mempool) pollOnce() {
 		case m.eventChan <- evt:
 		}
 	}
+
+	// Remember only this poll's hashes for next time (no unbounded growth).
+	m.seenTxHashes = thisPollHashes
 }
 
 func (m *Mempool) parseTx(data []byte) (ledger.Transaction, error) {
