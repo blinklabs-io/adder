@@ -230,7 +230,7 @@ func (t *TelegramOutput) processEvent(evt *event.Event) {
 
 	var message string
 	switch evt.Type {
-	case "chainsync.block":
+	case "input.block":
 		evtCtx := evt.Context
 		if evtCtx == nil {
 			logger.Error("block event has nil context")
@@ -250,7 +250,7 @@ func (t *TelegramOutput) processEvent(evt *event.Event) {
 		baseURL := getBaseURL(bc.NetworkMagic)
 		message = formatBlockMessage(be, bc, baseURL, t.parseMode)
 
-	case "chainsync.rollback":
+	case "input.rollback":
 		re, ok := payload.(event.RollbackEvent)
 		if !ok {
 			logger.Error("rollback event has invalid payload type")
@@ -258,7 +258,7 @@ func (t *TelegramOutput) processEvent(evt *event.Event) {
 		}
 		message = formatRollbackMessage(re, t.parseMode)
 
-	case "chainsync.transaction":
+	case "input.transaction":
 		evtCtx := evt.Context
 		if evtCtx == nil {
 			logger.Error("transaction event has nil context")
@@ -277,6 +277,26 @@ func (t *TelegramOutput) processEvent(evt *event.Event) {
 
 		baseURL := getBaseURL(tc.NetworkMagic)
 		message = formatTransactionMessage(te, tc, baseURL, t.parseMode)
+
+	case "input.governance":
+		evtCtx := evt.Context
+		if evtCtx == nil {
+			logger.Error("governance event has nil context")
+			return
+		}
+		ge, ok := payload.(event.GovernanceEvent)
+		if !ok {
+			logger.Error("governance event has invalid payload type")
+			return
+		}
+		gc, ok := evtCtx.(event.GovernanceContext)
+		if !ok {
+			logger.Error("governance event has invalid context type")
+			return
+		}
+
+		baseURL := getBaseURL(gc.NetworkMagic)
+		message = formatGovernanceMessage(ge, gc, baseURL, t.parseMode)
 
 	default:
 		logger.Error("unknown event type: " + evt.Type)
@@ -345,6 +365,32 @@ func formatTransactionMessage(
 		bold("Inputs:", mode), len(te.Inputs),
 		bold("Outputs:", mode), len(te.Outputs),
 		bold("Fee:", mode), escapeForMode(formatLovelace(te.Fee), mode),
+	)
+}
+
+// formatGovernanceMessage formats a governance event for Telegram
+func formatGovernanceMessage(
+	ge event.GovernanceEvent,
+	gc event.GovernanceContext,
+	baseURL string,
+	mode models.ParseMode,
+) string {
+	txURL := baseURL + "/tx/" + gc.TransactionHash
+	return fmt.Sprintf(
+		"%s\n\n"+
+			"%s %d\n"+
+			"%s %d\n"+
+			"%s %s\n"+
+			"%s %d\n"+
+			"%s %d\n"+
+			"%s %d",
+		bold("🏛️ Cardano Governance Event", mode),
+		bold("Block Number:", mode), gc.BlockNumber,
+		bold("Slot Number:", mode), gc.SlotNumber,
+		bold("Transaction Hash:", mode), link(txURL, truncateHash(gc.TransactionHash), mode),
+		bold("Proposals:", mode), len(ge.ProposalProcedures),
+		bold("Votes:", mode), len(ge.VotingProcedures),
+		bold("Certificates:", mode), len(ge.DRepCertificates)+len(ge.VoteDelegationCertificates)+len(ge.CommitteeCertificates),
 	)
 }
 

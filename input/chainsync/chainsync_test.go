@@ -59,7 +59,7 @@ func TestHandleRollBackward(t *testing.T) {
 	select {
 	case evt := <-c.eventChan:
 		// Verify the event type
-		assert.Equal(t, "chainsync.rollback", evt.Type)
+		assert.Equal(t, "input.rollback", evt.Type)
 
 		// Verify the timestamp is not zero and is close to the current time
 		assert.False(t, evt.Timestamp.IsZero())

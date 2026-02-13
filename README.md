@@ -23,10 +23,10 @@ Events are created with a simple schema.
 }
 ```
 
-The chainsync input produces three event types: `block`, `rollback`, and
-`transaction`. Each type has a unique payload.
+The chainsync input produces four event types: `input.block`, `input.rollback`,
+`input.transaction`, and `input.governance`. Each type has a unique payload.
 
-block:
+input.block:
 
 ```json
 {
@@ -43,7 +43,7 @@ block:
 }
 ```
 
-rollback:
+input.rollback:
 
 ```json
 {
@@ -54,7 +54,7 @@ rollback:
 }
 ```
 
-transaction:
+input.transaction:
 
 ```json
 {
@@ -99,6 +99,61 @@ transaction:
 }
 ```
 
+input.governance:
+
+```json
+{
+    "context": {
+        "transactionHash": "1234abcd1234abcd...",
+        "blockNumber": 123,
+        "slotNumber": 1234567,
+        "transactionIdx": 0,
+        "networkMagic": 1
+    },
+    "payload": {
+        "blockHash": "abcd123...",
+        "transactionCbor": "a500828258200a1ad...",
+        "proposalProcedures": [
+            {
+                "deposit": 1000000000,
+                "rewardAccount": "stake1u9abcd...",
+                "anchor": {
+                    "url": "https://example.com/proposal.json",
+                    "hash": "abcd1234..."
+                },
+                "action": {
+                    "parameterChange": {
+                        "govActionId": {
+                            "transactionId": "prev_tx_hash...",
+                            "govActionIdx": 0
+                        },
+                        "policyHash": "abcd1234..."
+                    }
+                }
+            }
+        ],
+        "votingProcedures": [
+            {
+                "voter": "drep1abcd...",
+                "voterType": "DRep",
+                "govActionId": {
+                    "transactionId": "action_tx_hash...",
+                    "govActionIdx": 0
+                },
+                "vote": "Yes",
+                "anchor": {
+                    "url": "https://example.com/vote-rationale.json",
+                    "hash": "efgh5678..."
+                }
+            }
+        ],
+        "drepCertificates": [...],
+        "voteDelegationCertificates": [...],
+        "committeeCertificates": [...]
+    }
+}
+```
+
 Each event is output individually. The log output supports two formats:
 
 - **text** (default) — human-readable, one line per event:
@@ -114,7 +169,7 @@ Each event is output individually. The log output supports two formats:
   piping to `jq` or other tooling):
 
   ```json
-  {"type":"chainsync.block","timestamp":"2026-02-07T09:18:40Z","context":{"blockNumber":9876543,"slotNumber":12345678},"payload":{"blockHash":"abc12345..."}}
+  {"type":"input.block","timestamp":"2026-02-07T09:18:40Z","context":{"blockNumber":9876543,"slotNumber":12345678},"payload":{"blockHash":"abc12345..."}}
   ```
 
 Select the format with `--output-log-format`:
@@ -281,16 +336,16 @@ docker run --rm -ti \
 
 #### Filtering on event type
 
-Only output `chainsync.transaction` event types
+Only output `input.transaction` event types
 
 ```bash
-adder -filter-type chainsync.transaction
+adder -filter-type input.transaction
 ```
 
-Only output `chainsync.rollback` and `chainsync.block` event types
+Only output `input.transaction` and `input.block` event types
 
 ```bash
-adder -filter-type chainsync.transaction,chainsync.block
+adder -filter-type input.transaction,input.block
 ```
 
 #### Filtering on asset policy
@@ -298,7 +353,7 @@ adder -filter-type chainsync.transaction,chainsync.block
 Only output transactions involving an asset with a particular policy ID
 
 ```bash
-adder -filter-type chainsync.transaction \
+adder -filter-type input.transaction \
   -filter-policy 13aa2accf2e1561723aa26871e071fdf32c867cff7e7d50ad470d62f
 ```
 
@@ -307,7 +362,7 @@ adder -filter-type chainsync.transaction \
 Only output transactions involving a particular asset
 
 ```bash
-adder -filter-type chainsync.transaction \
+adder -filter-type input.transaction \
   -filter-asset asset108xu02ckwrfc8qs9d97mgyh4kn8gdu9w8f5sxk
 ```
 
@@ -317,7 +372,7 @@ Only output transactions involving both a particular policy ID and a particular
 asset (which do not need to be related)
 
 ```bash
-adder -filter-type chainsync.transaction \
+adder -filter-type input.transaction \
   -filter-asset asset108xu02ckwrfc8qs9d97mgyh4kn8gdu9w8f5sxk \
   -filter-policy 13aa2accf2e1561723aa26871e071fdf32c867cff7e7d50ad470d62f
 ```
@@ -327,7 +382,7 @@ adder -filter-type chainsync.transaction \
 Only output transactions with outputs matching a particular address
 
 ```bash
-adder -filter-type chainsync.transaction \
+adder -filter-type input.transaction \
   -filter-address addr1qyht4ja0zcn45qvyx477qlyp6j5ftu5ng0prt9608dxp6l2j2c79gy9l76sdg0xwhd7r0c0kna0tycz4y5s6mlenh8pq4jxtdy
 ```
 
@@ -336,7 +391,7 @@ adder -filter-type chainsync.transaction \
 Only output transactions with outputs matching a particular stake address
 
 ```bash
-adder -filter-type chainsync.transaction \
+adder -filter-type input.transaction \
   -filter-address stake1u9f9v0z5zzlldgx58n8tklphu8mf7h4jvp2j2gddluemnssjfnkzz
 ```
 
@@ -350,7 +405,7 @@ Push notifications will be sent to the FCM `project_id` specified in the
 details on how to send push notifications to mobile.
 
 ```bash
-adder -filter-type chainsync.block \
+adder -filter-type input.block \
   -output push \
   -output-push-serviceAccountFilePath /path/to/serviceAccount.json
 ```

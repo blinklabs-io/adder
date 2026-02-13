@@ -316,7 +316,7 @@ func (m *Mempool) pollOnce() {
 		}
 		ctx := event.NewMempoolTransactionContext(p.tx, 0, m.networkMagic)
 		payload := event.NewTransactionEventFromTx(p.tx, m.includeCbor)
-		evt := event.New("mempool.transaction", time.Now(), ctx, payload)
+		evt := event.New("input.transaction", time.Now(), ctx, payload)
 		select {
 		case <-m.doneChan:
 			return

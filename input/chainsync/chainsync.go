@@ -396,7 +396,7 @@ func (c *ChainSync) handleRollBackward(
 ) error {
 	c.lastTip = tip
 	evt := event.New(
-		"chainsync.rollback",
+		"input.rollback",
 		time.Now(),
 		nil,
 		event.NewRollbackEvent(point),
@@ -467,7 +467,7 @@ func (c *ChainSync) handleRollForward(
 		return errors.New("unknown type")
 	}
 	blockEvt := event.New(
-		"chainsync.block",
+		"input.block",
 		time.Now(),
 		event.NewBlockHeaderContext(block.Header()),
 		event.NewBlockEvent(block, c.includeCbor),
@@ -487,7 +487,7 @@ func (c *ChainSync) handleRollForward(
 			return errors.New("invalid number of transactions")
 		}
 		txEvt := event.New(
-			"chainsync.transaction",
+			"input.transaction",
 			time.Now(),
 			event.NewTransactionContext(
 				block,
@@ -506,7 +506,7 @@ func (c *ChainSync) handleRollForward(
 		// Emit governance event if transaction contains governance data
 		if event.HasGovernanceData(transaction) {
 			govEvt := event.New(
-				"chainsync.governance",
+				"input.governance",
 				time.Now(),
 				event.NewGovernanceContext(
 					block,
@@ -574,7 +574,7 @@ func (c *ChainSync) handleBlockFetchBlock(
 	block ledger.Block,
 ) error {
 	blockEvt := event.New(
-		"chainsync.block",
+		"input.block",
 		time.Now(),
 		event.NewBlockContext(block, c.networkMagic),
 		event.NewBlockEvent(block, c.includeCbor),
@@ -594,7 +594,7 @@ func (c *ChainSync) handleBlockFetchBlock(
 			return errors.New("invalid number of transactions")
 		}
 		txEvt := event.New(
-			"chainsync.transaction",
+			"input.transaction",
 			time.Now(),
 			event.NewTransactionContext(
 				block,
@@ -613,7 +613,7 @@ func (c *ChainSync) handleBlockFetchBlock(
 		// Emit governance event if transaction contains governance data
 		if event.HasGovernanceData(transaction) {
 			govEvt := event.New(
-				"chainsync.governance",
+				"input.governance",
 				time.Now(),
 				event.NewGovernanceContext(
 					block,

@@ -491,7 +491,7 @@ func extractGovernanceCertificates(tx ledger.Transaction) (
 			committee = append(committee, data)
 		}
 	}
-	return
+	return drep, voteDel, committee
 }
 
 // Helper functions
