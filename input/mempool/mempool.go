@@ -46,6 +46,7 @@ type Mempool struct {
 	errorChan    chan error
 	doneChan     chan struct{}
 	wg           sync.WaitGroup
+	stopOnce     sync.Once // idempotent Stop (same pattern as pipeline.Pipeline)
 	oConn        *ouroboros.Connection
 	dialFamily   string
 	dialAddress  string
@@ -68,6 +69,7 @@ func New(opts ...MempoolOptionFunc) *Mempool {
 // see a closed channel; after Stop() they are nil so the next Start() creates
 // new channels and the pipeline obtains fresh references.
 func (m *Mempool) Start() error {
+	m.stopOnce = sync.Once{} // reset so next Stop() runs (Pipeline resets on restart too)
 	if m.doneChan != nil {
 		close(m.doneChan)
 		m.wg.Wait()
@@ -95,25 +97,30 @@ func (m *Mempool) Start() error {
 	return nil
 }
 
-// Stop shuts down the connection and stops polling
+// Stop shuts down the connection and stops polling.
+// Idempotent and safe to call multiple times, following the Pipeline's
+// pattern (pipeline/pipeline.go): shutdown logic runs inside sync.Once so
+// multiple Stop() calls never double-close channels.
 func (m *Mempool) Stop() error {
-	if m.doneChan != nil {
-		close(m.doneChan)
-		m.doneChan = nil
-	}
-	if m.oConn != nil {
-		_ = m.oConn.Close()
-		m.oConn = nil
-	}
-	m.wg.Wait()
-	if m.eventChan != nil {
-		close(m.eventChan)
-		m.eventChan = nil
-	}
-	if m.errorChan != nil {
-		close(m.errorChan)
-		m.errorChan = nil
-	}
+	m.stopOnce.Do(func() {
+		if m.doneChan != nil {
+			close(m.doneChan)
+			m.doneChan = nil
+		}
+		if m.oConn != nil {
+			_ = m.oConn.Close()
+			m.oConn = nil
+		}
+		m.wg.Wait()
+		if m.eventChan != nil {
+			close(m.eventChan)
+			m.eventChan = nil
+		}
+		if m.errorChan != nil {
+			close(m.errorChan)
+			m.errorChan = nil
+		}
+	})
 	return nil
 }
 
