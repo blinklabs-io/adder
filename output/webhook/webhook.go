@@ -108,7 +108,7 @@ func (w *WebhookOutput) Start() error {
 				}
 				context := evt.Context
 				switch evt.Type {
-				case "chainsync.block":
+				case "input.block":
 					if context == nil {
 						panic(fmt.Errorf("ERROR: %v", context))
 					}
@@ -116,15 +116,20 @@ func (w *WebhookOutput) Start() error {
 					bc := context.(event.BlockContext)
 					evt.Payload = be
 					evt.Context = bc
-				case "chainsync.rollback":
+				case "input.rollback":
 					re := payload.(event.RollbackEvent)
 					evt.Payload = re
-				case "chainsync.transaction":
+				case "input.transaction":
 					te := payload.(event.TransactionEvent)
 					evt.Payload = te
+				case "input.governance":
+					ge := payload.(event.GovernanceEvent)
+					gc := context.(event.GovernanceContext)
+					evt.Payload = ge
+					evt.Context = gc
 				default:
 					logger.Error("unknown event type: " + evt.Type)
-					return
+					continue
 				}
 				// Send webhook with retry logic and exponential backoff
 				w.sendWebhookWithRetry(&evt)
@@ -149,7 +154,7 @@ func formatWebhook(e *event.Event, format string) []byte {
 		dmes := make([]*DiscordMessageEmbed, 0, 1)
 		var dmefs []*DiscordMessageEmbedField
 		switch e.Type {
-		case "chainsync.block":
+		case "input.block":
 			be := e.Payload.(event.BlockEvent)
 			bc := e.Context.(event.BlockContext)
 			dme.Title = "New Cardano Block"
@@ -171,7 +176,7 @@ func formatWebhook(e *event.Event, format string) []byte {
 			})
 			baseURL := getBaseURL(bc.NetworkMagic)
 			dme.URL = fmt.Sprintf("%s/block/%s", baseURL, be.BlockHash)
-		case "chainsync.rollback":
+		case "input.rollback":
 			be := e.Payload.(event.RollbackEvent)
 			dme.Title = "Cardano Rollback"
 			dmefs = append(dmefs, &DiscordMessageEmbedField{
@@ -182,7 +187,7 @@ func formatWebhook(e *event.Event, format string) []byte {
 				Name:  "Block Hash",
 				Value: be.BlockHash,
 			})
-		case "chainsync.transaction":
+		case "input.transaction":
 			te := e.Payload.(event.TransactionEvent)
 			tc := e.Context.(event.TransactionContext)
 			dme.Title = "New Cardano Transaction"
@@ -212,6 +217,32 @@ func formatWebhook(e *event.Event, format string) []byte {
 			})
 			baseURL := getBaseURL(tc.NetworkMagic)
 			dme.URL = fmt.Sprintf("%s/tx/%s", baseURL, tc.TransactionHash)
+		case "input.governance":
+			ge := e.Payload.(event.GovernanceEvent)
+			gc := e.Context.(event.GovernanceContext)
+			dme.Title = "Cardano Governance Event"
+			dmefs = append(dmefs, &DiscordMessageEmbedField{
+				Name:  "Block Number",
+				Value: strconv.FormatUint(gc.BlockNumber, 10),
+			})
+			dmefs = append(dmefs, &DiscordMessageEmbedField{
+				Name:  "Slot Number",
+				Value: strconv.FormatUint(gc.SlotNumber, 10),
+			})
+			dmefs = append(dmefs, &DiscordMessageEmbedField{
+				Name:  "Proposals",
+				Value: strconv.Itoa(len(ge.ProposalProcedures)),
+			})
+			dmefs = append(dmefs, &DiscordMessageEmbedField{
+				Name:  "Votes",
+				Value: strconv.Itoa(len(ge.VotingProcedures)),
+			})
+			dmefs = append(dmefs, &DiscordMessageEmbedField{
+				Name:  "Transaction Hash",
+				Value: gc.TransactionHash,
+			})
+			baseURL := getBaseURL(gc.NetworkMagic)
+			dme.URL = fmt.Sprintf("%s/tx/%s", baseURL, gc.TransactionHash)
 		default:
 			dwe.Content = fmt.Sprintf("%v", e.Payload)
 		}
