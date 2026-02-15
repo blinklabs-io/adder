@@ -682,6 +682,65 @@ func TestFilterByDRepIdGovernanceEvent(t *testing.T) {
 	})
 }
 
+func TestFilterByDRepIdDRepCertificateEvent(t *testing.T) {
+	// 28 bytes = 56 hex chars for Blake2b224
+	drepHex := "abcd1234567890abcdef1234567890abcdef1234567890abcdef1234"
+
+	t.Run("matches DRep certificate event", func(t *testing.T) {
+		cs := New(WithDRepIds([]string{drepHex}))
+
+		evt := event.Event{
+			Payload: event.DRepCertificateEvent{
+				Certificate: event.DRepCertificateData{
+					CertificateType: event.DRepCertificateTypeRegistration,
+					DRepHash:        drepHex,
+					DRepId:          "drep1...",
+				},
+			},
+		}
+
+		err := cs.Start()
+		assert.NoError(t, err)
+		defer cs.Stop()
+
+		cs.InputChan() <- evt
+
+		select {
+		case filteredEvt := <-cs.OutputChan():
+			assert.Equal(t, evt, filteredEvt)
+		case <-time.After(1 * time.Second):
+			t.Error("Expected event to pass filter but it didn't")
+		}
+	})
+
+	t.Run("does not match when DRep not in filter", func(t *testing.T) {
+		cs := New(WithDRepIds([]string{drepHex}))
+
+		evt := event.Event{
+			Payload: event.DRepCertificateEvent{
+				Certificate: event.DRepCertificateData{
+					CertificateType: event.DRepCertificateTypeRegistration,
+					DRepHash:        "deadbeef",
+					DRepId:          "drep1notmatched",
+				},
+			},
+		}
+
+		err := cs.Start()
+		assert.NoError(t, err)
+		defer cs.Stop()
+
+		cs.InputChan() <- evt
+
+		select {
+		case <-cs.OutputChan():
+			t.Error("Expected event to be filtered out but it passed through")
+		case <-time.After(100 * time.Millisecond):
+			// Expected no event
+		}
+	})
+}
+
 func TestWithDRepIds(t *testing.T) {
 	t.Run("stores bech32 drep ID and computes hex", func(t *testing.T) {
 		// Create a valid drep bech32 ID from known hex (28 bytes = 56 hex chars)

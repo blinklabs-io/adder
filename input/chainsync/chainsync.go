@@ -523,6 +523,27 @@ func (c *ChainSync) handleRollForward(
 			)
 			tmpEvents = append(tmpEvents, govEvt)
 		}
+		// Emit DRep certificate events
+		if drepCerts := event.ExtractDRepCertificates(transaction); len(drepCerts) > 0 {
+			drepCtx := event.NewGovernanceContext(
+				block,
+				transaction,
+				//nolint:gosec // t is bounds-checked above
+				uint32(t),
+				c.networkMagic,
+			)
+			for _, cert := range drepCerts {
+				if evtType, ok := event.DRepEventType(cert.CertificateType); ok {
+					drepEvt := event.New(
+						evtType,
+						time.Now(),
+						drepCtx,
+						event.NewDRepCertificateEvent(block, cert),
+					)
+					tmpEvents = append(tmpEvents, drepEvt)
+				}
+			}
+		}
 	}
 	updateTip := ochainsync.Tip{
 		Point: ocommon.Point{
@@ -629,6 +650,27 @@ func (c *ChainSync) handleBlockFetchBlock(
 				),
 			)
 			c.eventChan <- govEvt
+		}
+		// Emit DRep certificate events
+		if drepCerts := event.ExtractDRepCertificates(transaction); len(drepCerts) > 0 {
+			drepCtx := event.NewGovernanceContext(
+				block,
+				transaction,
+				//nolint:gosec // t is bounds-checked above
+				uint32(t),
+				c.networkMagic,
+			)
+			for _, cert := range drepCerts {
+				if evtType, ok := event.DRepEventType(cert.CertificateType); ok {
+					drepEvt := event.New(
+						evtType,
+						time.Now(),
+						drepCtx,
+						event.NewDRepCertificateEvent(block, cert),
+					)
+					c.eventChan <- drepEvt
+				}
+			}
 		}
 	}
 	c.updateStatus(

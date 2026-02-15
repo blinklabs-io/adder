@@ -90,6 +90,8 @@ func (c *Cardano) filterEvent(evt event.Event) bool {
 		return c.filterTransactionEvent(v)
 	case event.GovernanceEvent:
 		return c.filterGovernanceEvent(v)
+	case event.DRepCertificateEvent:
+		return c.filterDRepCertificateEvent(v)
 	default:
 		// Pass through events we don't filter
 		return true
@@ -159,6 +161,23 @@ func (c *Cardano) filterTransactionEvent(te event.TransactionEvent) bool {
 	}
 
 	return true
+}
+
+// filterDRepCertificateEvent checks DRep filter for DRep certificate events
+func (c *Cardano) filterDRepCertificateEvent(de event.DRepCertificateEvent) bool {
+	if !c.filterSet.hasDRepFilter {
+		return true
+	}
+
+	if _, exists := c.filterSet.dreps.hexDRepIds[de.Certificate.DRepHash]; exists {
+		return true
+	}
+
+	if _, exists := c.filterSet.dreps.bech32DRepIds[de.Certificate.DRepId]; exists {
+		return true
+	}
+
+	return false
 }
 
 // matchAddressFilter checks if transaction matches address filters
