@@ -477,13 +477,20 @@ func ExtractDRepCertificates(tx ledger.Transaction) []DRepCertificateData {
 	return result
 }
 
+func drepBech32Prefix(cred lcommon.Credential) string {
+	if cred.CredType == 1 {
+		return "drep_script"
+	}
+	return "drep"
+}
+
 func extractDRepCertificate(cert ledger.Certificate) (DRepCertificateData, bool) {
 	switch c := cert.(type) {
 	case *lcommon.RegistrationDrepCertificate:
 		data := DRepCertificateData{
 			CertificateType: DRepCertificateTypeRegistration,
 			DRepHash:        hex.EncodeToString(c.DrepCredential.Hash().Bytes()),
-			DRepId:          c.DrepCredential.Hash().Bech32("drep"),
+			DRepId:          c.DrepCredential.Hash().Bech32(drepBech32Prefix(c.DrepCredential)),
 			Deposit:         c.Amount,
 		}
 		// Certificate anchors are pointer types (*GovAnchor), so we check for nil
@@ -499,7 +506,7 @@ func extractDRepCertificate(cert ledger.Certificate) (DRepCertificateData, bool)
 		return DRepCertificateData{
 			CertificateType: DRepCertificateTypeDeregistration,
 			DRepHash:        hex.EncodeToString(c.DrepCredential.Hash().Bytes()),
-			DRepId:          c.DrepCredential.Hash().Bech32("drep"),
+			DRepId:          c.DrepCredential.Hash().Bech32(drepBech32Prefix(c.DrepCredential)),
 			Deposit:         c.Amount,
 		}, true
 
@@ -507,7 +514,7 @@ func extractDRepCertificate(cert ledger.Certificate) (DRepCertificateData, bool)
 		data := DRepCertificateData{
 			CertificateType: DRepCertificateTypeUpdate,
 			DRepHash:        hex.EncodeToString(c.DrepCredential.Hash().Bytes()),
-			DRepId:          c.DrepCredential.Hash().Bech32("drep"),
+			DRepId:          c.DrepCredential.Hash().Bech32(drepBech32Prefix(c.DrepCredential)),
 		}
 		if c.Anchor != nil {
 			data.Anchor = AnchorData{
