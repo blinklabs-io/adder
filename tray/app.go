@@ -15,9 +15,17 @@
 package tray
 
 import (
+	"fmt"
 	"log/slog"
+	"os/exec"
+	"runtime"
 
 	"fyne.io/systray"
+)
+
+const (
+	defaultAPIAddress = "127.0.0.1"
+	defaultAPIPort    = 8080
 )
 
 // App holds references to all major components of the tray
@@ -25,6 +33,7 @@ import (
 type App struct {
 	config  TrayConfig
 	process *ProcessManager
+	status  *StatusTracker
 }
 
 // NewApp creates and initialises the tray application.
@@ -38,11 +47,17 @@ func NewApp() (*App, error) {
 		cfg = DefaultConfig()
 	}
 
+	status := NewStatusTracker()
+
 	a := &App{
 		config: cfg,
+		status: status,
 		process: NewProcessManager(
 			WithBinary(cfg.AdderBinary),
 			WithConfigFile(cfg.AdderConfig),
+			WithStatusTracker(status),
+			WithAPIEndpoint(defaultAPIAddress, defaultAPIPort),
+			WithAutoRestart(true),
 		),
 	}
 
@@ -60,13 +75,43 @@ func (a *App) onReady() {
 	systray.SetTitle("Adder")
 	systray.SetTooltip("Adder - Cardano Event Streamer")
 
+	// Status display (disabled — updated via observer)
+	mStatus := systray.AddMenuItem(
+		"Status: Stopped", "Current adder status",
+	)
+	mStatus.Disable()
+
+	systray.AddSeparator()
+
 	mStart := systray.AddMenuItem("Start", "Start adder")
 	mStop := systray.AddMenuItem("Stop", "Stop adder")
 	mRestart := systray.AddMenuItem(
 		"Restart", "Restart adder",
 	)
+
 	systray.AddSeparator()
+
+	mShowConfig := systray.AddMenuItem(
+		"Show Config Folder", "Open configuration directory",
+	)
+	mShowLogs := systray.AddMenuItem(
+		"Show Logs", "Open log directory",
+	)
+
+	systray.AddSeparator()
+
+	mAbout := systray.AddMenuItem(
+		"About Adder", "Show version information",
+	)
+
+	systray.AddSeparator()
+
 	mQuit := systray.AddMenuItem("Quit", "Quit adder-tray")
+
+	// Update status menu item when status changes
+	a.status.OnChange(func(s Status) {
+		mStatus.SetTitle(fmt.Sprintf("Status: %s", s))
+	})
 
 	go func() {
 		for {
@@ -92,6 +137,12 @@ func (a *App) onReady() {
 						"error", err,
 					)
 				}
+			case <-mShowConfig.ClickedCh:
+				openFolder(ConfigDir())
+			case <-mShowLogs.ClickedCh:
+				openFolder(LogDir())
+			case <-mAbout.ClickedCh:
+				slog.Info("Adder - Cardano Event Streamer")
 			case <-mQuit.ClickedCh:
 				systray.Quit()
 				return
@@ -129,4 +180,26 @@ func (a *App) onExit() {
 // and its managed adder process.
 func (a *App) Shutdown() {
 	systray.Quit()
+}
+
+// openFolder opens the given directory in the platform's file
+// manager.
+func openFolder(dir string) {
+	var cmd string
+	switch runtime.GOOS {
+	case "darwin":
+		cmd = "open"
+	case "windows":
+		cmd = "explorer"
+	default:
+		cmd = "xdg-open"
+	}
+
+	if err := exec.Command(cmd, dir).Start(); err != nil { //nolint:gosec // command selected by platform, dir from internal paths
+		slog.Error(
+			"failed to open folder",
+			"dir", dir,
+			"error", err,
+		)
+	}
 }
