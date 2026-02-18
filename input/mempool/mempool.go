@@ -396,6 +396,7 @@ func (m *Mempool) getKupoClient() (*kugo.Client, error) {
 		return nil, fmt.Errorf("failed to create health check request: %w", err)
 	}
 	httpClient := &http.Client{Timeout: kupoHealthTimeout}
+	// #nosec G704 -- Kupo endpoint is user-configured and validated before use.
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		switch {

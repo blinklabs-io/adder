@@ -332,6 +332,7 @@ func (w *WebhookOutput) SendWebhook(e *event.Event) error {
 	}
 	client := &http.Client{Transport: customTransport}
 	// Send payload
+	// #nosec G704 -- Webhook URL is user-configured and intentionally allowed.
 	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("%w", err)

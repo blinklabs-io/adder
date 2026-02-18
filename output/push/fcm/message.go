@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 )
 
 type Message struct {
@@ -73,10 +74,11 @@ func NewMessage(token string, opts ...MessageOption) (*Message, error) {
 }
 
 func Send(accessToken string, projectId string, msg *Message) error {
-	fcmEndpoint := fmt.Sprintf(
-		"https://fcm.googleapis.com/v1/projects/%s/messages:send",
-		projectId,
-	)
+	fcmURL := &url.URL{
+		Scheme: "https",
+		Host:   "fcm.googleapis.com",
+		Path:   fmt.Sprintf("/v1/projects/%s/messages:send", projectId),
+	}
 
 	// Convert the message to JSON
 	payload, err := json.Marshal(msg)
@@ -84,14 +86,12 @@ func Send(accessToken string, projectId string, msg *Message) error {
 		return err
 	}
 
-	fmt.Println(string(payload))
-
 	// Create a new HTTP request
 	ctx := context.Background()
 	req, err := http.NewRequestWithContext(
 		ctx,
 		http.MethodPost,
-		fcmEndpoint,
+		fcmURL.String(),
 		bytes.NewBuffer(payload),
 	)
 	if err != nil {
@@ -104,6 +104,7 @@ func Send(accessToken string, projectId string, msg *Message) error {
 
 	// Execute the request
 	client := &http.Client{}
+	// #nosec G704 -- Request targets the fixed FCM host with a validated path.
 	resp, err := client.Do(req)
 	if err != nil {
 		return err

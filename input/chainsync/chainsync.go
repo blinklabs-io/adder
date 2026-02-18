@@ -730,9 +730,15 @@ func getKupoClient(c *ChainSync) (*kugo.Client, error) {
 	}
 
 	// Validate URL first
-	_, err := url.ParseRequestURI(c.kupoUrl)
+	kupoURL, err := url.ParseRequestURI(c.kupoUrl)
 	if err != nil {
 		return nil, fmt.Errorf("invalid kupo URL: %w", err)
+	}
+	if kupoURL.Scheme != "http" && kupoURL.Scheme != "https" {
+		return nil, fmt.Errorf("invalid kupo URL scheme: %s", kupoURL.Scheme)
+	}
+	if kupoURL.Host == "" {
+		return nil, errors.New("invalid kupo URL host")
 	}
 
 	KugoCustomLogger := logging.NewKugoCustomLogger(logging.LevelInfo)
@@ -748,17 +754,18 @@ func getKupoClient(c *ChainSync) (*kugo.Client, error) {
 		Timeout: 2 * time.Second,
 	}
 
-	healthUrl := strings.TrimRight(c.kupoUrl, "/") + "/health"
+	healthURL := kupoURL.JoinPath("health")
 
 	// Create context with timeout
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, healthUrl, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, healthURL.String(), nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create health check request: %w", err)
 	}
 
+	// #nosec G704 -- Kupo endpoint is user-configured and validated before use.
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		// Handle different error types
