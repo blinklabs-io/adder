@@ -80,34 +80,23 @@ func (t TransactionEvent) MarshalJSON() ([]byte, error) {
 			}
 			witnesses.Redeemers[fmt.Sprintf("%s:%d", redeemerTagString(k.Tag), k.Index)] = v
 		}
+		// Suppress empty witness objects from the JSON output.
+		if len(witnesses.Vkey) == 0 && len(witnesses.NativeScripts) == 0 &&
+			len(witnesses.Bootstrap) == 0 && len(witnesses.PlutusData) == 0 &&
+			len(witnesses.PlutusV1Scripts) == 0 && len(witnesses.PlutusV2Scripts) == 0 &&
+			len(witnesses.PlutusV3Scripts) == 0 && len(witnesses.Redeemers) == 0 {
+			witnesses = nil
+		}
 	}
 
+	// Alias breaks the MarshalJSON method set to prevent infinite recursion.
+	type Alias TransactionEvent
 	return json.Marshal(struct {
-		Witnesses       *witnessesJSON               `json:"witnesses,omitempty"`
-		Withdrawals     map[string]uint64             `json:"withdrawals,omitempty"`
-		Metadata        lcommon.TransactionMetadatum  `json:"metadata,omitempty"`
-		BlockHash       string                        `json:"blockHash"`
-		ReferenceInputs []ledger.TransactionInput     `json:"referenceInputs,omitempty"`
-		Certificates    []ledger.Certificate          `json:"certificates,omitempty"`
-		Outputs         []ledger.TransactionOutput    `json:"outputs"`
-		ResolvedInputs  []ledger.TransactionOutput    `json:"resolvedInputs,omitempty"`
-		Inputs          []ledger.TransactionInput     `json:"inputs"`
-		TransactionCbor byteSliceJsonHex              `json:"transactionCbor,omitempty"`
-		Fee             uint64                        `json:"fee"`
-		TTL             uint64                        `json:"ttl,omitempty"`
+		*Alias
+		Witnesses *witnessesJSON `json:"witnesses,omitempty"`
 	}{
-		Witnesses:       witnesses,
-		Withdrawals:     t.Withdrawals,
-		Metadata:        t.Metadata,
-		BlockHash:       t.BlockHash,
-		ReferenceInputs: t.ReferenceInputs,
-		Certificates:    t.Certificates,
-		Outputs:         t.Outputs,
-		ResolvedInputs:  t.ResolvedInputs,
-		Inputs:          t.Inputs,
-		TransactionCbor: t.TransactionCbor,
-		Fee:             t.Fee,
-		TTL:             t.TTL,
+		Alias:     (*Alias)(&t),
+		Witnesses: witnesses,
 	})
 }
 
