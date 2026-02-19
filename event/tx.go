@@ -15,6 +15,9 @@
 package event
 
 import (
+	"encoding/json"
+	"fmt"
+
 	"github.com/blinklabs-io/gouroboros/ledger"
 	lcommon "github.com/blinklabs-io/gouroboros/ledger/common"
 )
@@ -29,7 +32,7 @@ type TransactionContext struct {
 
 type TransactionEvent struct {
 	Transaction     ledger.Transaction            `json:"-"`
-	Witnesses       lcommon.TransactionWitnessSet `json:"witnesses,omitempty"`
+	Witnesses       lcommon.TransactionWitnessSet `json:"-"`
 	Withdrawals     map[string]uint64             `json:"withdrawals,omitempty"`
 	Metadata        lcommon.TransactionMetadatum  `json:"metadata,omitempty"`
 	BlockHash       string                        `json:"blockHash"`
@@ -41,6 +44,90 @@ type TransactionEvent struct {
 	TransactionCbor byteSliceJsonHex              `json:"transactionCbor,omitempty"`
 	Fee             uint64                        `json:"fee"`
 	TTL             uint64                        `json:"ttl,omitempty"`
+}
+
+// MarshalJSON implements custom JSON marshaling for TransactionEvent.
+// The Witnesses field cannot be marshaled directly because its concrete Conway
+// representation uses map[RedeemerKey]RedeemerValue, which Go's JSON encoder
+// does not support (map keys must be strings). This method converts redeemer
+// keys to "tag:index" strings (e.g. "spend:0", "mint:1").
+func (t TransactionEvent) MarshalJSON() ([]byte, error) {
+	type witnessesJSON struct {
+		Vkey            []lcommon.VkeyWitness            `json:"vkeyWitnesses,omitempty"`
+		NativeScripts   []lcommon.NativeScript           `json:"nativeScripts,omitempty"`
+		Bootstrap       []lcommon.BootstrapWitness       `json:"bootstrapWitnesses,omitempty"`
+		PlutusData      []lcommon.Datum                  `json:"plutusData,omitempty"`
+		PlutusV1Scripts []lcommon.PlutusV1Script         `json:"plutusV1Scripts,omitempty"`
+		PlutusV2Scripts []lcommon.PlutusV2Script         `json:"plutusV2Scripts,omitempty"`
+		PlutusV3Scripts []lcommon.PlutusV3Script         `json:"plutusV3Scripts,omitempty"`
+		Redeemers       map[string]lcommon.RedeemerValue `json:"redeemers,omitempty"`
+	}
+
+	var witnesses *witnessesJSON
+	if t.Witnesses != nil {
+		witnesses = &witnessesJSON{
+			Vkey:            t.Witnesses.Vkey(),
+			NativeScripts:   t.Witnesses.NativeScripts(),
+			Bootstrap:       t.Witnesses.Bootstrap(),
+			PlutusData:      t.Witnesses.PlutusData(),
+			PlutusV1Scripts: t.Witnesses.PlutusV1Scripts(),
+			PlutusV2Scripts: t.Witnesses.PlutusV2Scripts(),
+			PlutusV3Scripts: t.Witnesses.PlutusV3Scripts(),
+		}
+		for k, v := range t.Witnesses.Redeemers().Iter() {
+			if witnesses.Redeemers == nil {
+				witnesses.Redeemers = make(map[string]lcommon.RedeemerValue)
+			}
+			witnesses.Redeemers[fmt.Sprintf("%s:%d", redeemerTagString(k.Tag), k.Index)] = v
+		}
+	}
+
+	return json.Marshal(struct {
+		Witnesses       *witnessesJSON               `json:"witnesses,omitempty"`
+		Withdrawals     map[string]uint64             `json:"withdrawals,omitempty"`
+		Metadata        lcommon.TransactionMetadatum  `json:"metadata,omitempty"`
+		BlockHash       string                        `json:"blockHash"`
+		ReferenceInputs []ledger.TransactionInput     `json:"referenceInputs,omitempty"`
+		Certificates    []ledger.Certificate          `json:"certificates,omitempty"`
+		Outputs         []ledger.TransactionOutput    `json:"outputs"`
+		ResolvedInputs  []ledger.TransactionOutput    `json:"resolvedInputs,omitempty"`
+		Inputs          []ledger.TransactionInput     `json:"inputs"`
+		TransactionCbor byteSliceJsonHex              `json:"transactionCbor,omitempty"`
+		Fee             uint64                        `json:"fee"`
+		TTL             uint64                        `json:"ttl,omitempty"`
+	}{
+		Witnesses:       witnesses,
+		Withdrawals:     t.Withdrawals,
+		Metadata:        t.Metadata,
+		BlockHash:       t.BlockHash,
+		ReferenceInputs: t.ReferenceInputs,
+		Certificates:    t.Certificates,
+		Outputs:         t.Outputs,
+		ResolvedInputs:  t.ResolvedInputs,
+		Inputs:          t.Inputs,
+		TransactionCbor: t.TransactionCbor,
+		Fee:             t.Fee,
+		TTL:             t.TTL,
+	})
+}
+
+func redeemerTagString(tag lcommon.RedeemerTag) string {
+	switch tag {
+	case lcommon.RedeemerTagSpend:
+		return "spend"
+	case lcommon.RedeemerTagMint:
+		return "mint"
+	case lcommon.RedeemerTagCert:
+		return "cert"
+	case lcommon.RedeemerTagReward:
+		return "reward"
+	case lcommon.RedeemerTagVoting:
+		return "voting"
+	case lcommon.RedeemerTagProposing:
+		return "proposing"
+	default:
+		return fmt.Sprintf("%d", tag)
+	}
 }
 
 func NewTransactionContext(
