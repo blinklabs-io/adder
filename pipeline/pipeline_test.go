@@ -256,3 +256,174 @@ func TestPipelineRestartWithEvents(t *testing.T) {
 		t.Fatalf("unexpected error on second Stop: %v", err)
 	}
 }
+
+// TestPipelineObserver tests that a registered observer receives copies of events
+func TestPipelineObserver(t *testing.T) {
+	p := New()
+	input := &restartablePlugin{}
+	output := &restartablePlugin{}
+	p.AddInput(input)
+	p.AddOutput(output)
+
+	// Register an observer channel
+	observerCh := make(chan event.Event, 10)
+	p.RegisterObserver(observerCh)
+
+	if err := p.Start(); err != nil {
+		t.Fatalf("unexpected error on Start: %v", err)
+	}
+
+	// Send events through the pipeline
+	evt1 := event.Event{Type: "test.observer1"}
+	evt2 := event.Event{Type: "test.observer2"}
+	input.outputChan <- evt1
+	input.outputChan <- evt2
+
+	// Wait for events on the observer channel
+	var observed []event.Event
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) && len(observed) < 2 {
+		select {
+		case evt := <-observerCh:
+			observed = append(observed, evt)
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+
+	if len(observed) != 2 {
+		t.Fatalf("expected 2 observed events, got %d", len(observed))
+	}
+	if observed[0].Type != evt1.Type {
+		t.Fatalf(
+			"expected first observed event type %s, got %s",
+			evt1.Type,
+			observed[0].Type,
+		)
+	}
+	if observed[1].Type != evt2.Type {
+		t.Fatalf(
+			"expected second observed event type %s, got %s",
+			evt2.Type,
+			observed[1].Type,
+		)
+	}
+
+	// Verify output plugin also received the events
+	deadline = time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		received := output.getReceived()
+		if len(received) >= 2 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	received := output.getReceived()
+	if len(received) != 2 {
+		t.Fatalf("expected 2 output events, got %d", len(received))
+	}
+
+	if err := p.Stop(); err != nil {
+		t.Fatalf("unexpected error on Stop: %v", err)
+	}
+}
+
+// TestPipelineObserverNilSafe tests that the pipeline works without an observer
+func TestPipelineObserverNilSafe(t *testing.T) {
+	p := New()
+	input := &restartablePlugin{}
+	output := &restartablePlugin{}
+	p.AddInput(input)
+	p.AddOutput(output)
+
+	// Do NOT register an observer -- should still work
+
+	if err := p.Start(); err != nil {
+		t.Fatalf("unexpected error on Start: %v", err)
+	}
+
+	evt := event.Event{Type: "test.no-observer"}
+	input.outputChan <- evt
+
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		received := output.getReceived()
+		if len(received) > 0 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	received := output.getReceived()
+	if len(received) != 1 || received[0].Type != evt.Type {
+		t.Fatalf(
+			"expected 1 event with type %s, got %d events",
+			evt.Type,
+			len(received),
+		)
+	}
+
+	if err := p.Stop(); err != nil {
+		t.Fatalf("unexpected error on Stop: %v", err)
+	}
+}
+
+// TestPipelineObserverDropsWhenFull tests non-blocking behavior when observer is full
+func TestPipelineObserverDropsWhenFull(t *testing.T) {
+	p := New()
+	input := &restartablePlugin{}
+	output := &restartablePlugin{}
+	p.AddInput(input)
+	p.AddOutput(output)
+
+	// Use a channel with buffer size 1 so it fills up quickly
+	observerCh := make(chan event.Event, 1)
+	p.RegisterObserver(observerCh)
+
+	if err := p.Start(); err != nil {
+		t.Fatalf("unexpected error on Start: %v", err)
+	}
+
+	// Send more events than the observer buffer can hold
+	for i := 0; i < 5; i++ {
+		input.outputChan <- event.Event{Type: "test.overflow"}
+	}
+
+	// Wait for output plugin to receive all events
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		received := output.getReceived()
+		if len(received) >= 5 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	received := output.getReceived()
+	if len(received) != 5 {
+		t.Fatalf("expected 5 output events, got %d", len(received))
+	}
+
+	// Observer should have received at most 1 event (buffer size)
+	// but the pipeline should not have blocked
+	var observedCount int
+	for {
+		select {
+		case <-observerCh:
+			observedCount++
+		default:
+			goto done
+		}
+	}
+done:
+	if observedCount > 1 {
+		t.Fatalf(
+			"expected at most 1 buffered observer event, got %d",
+			observedCount,
+		)
+	}
+
+	if err := p.Stop(); err != nil {
+		t.Fatalf("unexpected error on Stop: %v", err)
+	}
+}

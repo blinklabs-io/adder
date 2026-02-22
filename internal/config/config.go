@@ -88,8 +88,13 @@ type Config struct {
 }
 
 type ApiConfig struct {
-	ListenAddress string `yaml:"address" envconfig:"API_ADDRESS"`
-	ListenPort    uint   `yaml:"port"    envconfig:"API_PORT"`
+	ListenAddress string          `yaml:"address" envconfig:"API_ADDRESS"`
+	ListenPort    uint            `yaml:"port"    envconfig:"API_PORT"`
+	Events        ApiEventsConfig `yaml:"events"  envconfig:"API_EVENTS"`
+}
+
+type ApiEventsConfig struct {
+	BufferSize uint `yaml:"buffer-size" envconfig:"API_EVENTS_BUFFER_SIZE"`
 }
 
 type LoggingConfig struct {
@@ -106,6 +111,9 @@ var globalConfig = &Config{
 	Api: ApiConfig{
 		ListenAddress: "0.0.0.0",
 		ListenPort:    8080,
+		Events: ApiEventsConfig{
+			BufferSize: 100,
+		},
 	},
 	Logging: LoggingConfig{
 		Level: "info",

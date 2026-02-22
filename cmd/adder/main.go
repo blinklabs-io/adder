@@ -197,6 +197,13 @@ func run() error {
 	}
 	pipe.AddOutput(output)
 
+	// Create event hub for broadcasting pipeline events via /events endpoint
+	eventHub := api.NewEventHub(cfg.Api.Events.BufferSize)
+	defer eventHub.Close()
+	observerCh := eventHub.InputChan()
+	pipe.RegisterObserver(observerCh)
+	apiInstance.Engine().GET("/events", eventHub.HandleEvents)
+
 	// Start API after plugins are configured
 	if err := apiInstance.Start(); err != nil {
 		logger.Error(fmt.Sprintf("failed to start API: %s", err))

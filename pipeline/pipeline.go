@@ -31,6 +31,8 @@ type Pipeline struct {
 	inputs     []plugin.Plugin
 	filters    []plugin.Plugin
 	outputs    []plugin.Plugin
+	observer   chan<- event.Event // optional observer for API /events
+	observerMu sync.RWMutex
 	wg         sync.WaitGroup
 	stopOnce   sync.Once
 	running    bool
@@ -57,6 +59,16 @@ func (p *Pipeline) AddFilter(filter plugin.Plugin) {
 
 func (p *Pipeline) AddOutput(output plugin.Plugin) {
 	p.outputs = append(p.outputs, output)
+}
+
+// RegisterObserver sets an observer channel that receives a copy of
+// every event passing through the pipeline. Sends are non-blocking:
+// if the channel is full, events are dropped. Only one observer is
+// supported. Call before Start().
+func (p *Pipeline) RegisterObserver(ch chan<- event.Event) {
+	p.observerMu.Lock()
+	defer p.observerMu.Unlock()
+	p.observer = ch
 }
 
 // ErrorChan returns the pipeline's error channel (read-only).
@@ -233,6 +245,17 @@ func (p *Pipeline) outputChanLoop() {
 				case output.InputChan() <- evt:
 				case <-p.doneChan:
 					return
+				}
+			}
+			// Non-blocking send to observer (if registered)
+			p.observerMu.RLock()
+			obs := p.observer
+			p.observerMu.RUnlock()
+			if obs != nil {
+				select {
+				case obs <- evt:
+				default:
+					// observer full, drop event
 				}
 			}
 		}
