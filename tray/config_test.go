@@ -42,7 +42,8 @@ func TestConfigPath(t *testing.T) {
 
 func TestDefaultConfig(t *testing.T) {
 	cfg := DefaultConfig()
-	assert.Equal(t, "adder", cfg.AdderBinary)
+	assert.Equal(t, "127.0.0.1", cfg.APIAddress)
+	assert.Equal(t, uint(8080), cfg.APIPort)
 	assert.Equal(t, "", cfg.AdderConfig)
 	assert.False(t, cfg.AutoStart)
 }
@@ -70,7 +71,8 @@ func TestSaveAndLoadConfig(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", tmpDir)
 
 	original := TrayConfig{
-		AdderBinary: "/usr/local/bin/adder",
+		APIAddress:  "192.168.1.100",
+		APIPort:     9090,
 		AdderConfig: "/etc/adder/config.yaml",
 		AutoStart:   true,
 	}
@@ -85,6 +87,53 @@ func TestSaveAndLoadConfig(t *testing.T) {
 	loaded, err := LoadConfig()
 	require.NoError(t, err)
 	assert.Equal(t, original, loaded)
+}
+
+func TestLoadConfigInvalidAddress(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("XDG_CONFIG_HOME only applies on Linux")
+	}
+	tmpDir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+
+	// Write a config with empty api_address
+	err := SaveConfig(TrayConfig{
+		APIAddress: "placeholder",
+		APIPort:    8080,
+	})
+	require.NoError(t, err)
+
+	// Overwrite with invalid content
+	err = os.WriteFile(
+		ConfigPath(),
+		[]byte("api_address: \"\"\napi_port: 8080\n"),
+		0o600,
+	)
+	require.NoError(t, err)
+
+	_, err = LoadConfig()
+	assert.ErrorContains(t, err, "api_address")
+}
+
+func TestLoadConfigInvalidPort(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("XDG_CONFIG_HOME only applies on Linux")
+	}
+	tmpDir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+
+	err := os.MkdirAll(filepath.Dir(ConfigPath()), 0o700)
+	require.NoError(t, err)
+
+	err = os.WriteFile(
+		ConfigPath(),
+		[]byte("api_address: \"127.0.0.1\"\napi_port: 0\n"),
+		0o600,
+	)
+	require.NoError(t, err)
+
+	_, err = LoadConfig()
+	assert.ErrorContains(t, err, "api_port")
 }
 
 func TestConfigExists(t *testing.T) {
