@@ -16,6 +16,8 @@ package tray
 
 import (
 	"log/slog"
+	"os/exec"
+	"runtime"
 
 	"fyne.io/systray"
 )
@@ -23,8 +25,8 @@ import (
 // App holds references to all major components of the tray
 // application.
 type App struct {
-	config  TrayConfig
-	process *ProcessManager
+	config TrayConfig
+	conn   *ConnectionManager
 }
 
 // NewApp creates and initialises the tray application.
@@ -40,9 +42,9 @@ func NewApp() (*App, error) {
 
 	a := &App{
 		config: cfg,
-		process: NewProcessManager(
-			WithBinary(cfg.AdderBinary),
-			WithConfigFile(cfg.AdderConfig),
+		conn: NewConnectionManager(
+			WithConnectionAddress(cfg.APIAddress),
+			WithConnectionPort(cfg.APIPort),
 		),
 	}
 
@@ -55,43 +57,65 @@ func (a *App) Run() {
 }
 
 // onReady is called when the system tray is initialised. It
-// configures the tray icon, menu, and starts adder if configured.
+// configures the tray icon, menu, and connects to adder if
+// configured.
 func (a *App) onReady() {
 	systray.SetTitle("Adder")
 	systray.SetTooltip("Adder - Cardano Event Streamer")
 
-	mStart := systray.AddMenuItem("Start", "Start adder")
-	mStop := systray.AddMenuItem("Stop", "Stop adder")
-	mRestart := systray.AddMenuItem(
-		"Restart", "Restart adder",
+	mStatus := systray.AddMenuItem(
+		"Status: "+a.conn.status.Status().String(), "",
+	)
+	mStatus.Disable()
+	systray.AddSeparator()
+
+	mConnect := systray.AddMenuItem("Connect", "Connect to adder")
+	mDisconnect := systray.AddMenuItem(
+		"Disconnect", "Disconnect from adder",
+	)
+	mReconnect := systray.AddMenuItem(
+		"Reconnect", "Reconnect to adder",
 	)
 	systray.AddSeparator()
+
+	mShowConfig := systray.AddMenuItem(
+		"Show Config Folder", "Open the config directory",
+	)
+	mShowLogs := systray.AddMenuItem(
+		"Show Logs", "Open the log directory",
+	)
+	systray.AddSeparator()
+
 	mQuit := systray.AddMenuItem("Quit", "Quit adder-tray")
+
+	// Update status menu item when connection status changes
+	a.conn.status.OnChange(func(s Status) {
+		mStatus.SetTitle("Status: " + s.String())
+	})
 
 	go func() {
 		for {
 			select {
-			case <-mStart.ClickedCh:
-				if err := a.process.Start(); err != nil {
+			case <-mConnect.ClickedCh:
+				if err := a.conn.Connect(); err != nil {
 					slog.Error(
-						"failed to start adder",
+						"failed to connect",
 						"error", err,
 					)
 				}
-			case <-mStop.ClickedCh:
-				if err := a.process.Stop(); err != nil {
+			case <-mDisconnect.ClickedCh:
+				a.conn.Disconnect()
+			case <-mReconnect.ClickedCh:
+				if err := a.conn.Reconnect(); err != nil {
 					slog.Error(
-						"failed to stop adder",
+						"failed to reconnect",
 						"error", err,
 					)
 				}
-			case <-mRestart.ClickedCh:
-				if err := a.process.Restart(); err != nil {
-					slog.Error(
-						"failed to restart adder",
-						"error", err,
-					)
-				}
+			case <-mShowConfig.ClickedCh:
+				openFolder(ConfigDir())
+			case <-mShowLogs.ClickedCh:
+				openFolder(LogDir())
 			case <-mQuit.ClickedCh:
 				systray.Quit()
 				return
@@ -102,31 +126,42 @@ func (a *App) onReady() {
 	slog.Info("starting adder-tray")
 
 	if a.config.AutoStart {
-		if err := a.process.Start(); err != nil {
+		if err := a.conn.Connect(); err != nil {
 			slog.Error(
-				"failed to auto-start adder",
+				"failed to auto-connect to adder",
 				"error", err,
 			)
 		}
 	}
 }
 
-// onExit is called when the system tray is shutting down.
+// onExit is called when the system tray is shutting down. It
+// disconnects the WS client but does NOT stop the adder service.
 func (a *App) onExit() {
 	slog.Info("shutting down adder-tray")
-
-	if a.process.IsRunning() {
-		if err := a.process.Stop(); err != nil {
-			slog.Error(
-				"error stopping adder during shutdown",
-				"error", err,
-			)
-		}
-	}
+	a.conn.Disconnect()
 }
 
-// Shutdown requests a graceful shutdown of the tray application
-// and its managed adder process.
+// Shutdown requests a graceful shutdown of the tray application.
 func (a *App) Shutdown() {
 	systray.Quit()
+}
+
+// openFolder opens the given directory in the platform file manager.
+func openFolder(dir string) {
+	var cmd string
+	switch runtime.GOOS {
+	case "darwin":
+		cmd = "open"
+	case "windows":
+		cmd = "explorer"
+	default:
+		cmd = "xdg-open"
+	}
+	p := exec.Command(cmd, dir) //nolint:gosec // directory path from internal config
+	if err := p.Start(); err != nil {
+		slog.Error("failed to open folder", "dir", dir, "error", err)
+		return
+	}
+	_ = p.Process.Release()
 }
