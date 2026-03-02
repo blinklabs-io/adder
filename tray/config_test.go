@@ -42,7 +42,8 @@ func TestConfigPath(t *testing.T) {
 
 func TestDefaultConfig(t *testing.T) {
 	cfg := DefaultConfig()
-	assert.Equal(t, "adder", cfg.AdderBinary)
+	assert.Equal(t, "127.0.0.1", cfg.APIAddress)
+	assert.Equal(t, uint(8080), cfg.APIPort)
 	assert.Equal(t, "", cfg.AdderConfig)
 	assert.False(t, cfg.AutoStart)
 }
@@ -70,7 +71,8 @@ func TestSaveAndLoadConfig(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", tmpDir)
 
 	original := TrayConfig{
-		AdderBinary: "/usr/local/bin/adder",
+		APIAddress:  "192.168.1.100",
+		APIPort:     9090,
 		AdderConfig: "/etc/adder/config.yaml",
 		AutoStart:   true,
 	}
