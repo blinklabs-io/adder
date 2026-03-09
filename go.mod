@@ -1,8 +1,6 @@
 module github.com/blinklabs-io/adder
 
-go 1.24.0
-
-toolchain go1.24.4
+go 1.25.0
 
 require (
 	fyne.io/systray v1.12.0
@@ -25,7 +23,7 @@ require (
 	github.com/swaggo/swag v1.16.6
 	github.com/utxorpc/go-codegen v0.18.1
 	go.uber.org/automaxprocs v1.6.0
-	golang.org/x/oauth2 v0.35.0
+	golang.org/x/oauth2 v0.36.0
 	gopkg.in/yaml.v2 v2.4.0
 	gopkg.in/yaml.v3 v3.0.1
 )
