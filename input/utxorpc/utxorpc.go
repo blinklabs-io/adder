@@ -320,7 +320,7 @@ func (u *Utxorpc) runWatchTxOnce() error {
 				u.logger.Debug(
 					"utxorpc WatchTx idle",
 					"slot", idle.GetSlot(),
-					"hash", fmt.Sprintf("%x", idle.GetHash()),
+					"hash", hex.EncodeToString(idle.GetHash()),
 				)
 			}
 			continue
