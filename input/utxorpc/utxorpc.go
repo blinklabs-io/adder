@@ -16,8 +16,11 @@ package utxorpc
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -92,6 +95,13 @@ func (u *Utxorpc) Start() error {
 		u.networkMagic = net.NetworkMagic
 	}
 
+	if u.intersectPoint != "" && u.intersectTip {
+		u.intersectTip = false
+		if u.logger != nil {
+			u.logger.Warn("intersect-point is set, overriding intersect-tip to false")
+		}
+	}
+
 	u.stopOnce = sync.Once{}
 	if u.doneChan != nil {
 		close(u.doneChan)
@@ -109,21 +119,24 @@ func (u *Utxorpc) Start() error {
 	if u.apiKeyHeader != "" && u.apiKey != "" {
 		headers[u.apiKeyHeader] = u.apiKey
 	}
-	u.logger.Info("starting utxorpc input", "url", u.url, "headers",
-		headers[u.apiKeyHeader], "apiKey", u.apiKey, "apiKeyHeader", u.apiKeyHeader)
 
 	u.client = sdk.NewClient(
 		sdk.WithBaseUrl(u.url),
 		sdk.WithHeaders(headers),
 	)
 
-	go u.run()
+	u.wg.Add(1)
+	go func() {
+		defer u.wg.Done()
+		u.run()
+	}()
 
 	if u.logger != nil {
 		u.logger.Info(
 			"started utxorpc input",
 			"url", u.url,
 			"mode", u.mode,
+			"hasApiKey", u.apiKey != "",
 		)
 	}
 	return nil
@@ -134,9 +147,9 @@ func (u *Utxorpc) Stop() error {
 	u.stopOnce.Do(func() {
 		if u.doneChan != nil {
 			close(u.doneChan)
-			u.doneChan = nil
 		}
 		u.wg.Wait()
+		u.doneChan = nil
 		if u.eventChan != nil {
 			close(u.eventChan)
 			u.eventChan = nil
@@ -220,8 +233,17 @@ func (u *Utxorpc) runFollowTipOnce() error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	req := connect.NewRequest(&syncpb.FollowTipRequest{})
-	// Intersect configuration is currently left to server defaults when unset.
+	go func() {
+		select {
+		case <-u.doneChan:
+			cancel()
+		case <-ctx.Done():
+		}
+	}()
+
+	req := connect.NewRequest(&syncpb.FollowTipRequest{
+		Intersect: u.buildIntersect(),
+	})
 	stream, err := u.client.FollowTipWithContext(ctx, req)
 	if err != nil {
 		return fmt.Errorf("utxorpc FollowTip: %w", err)
@@ -261,6 +283,14 @@ func (u *Utxorpc) runFollowTipOnce() error {
 func (u *Utxorpc) runWatchTxOnce() error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
+	go func() {
+		select {
+		case <-u.doneChan:
+			cancel()
+		case <-ctx.Done():
+		}
+	}()
 
 	req := connect.NewRequest(&watchpb.WatchTxRequest{})
 	stream, err := u.client.WatchTxWithContext(ctx, req)
@@ -308,4 +338,42 @@ func (u *Utxorpc) runWatchTxOnce() error {
 			}
 		}
 	}
+}
+
+// buildIntersect parses the intersectPoint configuration into BlockRef entries
+// for the FollowTipRequest. Format: "slot.hash" or "slot1.hash1,slot2.hash2".
+func (u *Utxorpc) buildIntersect() []*syncpb.BlockRef {
+	if u.intersectPoint == "" {
+		return nil
+	}
+	pointsSlice := strings.Split(u.intersectPoint, ",")
+	refs := make([]*syncpb.BlockRef, 0, len(pointsSlice))
+	for _, point := range pointsSlice {
+		parts := strings.SplitN(point, ".", 2)
+		if len(parts) != 2 {
+			if u.logger != nil {
+				u.logger.Warn("ignoring invalid intersect point", "point", point)
+			}
+			continue
+		}
+		slot, err := strconv.ParseUint(parts[0], 10, 64)
+		if err != nil {
+			if u.logger != nil {
+				u.logger.Warn("ignoring intersect point: invalid slot", "point", point, "error", err)
+			}
+			continue
+		}
+		hashBytes, err := hex.DecodeString(parts[1])
+		if err != nil {
+			if u.logger != nil {
+				u.logger.Warn("ignoring intersect point: invalid hash", "point", point, "error", err)
+			}
+			continue
+		}
+		refs = append(refs, &syncpb.BlockRef{Slot: slot, Hash: hashBytes})
+	}
+	if len(refs) == 0 {
+		return nil
+	}
+	return refs
 }

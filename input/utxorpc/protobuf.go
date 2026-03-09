@@ -16,6 +16,7 @@ package utxorpc
 
 import (
 	"encoding/hex"
+	"math"
 	"math/big"
 
 	"github.com/blinklabs-io/adder/event"
@@ -102,6 +103,10 @@ func pbGovernanceEvent(blockHash []byte, tx *cardanopb.Tx) event.GovernanceEvent
 	for i, prop := range tx.GetProposals() {
 		evt.ProposalProcedures = append(evt.ProposalProcedures, pbProposalProcedure(prop, uint32(i)))
 	}
+	drep, voteDel, committee := pbGovernanceCertificates(tx.GetCertificates())
+	evt.DRepCertificates = drep
+	evt.VoteDelegationCertificates = voteDel
+	evt.CommitteeCertificates = committee
 	return evt
 }
 
@@ -109,9 +114,131 @@ func pbProposalProcedure(prop *cardanopb.GovernanceActionProposal, idx uint32) e
 	data := event.ProposalProcedureData{
 		Index:      idx,
 		ActionType: pbGovActionType(prop),
+		ActionData: pbGovActionData(prop),
+		Anchor:     pbAnchor(prop.GetAnchor()),
 	}
 	if prop.GetDeposit() != nil {
 		data.Deposit = utxorpcBigIntToUint64(prop.GetDeposit())
+	}
+	if acct := prop.GetRewardAccount(); len(acct) > 0 {
+		if addr, err := lcommon.NewAddressFromBytes(acct); err == nil {
+			data.RewardAccount = addr.String()
+		}
+	}
+	return data
+}
+
+func pbAnchor(a *cardanopb.Anchor) event.AnchorData {
+	if a == nil {
+		return event.AnchorData{}
+	}
+	return event.AnchorData{
+		Url:      a.GetUrl(),
+		DataHash: hex.EncodeToString(a.GetContentHash()),
+	}
+}
+
+func pbGovActionId(id *cardanopb.GovernanceActionId) *event.GovActionIdData {
+	if id == nil {
+		return nil
+	}
+	return &event.GovActionIdData{
+		TransactionId: hex.EncodeToString(id.GetTransactionId()),
+		GovActionIdx:  id.GetGovernanceActionIndex(),
+	}
+}
+
+func pbStakeCredentialHex(cred *cardanopb.StakeCredential) string {
+	if cred == nil {
+		return ""
+	}
+	switch c := cred.GetStakeCredential().(type) {
+	case *cardanopb.StakeCredential_AddrKeyHash:
+		return hex.EncodeToString(c.AddrKeyHash)
+	case *cardanopb.StakeCredential_ScriptHash:
+		return hex.EncodeToString(c.ScriptHash)
+	}
+	return ""
+}
+
+func pbGovActionData(prop *cardanopb.GovernanceActionProposal) event.GovActionData {
+	ga := prop.GetGovAction()
+	if ga == nil {
+		return event.GovActionData{}
+	}
+	var data event.GovActionData
+	switch a := ga.GetGovernanceAction().(type) {
+	case *cardanopb.GovernanceAction_InfoAction:
+		data.Info = &event.InfoActionData{}
+	case *cardanopb.GovernanceAction_NoConfidenceAction:
+		data.NoConfidence = &event.NoConfidenceActionData{
+			PrevActionId: pbGovActionId(a.NoConfidenceAction.GetGovActionId()),
+		}
+	case *cardanopb.GovernanceAction_HardForkInitiationAction:
+		d := &event.HardForkInitiationActionData{
+			PrevActionId: pbGovActionId(a.HardForkInitiationAction.GetGovActionId()),
+		}
+		if pv := a.HardForkInitiationAction.GetProtocolVersion(); pv != nil {
+			d.ProtocolVersion = event.ProtocolVersion{
+				Major: uint(pv.GetMajor()),
+				Minor: uint(pv.GetMinor()),
+			}
+		}
+		data.HardForkInitiation = d
+	case *cardanopb.GovernanceAction_TreasuryWithdrawalsAction:
+		twa := a.TreasuryWithdrawalsAction
+		d := &event.TreasuryWithdrawalActionData{
+			PolicyHash: hex.EncodeToString(twa.GetPolicyHash()),
+		}
+		for _, w := range twa.GetWithdrawals() {
+			addrStr := ""
+			if addr, err := lcommon.NewAddressFromBytes(w.GetRewardAccount()); err == nil {
+				addrStr = addr.String()
+			}
+			d.Withdrawals = append(d.Withdrawals, event.TreasuryWithdrawalItem{
+				Address: addrStr,
+				Amount:  utxorpcBigIntToUint64(w.GetCoin()),
+			})
+		}
+		data.TreasuryWithdrawal = d
+	case *cardanopb.GovernanceAction_UpdateCommitteeAction:
+		uca := a.UpdateCommitteeAction
+		d := &event.UpdateCommitteeActionData{
+			PrevActionId: pbGovActionId(uca.GetGovActionId()),
+		}
+		for _, cred := range uca.GetRemoveCommitteeCredentials() {
+			d.MembersToRemove = append(d.MembersToRemove, pbStakeCredentialHex(cred))
+		}
+		for _, nc := range uca.GetNewCommitteeCredentials() {
+			d.MembersToAdd = append(d.MembersToAdd, event.CommitteeMember{
+				Credential: pbStakeCredentialHex(nc.GetCommitteeColdCredential()),
+				Epoch:      uint(nc.GetExpiresEpoch()),
+			})
+		}
+		if qt := uca.GetNewCommitteeThreshold(); qt != nil {
+			d.QuorumNumerator = uint64(qt.GetNumerator())
+			d.QuorumDenominator = uint64(qt.GetDenominator())
+		}
+		data.UpdateCommittee = d
+	case *cardanopb.GovernanceAction_NewConstitutionAction:
+		nca := a.NewConstitutionAction
+		d := &event.NewConstitutionActionData{
+			PrevActionId: pbGovActionId(nca.GetGovActionId()),
+		}
+		if c := nca.GetConstitution(); c != nil {
+			d.Anchor = pbAnchor(c.GetAnchor())
+			if h := c.GetHash(); len(h) > 0 {
+				d.ScriptHash = hex.EncodeToString(h)
+			}
+		}
+		data.NewConstitution = d
+	case *cardanopb.GovernanceAction_ParameterChangeAction:
+		pca := a.ParameterChangeAction
+		d := &event.ParameterChangeActionData{
+			PrevActionId: pbGovActionId(pca.GetGovActionId()),
+			PolicyHash:   hex.EncodeToString(pca.GetPolicyHash()),
+		}
+		data.ParameterChange = d
 	}
 	return data
 }
@@ -242,6 +369,102 @@ func pbOutputsToLedger(outputs []*cardanopb.TxOutput) []lcommon.TransactionOutpu
 	return out
 }
 
+// pbGovernanceCertificates extracts DRep, vote-delegation, and committee
+// certificate data from protobuf certificates.
+func pbGovernanceCertificates(certs []*cardanopb.Certificate) (
+	drep []event.DRepCertificateData,
+	voteDel []event.VoteDelegationCertificateData,
+	committee []event.CommitteeCertificateData,
+) {
+	for _, cert := range certs {
+		switch c := cert.GetCertificate().(type) {
+		case *cardanopb.Certificate_RegDrepCert:
+			d := c.RegDrepCert
+			drep = append(drep, event.DRepCertificateData{
+				CertificateType: "Registration",
+				DRepHash:        pbStakeCredentialHex(d.GetDrepCredential()),
+				Deposit:         int64(utxorpcBigIntToUint64(d.GetCoin())),
+				Anchor:          pbAnchor(d.GetAnchor()),
+			})
+		case *cardanopb.Certificate_UnregDrepCert:
+			d := c.UnregDrepCert
+			drep = append(drep, event.DRepCertificateData{
+				CertificateType: "Deregistration",
+				DRepHash:        pbStakeCredentialHex(d.GetDrepCredential()),
+				Deposit:         int64(utxorpcBigIntToUint64(d.GetCoin())),
+			})
+		case *cardanopb.Certificate_UpdateDrepCert:
+			d := c.UpdateDrepCert
+			drep = append(drep, event.DRepCertificateData{
+				CertificateType: "Update",
+				DRepHash:        pbStakeCredentialHex(d.GetDrepCredential()),
+				Anchor:          pbAnchor(d.GetAnchor()),
+			})
+
+		case *cardanopb.Certificate_VoteDelegCert:
+			d := c.VoteDelegCert
+			voteDel = append(voteDel, pbVoteDelegation("VoteDelegation", d.GetStakeCredential(), d.GetDrep(), nil, 0))
+		case *cardanopb.Certificate_StakeVoteDelegCert:
+			d := c.StakeVoteDelegCert
+			voteDel = append(voteDel, pbVoteDelegation("StakeVoteDelegation", d.GetStakeCredential(), d.GetDrep(), d.GetPoolKeyhash(), 0))
+		case *cardanopb.Certificate_VoteRegDelegCert:
+			d := c.VoteRegDelegCert
+			voteDel = append(voteDel, pbVoteDelegation("VoteRegistrationDelegation", d.GetStakeCredential(), d.GetDrep(), nil, int64(utxorpcBigIntToUint64(d.GetCoin()))))
+		case *cardanopb.Certificate_StakeVoteRegDelegCert:
+			d := c.StakeVoteRegDelegCert
+			voteDel = append(voteDel, pbVoteDelegation("StakeVoteRegistrationDelegation", d.GetStakeCredential(), d.GetDrep(), d.GetPoolKeyhash(), int64(utxorpcBigIntToUint64(d.GetCoin()))))
+
+		case *cardanopb.Certificate_AuthCommitteeHotCert:
+			d := c.AuthCommitteeHotCert
+			committee = append(committee, event.CommitteeCertificateData{
+				CertificateType: "AuthHot",
+				ColdCredential:  pbStakeCredentialHex(d.GetCommitteeColdCredential()),
+				HotCredential:   pbStakeCredentialHex(d.GetCommitteeHotCredential()),
+			})
+		case *cardanopb.Certificate_ResignCommitteeColdCert:
+			d := c.ResignCommitteeColdCert
+			committee = append(committee, event.CommitteeCertificateData{
+				CertificateType: "ResignCold",
+				ColdCredential:  pbStakeCredentialHex(d.GetCommitteeColdCredential()),
+				Anchor:          pbAnchor(d.GetAnchor()),
+			})
+		}
+	}
+	return drep, voteDel, committee
+}
+
+func pbVoteDelegation(
+	certType string,
+	stakeCred *cardanopb.StakeCredential,
+	drep *cardanopb.DRep,
+	poolKeyhash []byte,
+	deposit int64,
+) event.VoteDelegationCertificateData {
+	data := event.VoteDelegationCertificateData{
+		CertificateType: certType,
+		StakeCredential: pbStakeCredentialHex(stakeCred),
+		Deposit:         deposit,
+	}
+	if len(poolKeyhash) > 0 {
+		data.PoolKeyHash = hex.EncodeToString(poolKeyhash)
+	}
+	if drep != nil {
+		switch d := drep.GetDrep().(type) {
+		case *cardanopb.DRep_AddrKeyHash:
+			data.DRepType = "AddrKeyHash"
+			data.DRepHash = hex.EncodeToString(d.AddrKeyHash)
+		case *cardanopb.DRep_ScriptHash:
+			data.DRepType = "ScriptHash"
+			data.DRepHash = hex.EncodeToString(d.ScriptHash)
+		case *cardanopb.DRep_Abstain:
+			data.DRepType = "Abstain"
+		case *cardanopb.DRep_NoConfidence:
+			data.DRepType = "NoConfidence"
+		}
+	}
+	return data
+}
+
 func utxorpcBigIntToUint64(b *cardanopb.BigInt) uint64 {
 	if b == nil {
 		return 0
@@ -250,7 +473,11 @@ func utxorpcBigIntToUint64(b *cardanopb.BigInt) uint64 {
 		return uint64(v)
 	}
 	if raw := b.GetBigUInt(); len(raw) > 0 {
-		return new(big.Int).SetBytes(raw).Uint64()
+		bi := new(big.Int).SetBytes(raw)
+		if !bi.IsUint64() {
+			return math.MaxUint64
+		}
+		return bi.Uint64()
 	}
 	return 0
 }

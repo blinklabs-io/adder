@@ -51,13 +51,19 @@ func mapFollowTipResponse(resp *syncpb.FollowTipResponse, includeCbor bool, netw
 	}
 
 	if undo := resp.GetUndo(); undo != nil {
-		if b := undo.GetCardano(); b != nil && b.Header != nil {
+		header := blockHeaderFromCBOR(undo.GetNativeBytes())
+		if header == nil {
+			if b := undo.GetCardano(); b != nil {
+				header = b.GetHeader()
+			}
+		}
+		if header != nil {
 			return []event.Event{
 				event.New(
 					"input.rollback",
 					time.Now(),
 					nil,
-					event.NewRollbackEvent(common.NewPoint(b.Header.GetSlot(), b.Header.GetHash())),
+					event.NewRollbackEvent(common.NewPoint(header.GetSlot(), header.GetHash())),
 				),
 			}, nil
 		}
@@ -194,20 +200,18 @@ func mapWatchTxResponse(resp *watchpb.WatchTxResponse, networkMagic uint32) ([]e
 	}
 
 	if undo := resp.GetUndo(); undo != nil {
-		if blk := undo.GetBlock(); blk != nil {
-			if b := blk.GetCardano(); b != nil && b.Header != nil {
-				return []event.Event{
-					event.New(
-						"input.rollback",
-						time.Now(),
-						nil,
-						event.NewRollbackEvent(common.NewPoint(
-							b.Header.GetSlot(),
-							b.Header.GetHash(),
-						)),
-					),
-				}, nil
-			}
+		if header := watchTxBlockHeader(undo.GetBlock()); header != nil {
+			return []event.Event{
+				event.New(
+					"input.rollback",
+					time.Now(),
+					nil,
+					event.NewRollbackEvent(common.NewPoint(
+						header.GetSlot(),
+						header.GetHash(),
+					)),
+				),
+			}, nil
 		}
 	}
 
@@ -215,24 +219,36 @@ func mapWatchTxResponse(resp *watchpb.WatchTxResponse, networkMagic uint32) ([]e
 	return nil, nil
 }
 
+// blockHeaderFromCBOR decodes NativeBytes (NtC wrapped CBOR) just enough to
+// extract slot, hash, and height. Returns nil on failure or if data is nil.
+func blockHeaderFromCBOR(nativeBytes []byte) *cardanopb.BlockHeader {
+	if len(nativeBytes) == 0 {
+		return nil
+	}
+	var wb blockfetch.WrappedBlock
+	if _, err := cbor.Decode(nativeBytes, &wb); err != nil {
+		return nil
+	}
+	block, err := ledger.NewBlockFromCbor(wb.Type, wb.RawBlock)
+	if err != nil {
+		return nil
+	}
+	return &cardanopb.BlockHeader{
+		Slot:   block.SlotNumber(),
+		Hash:   block.Hash().Bytes(),
+		Height: block.BlockNumber(),
+	}
+}
+
 // watchTxBlockHeader extracts a block header from the block context attached
-// to a WatchTx Apply response. It tries NativeBytes (CBOR) first, then the
-// protobuf Cardano block. Returns nil if no header is available.
+// to a WatchTx Apply/Undo response. It tries NativeBytes (CBOR) first, then
+// the protobuf Cardano block. Returns nil if no header is available.
 func watchTxBlockHeader(blk *watchpb.AnyChainBlock) *cardanopb.BlockHeader {
 	if blk == nil {
 		return nil
 	}
-	if nativeBytes := blk.GetNativeBytes(); nativeBytes != nil {
-		var wb blockfetch.WrappedBlock
-		if _, err := cbor.Decode(nativeBytes, &wb); err == nil {
-			if block, err := ledger.NewBlockFromCbor(wb.Type, wb.RawBlock); err == nil {
-				return &cardanopb.BlockHeader{
-					Slot:   block.SlotNumber(),
-					Hash:   block.Hash().Bytes(),
-					Height: block.BlockNumber(),
-				}
-			}
-		}
+	if h := blockHeaderFromCBOR(blk.GetNativeBytes()); h != nil {
+		return h
 	}
 	if cb := blk.GetCardano(); cb != nil {
 		return cb.GetHeader()
@@ -275,18 +291,29 @@ func watchTxApplyProtobuf(
 	return out, nil
 }
 
-// hasGovernanceData is a conservative heuristic for whether a UTxO RPC
-// Cardano transaction contains governance-related data.
+// hasGovernanceData returns true if the protobuf Tx contains governance
+// proposals or governance-related certificates (DRep, vote delegation,
+// committee). Note: VotingProcedures are not present in the protobuf schema.
 func hasGovernanceData(tx *cardanopb.Tx) bool {
 	if tx == nil {
 		return false
 	}
-	// Proposals correspond roughly to governance actions; if any exist we treat
-	// this as a governance-bearing transaction.
 	if len(tx.GetProposals()) > 0 {
 		return true
 	}
-	// Additional heuristics could be added here if needed (e.g. voting data),
-	// but proposals alone are a good initial signal.
+	for _, cert := range tx.GetCertificates() {
+		switch cert.GetCertificate().(type) {
+		case *cardanopb.Certificate_RegDrepCert,
+			*cardanopb.Certificate_UnregDrepCert,
+			*cardanopb.Certificate_UpdateDrepCert,
+			*cardanopb.Certificate_VoteDelegCert,
+			*cardanopb.Certificate_StakeVoteDelegCert,
+			*cardanopb.Certificate_VoteRegDelegCert,
+			*cardanopb.Certificate_StakeVoteRegDelegCert,
+			*cardanopb.Certificate_AuthCommitteeHotCert,
+			*cardanopb.Certificate_ResignCommitteeColdCert:
+			return true
+		}
+	}
 	return false
 }
