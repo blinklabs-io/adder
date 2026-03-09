@@ -95,33 +95,36 @@ func followTipApplyCBOR(nativeBytes []byte, includeCbor bool, networkMagic uint3
 		return nil, fmt.Errorf("decode block from CBOR: %w", err)
 	}
 
-	var out []event.Event
+	txns := block.Transactions()
+	out := make([]event.Event, 0, 1+len(txns))
 	out = append(out, event.New(
 		"input.block",
 		time.Now(),
 		event.NewBlockHeaderContext(block.Header()),
 		event.NewBlockEvent(block, includeCbor),
 	))
-	for t, transaction := range block.Transactions() {
+	for t, transaction := range txns {
 		if t < 0 || t > math.MaxUint32 {
 			return nil, errors.New("invalid number of transactions")
 		}
+		//nolint:gosec // t is bounds-checked above
+		idx := uint32(t)
 		out = append(out, event.New(
 			"input.transaction",
 			time.Now(),
-			event.NewTransactionContext(block, transaction, uint32(t), networkMagic),
+			event.NewTransactionContext(block, transaction, idx, networkMagic),
 			event.NewTransactionEvent(block, transaction, includeCbor, nil),
 		))
 		if event.HasGovernanceData(transaction) {
 			out = append(out, event.New(
 				"input.governance",
 				time.Now(),
-				event.NewGovernanceContext(block, transaction, uint32(t), networkMagic),
+				event.NewGovernanceContext(block, transaction, idx, networkMagic),
 				event.NewGovernanceEvent(block, transaction, includeCbor),
 			))
 		}
 		if drepCerts := event.ExtractDRepCertificates(transaction); len(drepCerts) > 0 {
-			drepCtx := event.NewGovernanceContext(block, transaction, uint32(t), networkMagic)
+			drepCtx := event.NewGovernanceContext(block, transaction, idx, networkMagic)
 			for _, cert := range drepCerts {
 				if evtType, ok := event.DRepEventType(cert.CertificateType); ok {
 					out = append(out, event.New(evtType, time.Now(), drepCtx,
@@ -142,7 +145,12 @@ func followTipApplyProtobuf(cb *cardanopb.Block, networkMagic uint32) ([]event.E
 	}
 
 	now := time.Now()
-	var out []event.Event
+	body := cb.GetBody()
+	txCount := 0
+	if body != nil {
+		txCount = len(body.GetTx())
+	}
+	out := make([]event.Event, 0, 1+txCount)
 	out = append(out, event.New(
 		"input.block",
 		now,
@@ -151,7 +159,6 @@ func followTipApplyProtobuf(cb *cardanopb.Block, networkMagic uint32) ([]event.E
 	))
 
 	blockHash := header.GetHash()
-	body := cb.GetBody()
 	if body == nil {
 		return out, nil
 	}

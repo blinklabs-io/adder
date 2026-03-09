@@ -101,6 +101,7 @@ func pbGovernanceEvent(blockHash []byte, tx *cardanopb.Tx) event.GovernanceEvent
 		BlockHash: hex.EncodeToString(blockHash),
 	}
 	for i, prop := range tx.GetProposals() {
+		//nolint:gosec // proposals per tx bounded by Cardano protocol
 		evt.ProposalProcedures = append(evt.ProposalProcedures, pbProposalProcedure(prop, uint32(i)))
 	}
 	drep, voteDel, committee := pbGovernanceCertificates(tx.GetCertificates())
@@ -152,7 +153,11 @@ func pbStakeCredentialHex(cred *cardanopb.StakeCredential) string {
 	if cred == nil {
 		return ""
 	}
-	switch c := cred.GetStakeCredential().(type) {
+	inner := cred.GetStakeCredential()
+	if inner == nil {
+		return ""
+	}
+	switch c := inner.(type) {
 	case *cardanopb.StakeCredential_AddrKeyHash:
 		return hex.EncodeToString(c.AddrKeyHash)
 	case *cardanopb.StakeCredential_ScriptHash:
@@ -166,8 +171,12 @@ func pbGovActionData(prop *cardanopb.GovernanceActionProposal) event.GovActionDa
 	if ga == nil {
 		return event.GovActionData{}
 	}
+	inner := ga.GetGovernanceAction()
+	if inner == nil {
+		return event.GovActionData{}
+	}
 	var data event.GovActionData
-	switch a := ga.GetGovernanceAction().(type) {
+	switch a := inner.(type) {
 	case *cardanopb.GovernanceAction_InfoAction:
 		data.Info = &event.InfoActionData{}
 	case *cardanopb.GovernanceAction_NoConfidenceAction:
@@ -216,8 +225,12 @@ func pbGovActionData(prop *cardanopb.GovernanceActionProposal) event.GovActionDa
 			})
 		}
 		if qt := uca.GetNewCommitteeThreshold(); qt != nil {
-			d.QuorumNumerator = uint64(qt.GetNumerator())
-			d.QuorumDenominator = uint64(qt.GetDenominator())
+			if n := qt.GetNumerator(); n > 0 {
+				d.QuorumNumerator = uint64(n)
+			}
+			if dn := qt.GetDenominator(); dn > 0 {
+				d.QuorumDenominator = uint64(dn)
+			}
 		}
 		data.UpdateCommittee = d
 	case *cardanopb.GovernanceAction_NewConstitutionAction:
@@ -286,7 +299,7 @@ func pbFee(tx *cardanopb.Tx) uint64 {
 			break
 		}
 		raw = raw[n:]
-		switch wtype {
+		switch wtype { //nolint:exhaustive // only wire types relevant to scanning
 		case protowire.VarintType:
 			v, vn := protowire.ConsumeVarint(raw)
 			if vn < 0 {
@@ -377,13 +390,17 @@ func pbGovernanceCertificates(certs []*cardanopb.Certificate) (
 	committee []event.CommitteeCertificateData,
 ) {
 	for _, cert := range certs {
-		switch c := cert.GetCertificate().(type) {
+		inner := cert.GetCertificate()
+		if inner == nil {
+			continue
+		}
+		switch c := inner.(type) {
 		case *cardanopb.Certificate_RegDrepCert:
 			d := c.RegDrepCert
 			drep = append(drep, event.DRepCertificateData{
 				CertificateType: "Registration",
 				DRepHash:        pbStakeCredentialHex(d.GetDrepCredential()),
-				Deposit:         int64(utxorpcBigIntToUint64(d.GetCoin())),
+				Deposit:         safeUint64ToInt64(utxorpcBigIntToUint64(d.GetCoin())),
 				Anchor:          pbAnchor(d.GetAnchor()),
 			})
 		case *cardanopb.Certificate_UnregDrepCert:
@@ -391,7 +408,7 @@ func pbGovernanceCertificates(certs []*cardanopb.Certificate) (
 			drep = append(drep, event.DRepCertificateData{
 				CertificateType: "Deregistration",
 				DRepHash:        pbStakeCredentialHex(d.GetDrepCredential()),
-				Deposit:         int64(utxorpcBigIntToUint64(d.GetCoin())),
+				Deposit:         safeUint64ToInt64(utxorpcBigIntToUint64(d.GetCoin())),
 			})
 		case *cardanopb.Certificate_UpdateDrepCert:
 			d := c.UpdateDrepCert
@@ -409,10 +426,10 @@ func pbGovernanceCertificates(certs []*cardanopb.Certificate) (
 			voteDel = append(voteDel, pbVoteDelegation("StakeVoteDelegation", d.GetStakeCredential(), d.GetDrep(), d.GetPoolKeyhash(), 0))
 		case *cardanopb.Certificate_VoteRegDelegCert:
 			d := c.VoteRegDelegCert
-			voteDel = append(voteDel, pbVoteDelegation("VoteRegistrationDelegation", d.GetStakeCredential(), d.GetDrep(), nil, int64(utxorpcBigIntToUint64(d.GetCoin()))))
+			voteDel = append(voteDel, pbVoteDelegation("VoteRegistrationDelegation", d.GetStakeCredential(), d.GetDrep(), nil, safeUint64ToInt64(utxorpcBigIntToUint64(d.GetCoin()))))
 		case *cardanopb.Certificate_StakeVoteRegDelegCert:
 			d := c.StakeVoteRegDelegCert
-			voteDel = append(voteDel, pbVoteDelegation("StakeVoteRegistrationDelegation", d.GetStakeCredential(), d.GetDrep(), d.GetPoolKeyhash(), int64(utxorpcBigIntToUint64(d.GetCoin()))))
+			voteDel = append(voteDel, pbVoteDelegation("StakeVoteRegistrationDelegation", d.GetStakeCredential(), d.GetDrep(), d.GetPoolKeyhash(), safeUint64ToInt64(utxorpcBigIntToUint64(d.GetCoin()))))
 
 		case *cardanopb.Certificate_AuthCommitteeHotCert:
 			d := c.AuthCommitteeHotCert
@@ -449,7 +466,11 @@ func pbVoteDelegation(
 		data.PoolKeyHash = hex.EncodeToString(poolKeyhash)
 	}
 	if drep != nil {
-		switch d := drep.GetDrep().(type) {
+		drepInner := drep.GetDrep()
+		if drepInner == nil {
+			return data
+		}
+		switch d := drepInner.(type) {
 		case *cardanopb.DRep_AddrKeyHash:
 			data.DRepType = "AddrKeyHash"
 			data.DRepHash = hex.EncodeToString(d.AddrKeyHash)
@@ -463,6 +484,13 @@ func pbVoteDelegation(
 		}
 	}
 	return data
+}
+
+func safeUint64ToInt64(v uint64) int64 {
+	if v > uint64(math.MaxInt64) {
+		return math.MaxInt64
+	}
+	return int64(v) //nolint:gosec // clamped above
 }
 
 func utxorpcBigIntToUint64(b *cardanopb.BigInt) uint64 {
