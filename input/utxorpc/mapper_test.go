@@ -127,6 +127,7 @@ func TestFollowTipApplyProtobufFansOut(t *testing.T) {
 }
 
 func TestFollowTipApplyProtobufGovernance(t *testing.T) {
+	rewardAcct := []byte{0x61, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}
 	resp := &syncpb.FollowTipResponse{
 		Action: &syncpb.FollowTipResponse_Apply{
 			Apply: &syncpb.AnyChainBlock{
@@ -139,9 +140,14 @@ func TestFollowTipApplyProtobufGovernance(t *testing.T) {
 									Hash: []byte{0xcc},
 									Proposals: []*cardanopb.GovernanceActionProposal{
 										{
-											Deposit: &cardanopb.BigInt{BigInt: &cardanopb.BigInt_Int{Int: 500000000}},
+											Deposit:       &cardanopb.BigInt{BigInt: &cardanopb.BigInt_Int{Int: 500000000}},
+											RewardAccount: rewardAcct,
 											GovAction: &cardanopb.GovernanceAction{
 												GovernanceAction: &cardanopb.GovernanceAction_InfoAction{InfoAction: 6},
+											},
+											Anchor: &cardanopb.Anchor{
+												Url:         "https://example.com/proposal.json",
+												ContentHash: []byte{0xab, 0xcd},
 											},
 										},
 									},
@@ -163,7 +169,13 @@ func TestFollowTipApplyProtobufGovernance(t *testing.T) {
 
 	govEvt := evts[2].Payload.(event.GovernanceEvent)
 	require.Len(t, govEvt.ProposalProcedures, 1)
-	assert.Equal(t, "Info", govEvt.ProposalProcedures[0].ActionType)
+	prop := govEvt.ProposalProcedures[0]
+	assert.Equal(t, "Info", prop.ActionType)
+	assert.Equal(t, uint64(500000000), prop.Deposit)
+	assert.NotEmpty(t, prop.RewardAccount)
+	assert.Equal(t, "https://example.com/proposal.json", prop.Anchor.Url)
+	assert.Equal(t, "abcd", prop.Anchor.DataHash)
+	assert.NotNil(t, prop.ActionData.Info)
 }
 
 func TestFollowTipApplyNeitherPathErrors(t *testing.T) {
@@ -196,6 +208,25 @@ func TestFollowTipUndoProducesRollback(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, evts, 1)
 	assert.Equal(t, "input.rollback", evts[0].Type)
+}
+
+func TestFollowTipUndoNativeBytesProducesRollback(t *testing.T) {
+	block, nativeBytes := decodeShelleyBlock(t)
+
+	resp := &syncpb.FollowTipResponse{
+		Action: &syncpb.FollowTipResponse_Undo{
+			Undo: &syncpb.AnyChainBlock{
+				NativeBytes: nativeBytes,
+			},
+		},
+	}
+	evts, err := mapFollowTipResponse(resp, false, 0)
+	require.NoError(t, err)
+	require.Len(t, evts, 1)
+	assert.Equal(t, "input.rollback", evts[0].Type)
+
+	rb := evts[0].Payload.(event.RollbackEvent)
+	assert.Equal(t, block.SlotNumber(), rb.SlotNumber)
 }
 
 func TestFollowTipResetProducesRollback(t *testing.T) {
@@ -355,6 +386,29 @@ func TestWatchTxUndoEmitsRollback(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, evts, 1)
 	assert.Equal(t, "input.rollback", evts[0].Type)
+}
+
+func TestWatchTxUndoNativeBytesEmitsRollback(t *testing.T) {
+	block, nativeBytes := decodeShelleyBlock(t)
+
+	resp := &watchpb.WatchTxResponse{
+		Action: &watchpb.WatchTxResponse_Undo{
+			Undo: &watchpb.AnyChainTx{
+				Chain: &watchpb.AnyChainTx_Cardano{
+					Cardano: &cardanopb.Tx{Hash: []byte{0xee}},
+				},
+				Block: &watchpb.AnyChainBlock{NativeBytes: nativeBytes},
+			},
+		},
+	}
+
+	evts, err := mapWatchTxResponse(resp, 0)
+	require.NoError(t, err)
+	require.Len(t, evts, 1)
+	assert.Equal(t, "input.rollback", evts[0].Type)
+
+	rb := evts[0].Payload.(event.RollbackEvent)
+	assert.Equal(t, block.SlotNumber(), rb.SlotNumber)
 }
 
 func TestWatchTxIdleProducesNoEvents(t *testing.T) {
