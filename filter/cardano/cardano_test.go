@@ -794,8 +794,8 @@ func TestWithDRepIds(t *testing.T) {
 	t.Run("skips invalid input without crashing", func(t *testing.T) {
 		cs := New(WithDRepIds([]string{"invalid_bech32", "", "xyz"}))
 
-		// Should not crash, filter should still be set
-		assert.True(t, cs.filterSet.hasDRepFilter)
+		// Should not crash, filter should not be enabled with only invalid IDs
+		assert.False(t, cs.filterSet.hasDRepFilter)
 	})
 }
 

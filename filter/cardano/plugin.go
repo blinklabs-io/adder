@@ -26,6 +26,7 @@ var cmdlineOptions struct {
 	asset    string
 	policyId string
 	poolId   string
+	drepId   string
 }
 
 func init() {
@@ -33,7 +34,7 @@ func init() {
 		plugin.PluginEntry{
 			Type:               plugin.PluginTypeFilter,
 			Name:               "cardano",
-			Description:        "filters Cardano blockchain events by address, asset, policy, or pool",
+			Description:        "filters Cardano blockchain events by address, asset, policy, pool, or DRep",
 			NewFromOptionsFunc: NewFromCmdlineOptions,
 			Options: []plugin.PluginOption{
 				{
@@ -67,6 +68,14 @@ func init() {
 					DefaultValue: "",
 					Dest:         &(cmdlineOptions.poolId),
 					CustomFlag:   "pool",
+				},
+				{
+					Name:         "drep",
+					Type:         plugin.PluginOptionTypeString,
+					Description:  "specifies DRep ID(s) to filter on (comma-separated, hex or bech32)",
+					DefaultValue: "",
+					Dest:         &(cmdlineOptions.drepId),
+					CustomFlag:   "drep",
 				},
 			},
 		},
@@ -110,6 +119,22 @@ func NewFromCmdlineOptions() plugin.Plugin {
 				strings.Split(cmdlineOptions.poolId, ","),
 			),
 		)
+	}
+	if cmdlineOptions.drepId != "" {
+		rawIds := strings.Split(cmdlineOptions.drepId, ",")
+		var cleanIds []string
+		for _, id := range rawIds {
+			id = strings.TrimSpace(strings.ToLower(id))
+			if id != "" {
+				cleanIds = append(cleanIds, id)
+			}
+		}
+		if len(cleanIds) > 0 {
+			pluginOptions = append(
+				pluginOptions,
+				WithDRepIds(cleanIds),
+			)
+		}
 	}
 	p := New(pluginOptions...)
 	return p

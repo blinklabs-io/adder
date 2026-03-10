@@ -42,7 +42,17 @@ var (
 	programName string = "adder"
 	cfg                = config.GetConfig()
 	rootCmd            = &cobra.Command{
-		Use:          programName,
+		Use:   programName,
+		Short: "Cardano blockchain event streaming tool",
+		Long: `Adder tails the Cardano blockchain and emits structured events for blocks,
+transactions, rollbacks, and governance actions. It uses a plugin-based
+pipeline architecture with configurable inputs, filters, and outputs.
+
+Input plugins:  chainsync (default), mempool
+Output plugins: log (default), webhook, telegram, push, notify
+Filters:        address, asset, policy, pool, drep, event type
+
+Events are also available via the /events WebSocket/SSE API endpoint.`,
 		SilenceUsage: true,
 		Args:         cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
