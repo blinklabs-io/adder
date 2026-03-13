@@ -18,4 +18,5 @@ package input
 import (
 	_ "github.com/blinklabs-io/adder/input/chainsync"
 	_ "github.com/blinklabs-io/adder/input/mempool"
+	_ "github.com/blinklabs-io/adder/input/utxorpc"
 )
