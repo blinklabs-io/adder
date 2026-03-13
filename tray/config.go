@@ -26,19 +26,22 @@ const configFileName = "adder-tray.yaml"
 
 // TrayConfig holds the configuration for the adder-tray application.
 type TrayConfig struct {
-	// AdderBinary is the path to the adder binary.
-	AdderBinary string `yaml:"adder_binary"`
+	// APIAddress is the address of the adder API server.
+	APIAddress string `yaml:"api_address"`
+	// APIPort is the port of the adder API server.
+	APIPort uint `yaml:"api_port"`
 	// AdderConfig is the path to the adder configuration file.
 	AdderConfig string `yaml:"adder_config"`
-	// AutoStart controls whether adder starts automatically
-	// with the tray application.
+	// AutoStart controls whether the tray connects to adder
+	// automatically on launch.
 	AutoStart bool `yaml:"auto_start"`
 }
 
 // DefaultConfig returns a TrayConfig with sensible defaults.
 func DefaultConfig() TrayConfig {
 	return TrayConfig{
-		AdderBinary: "adder",
+		APIAddress:  "127.0.0.1",
+		APIPort:     8080,
 		AdderConfig: "",
 		AutoStart:   false,
 	}
@@ -73,7 +76,22 @@ func LoadConfig() (TrayConfig, error) {
 		return cfg, fmt.Errorf("parsing config: %w", err)
 	}
 
+	if err := validateConfig(cfg); err != nil {
+		return cfg, err
+	}
+
 	return cfg, nil
+}
+
+// validateConfig checks that required TrayConfig fields are set.
+func validateConfig(cfg TrayConfig) error {
+	if cfg.APIAddress == "" {
+		return fmt.Errorf("invalid config: api_address must not be empty")
+	}
+	if cfg.APIPort == 0 {
+		return fmt.Errorf("invalid config: api_port must be greater than 0")
+	}
+	return nil
 }
 
 // SaveConfig writes the tray configuration to disk, creating the
