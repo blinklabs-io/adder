@@ -174,6 +174,36 @@ func (c *Config) BindFlags(fs *pflag.FlagSet) error {
 		DefaultOutputPlugin,
 		"output plugin to use, 'list' to show available",
 	)
+	fs.StringVar(
+		&c.Api.ListenAddress,
+		"api-address",
+		c.Api.ListenAddress,
+		"API listen address",
+	)
+	fs.UintVar(
+		&c.Api.ListenPort,
+		"api-port",
+		c.Api.ListenPort,
+		"API listen port",
+	)
+	fs.StringVar(
+		&c.Logging.Level,
+		"logging-level",
+		c.Logging.Level,
+		"logging level (debug, info, warn, error)",
+	)
+	fs.StringVar(
+		&c.Debug.ListenAddress,
+		"debug-address",
+		c.Debug.ListenAddress,
+		"debug listener address",
+	)
+	fs.UintVar(
+		&c.Debug.ListenPort,
+		"debug-port",
+		c.Debug.ListenPort,
+		"debug listener port (0 to disable)",
+	)
 	return plugin.PopulateCmdlineOptions(fs)
 }
 

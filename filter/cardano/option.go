@@ -158,41 +158,44 @@ func WithDRepIds(drepIds []string) CardanoOptionFunc {
 
 			if strings.HasPrefix(drepId, "drep") {
 				// bech32 format (drep1xxx or drep_script1xxx)
-				c.filterSet.dreps.bech32DRepIds[drepId] = struct{}{}
-				// Try to decode and compute hex representation
-				if _, data, err := bech32.Decode(drepId); err == nil {
-					if decoded, err := bech32.ConvertBits(data, 5, 8, false); err == nil {
-						hexId := hex.EncodeToString(decoded)
-						c.filterSet.dreps.hexDRepIds[hexId] = struct{}{}
-						c.filterSet.dreps.hexToBech32[hexId] = drepId
-						// Pre-compute byte slice for direct comparison
-						c.filterSet.dreps.bytesDRepIds[hexId] = decoded // Store as byte string for O(1) lookup without encoding
-						c.filterSet.dreps.bytesLookup[string(decoded)] = struct{}{}
-					}
+				// Only store after successful decode
+				_, data, err := bech32.Decode(drepId)
+				if err != nil {
+					continue
 				}
+				decoded, err := bech32.ConvertBits(data, 5, 8, false)
+				if err != nil {
+					continue
+				}
+				c.filterSet.dreps.bech32DRepIds[drepId] = struct{}{}
+				hexId := hex.EncodeToString(decoded)
+				c.filterSet.dreps.hexDRepIds[hexId] = struct{}{}
+				c.filterSet.dreps.hexToBech32[hexId] = drepId
+				c.filterSet.dreps.bytesDRepIds[hexId] = decoded
+				c.filterSet.dreps.bytesLookup[string(decoded)] = struct{}{}
 			} else {
-				// Assume hex format - store hex
+				// Hex format - only store after successful decode
+				hexBytes, err := hex.DecodeString(drepId)
+				if err != nil {
+					continue
+				}
 				c.filterSet.dreps.hexDRepIds[drepId] = struct{}{}
-				// Compute both bech32 variants (drep and drep_script)
-				if hexBytes, err := hex.DecodeString(drepId); err == nil {
-					// Pre-compute byte slice for direct comparison
-					c.filterSet.dreps.bytesDRepIds[drepId] = hexBytes
-					// Store as byte string for O(1) lookup without encoding
-					c.filterSet.dreps.bytesLookup[string(hexBytes)] = struct{}{}
-					if convData, err := bech32.ConvertBits(hexBytes, 8, 5, true); err == nil {
-						// Store as key hash version
-						if encoded, err := bech32.Encode("drep", convData); err == nil {
-							c.filterSet.dreps.bech32DRepIds[encoded] = struct{}{}
-							c.filterSet.dreps.hexToBech32[drepId] = encoded
-						}
-						// Also store as script hash version
-						if encoded, err := bech32.Encode("drep_script", convData); err == nil {
-							c.filterSet.dreps.bech32DRepIds[encoded] = struct{}{}
-						}
+				c.filterSet.dreps.bytesDRepIds[drepId] = hexBytes
+				c.filterSet.dreps.bytesLookup[string(hexBytes)] = struct{}{}
+				if convData, err := bech32.ConvertBits(hexBytes, 8, 5, true); err == nil {
+					if encoded, err := bech32.Encode("drep", convData); err == nil {
+						c.filterSet.dreps.bech32DRepIds[encoded] = struct{}{}
+						c.filterSet.dreps.hexToBech32[drepId] = encoded
+					}
+					if encoded, err := bech32.Encode("drep_script", convData); err == nil {
+						c.filterSet.dreps.bech32DRepIds[encoded] = struct{}{}
 					}
 				}
 			}
 		}
-		c.filterSet.hasDRepFilter = true
+		// Only enable filter if at least one valid ID was stored
+		if len(c.filterSet.dreps.hexDRepIds) > 0 || len(c.filterSet.dreps.bech32DRepIds) > 0 {
+			c.filterSet.hasDRepFilter = true
+		}
 	}
 }
