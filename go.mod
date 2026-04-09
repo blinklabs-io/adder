@@ -11,7 +11,7 @@ require (
 	github.com/btcsuite/btcd/btcutil v1.1.6
 	github.com/gen2brain/beeep v0.11.2
 	github.com/gin-gonic/gin v1.11.0
-	github.com/go-telegram/bot v1.19.0
+	github.com/go-telegram/bot v1.20.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/inconshreveable/mousetrap v1.1.0
 	github.com/kelseyhightower/envconfig v1.4.0
