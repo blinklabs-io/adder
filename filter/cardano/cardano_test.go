@@ -791,6 +791,70 @@ func TestWithDRepIds(t *testing.T) {
 		assert.True(t, hasHex, "should compute and store hex drep ID from drep_script")
 	})
 
+	t.Run("handles CIP-0129 bech32 drep ID with header byte", func(t *testing.T) {
+		// CIP-0129 bech32 dRep addresses include a 1-byte header before the 28-byte hash.
+		// The header for a key hash dRep is 0x22.
+		drepHex := "abcd1234567890abcdef1234567890abcdef1234567890abcdef1234"
+		hexBytes, _ := hex.DecodeString(drepHex)
+		// Build CIP-0129 payload: header (0x22) + 28-byte hash
+		cip129Payload := append([]byte{0x22}, hexBytes...)
+		convData, _ := bech32.ConvertBits(cip129Payload, 8, 5, true)
+		cip129Bech32, _ := bech32.Encode("drep", convData)
+
+		cs := New(WithDRepIds([]string{cip129Bech32}))
+
+		assert.True(t, cs.filterSet.hasDRepFilter)
+		// Must store the raw 28-byte hex (without the CIP-0129 header) so it
+		// matches voter.Hash and DRepHash event fields.
+		_, hasHex := cs.filterSet.dreps.hexDRepIds[drepHex]
+		assert.True(t, hasHex, "should strip CIP-0129 header and store 28-byte hex")
+	})
+
+	t.Run("CIP-0129 bech32 drep matches governance voting procedure", func(t *testing.T) {
+		drepHex := "abcd1234567890abcdef1234567890abcdef1234567890abcdef1234"
+		hexBytes, _ := hex.DecodeString(drepHex)
+		// Build CIP-0129 bech32 (header 0x22 + 28-byte hash)
+		cip129Payload := append([]byte{0x22}, hexBytes...)
+		convData, _ := bech32.ConvertBits(cip129Payload, 8, 5, true)
+		cip129Bech32, _ := bech32.Encode("drep", convData)
+
+		cs := New(WithDRepIds([]string{cip129Bech32}))
+
+		// Simulate a governance event where VoterHash is the raw 28-byte hex
+		// (as produced by hex.EncodeToString(voter.Hash[:]) in the event layer)
+		ge := event.GovernanceEvent{
+			VotingProcedures: []event.VotingProcedureData{
+				{
+					VoterType: "DRep",
+					VoterHash: drepHex,
+				},
+			},
+		}
+		assert.True(t, cs.filterGovernanceEvent(ge),
+			"CIP-0129 bech32 input should match governance voting procedure")
+	})
+
+	t.Run("real-world CIP-0129 drep address matches governance vote", func(t *testing.T) {
+		// drep1yg8vjs7ute7z7vyd8yez5tgjey6043djjfh8d3n7sjev35g064xxc is a real
+		// CIP-0129 bech32 dRep address; its raw 28-byte hash is the hex below.
+		cip129Bech32 := "drep1yg8vjs7ute7z7vyd8yez5tgjey6043djjfh8d3n7sjev35g064xxc"
+		expectedHex := "0ec943dc5e7c2f308d39322a2d12c934fac5b2926e76c67e84b2c8d1"
+
+		cs := New(WithDRepIds([]string{cip129Bech32}))
+
+		assert.True(t, cs.filterSet.hasDRepFilter)
+		_, hasHex := cs.filterSet.dreps.hexDRepIds[expectedHex]
+		assert.True(t, hasHex, "should decode CIP-0129 address to 28-byte hex")
+
+		ge := event.GovernanceEvent{
+			VotingProcedures: []event.VotingProcedureData{
+				{VoterType: "DRep", VoterHash: expectedHex},
+			},
+		}
+		assert.True(t, cs.filterGovernanceEvent(ge),
+			"real-world CIP-0129 drep address should match its governance vote")
+	})
+
 	t.Run("skips invalid input without crashing", func(t *testing.T) {
 		cs := New(WithDRepIds([]string{"invalid_bech32", "", "xyz"}))
 
