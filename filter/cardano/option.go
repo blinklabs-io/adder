@@ -167,6 +167,14 @@ func WithDRepIds(drepIds []string) CardanoOptionFunc {
 				if err != nil {
 					continue
 				}
+				// CIP-0129 bech32 dRep addresses include a 1-byte header before
+				// the 28-byte credential hash. Strip it so hexId matches the raw
+				// hash used in voter.Hash and DRepHash event fields (28 bytes).
+				if len(decoded) == 29 {
+					decoded = decoded[1:]
+				} else if len(decoded) != 28 {
+					continue
+				}
 				c.filterSet.dreps.bech32DRepIds[drepId] = struct{}{}
 				hexId := hex.EncodeToString(decoded)
 				c.filterSet.dreps.hexDRepIds[hexId] = struct{}{}
