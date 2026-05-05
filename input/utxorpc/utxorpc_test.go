@@ -36,29 +36,50 @@ func TestStartWithoutURLFails(t *testing.T) {
 	assert.Error(t, err)
 }
 
-func TestBuildIntersect(t *testing.T) {
+func TestSyncIntersectRefs(t *testing.T) {
 	t.Run("empty", func(t *testing.T) {
 		u := New()
-		assert.Nil(t, u.buildIntersect())
+		assert.Nil(t, u.syncIntersectRefs())
 	})
 	t.Run("single point", func(t *testing.T) {
 		u := New(WithIntersectPoint("12345.abcdef"))
-		refs := u.buildIntersect()
+		refs := u.syncIntersectRefs()
 		require.Len(t, refs, 1)
 		assert.Equal(t, uint64(12345), refs[0].Slot)
 		assert.Equal(t, []byte{0xab, 0xcd, 0xef}, refs[0].Hash)
 	})
 	t.Run("multiple points", func(t *testing.T) {
 		u := New(WithIntersectPoint("100.aa,200.bb"))
-		refs := u.buildIntersect()
+		refs := u.syncIntersectRefs()
 		require.Len(t, refs, 2)
 		assert.Equal(t, uint64(100), refs[0].Slot)
 		assert.Equal(t, uint64(200), refs[1].Slot)
 	})
 	t.Run("invalid point skipped", func(t *testing.T) {
 		u := New(WithIntersectPoint("bad,200.bb"))
-		refs := u.buildIntersect()
+		refs := u.syncIntersectRefs()
 		require.Len(t, refs, 1)
 		assert.Equal(t, uint64(200), refs[0].Slot)
+	})
+}
+
+func TestWatchIntersectRefs(t *testing.T) {
+	t.Run("empty", func(t *testing.T) {
+		u := New()
+		assert.Nil(t, u.watchIntersectRefs())
+	})
+	t.Run("single point", func(t *testing.T) {
+		u := New(WithIntersectPoint("12345.abcdef"))
+		refs := u.watchIntersectRefs()
+		require.Len(t, refs, 1)
+		assert.Equal(t, uint64(12345), refs[0].Slot)
+		assert.Equal(t, []byte{0xab, 0xcd, 0xef}, refs[0].Hash)
+	})
+	t.Run("multiple points", func(t *testing.T) {
+		u := New(WithIntersectPoint("100.aa,200.bb"))
+		refs := u.watchIntersectRefs()
+		require.Len(t, refs, 2)
+		assert.Equal(t, uint64(100), refs[0].Slot)
+		assert.Equal(t, uint64(200), refs[1].Slot)
 	})
 }

@@ -248,7 +248,7 @@ func (u *Utxorpc) runFollowTipOnce() error {
 	}()
 
 	req := connect.NewRequest(&syncpb.FollowTipRequest{
-		Intersect: u.buildIntersect(),
+		Intersect: u.syncIntersectRefs(),
 	})
 	stream, err := u.client.FollowTipWithContext(ctx, req)
 	if err != nil {
@@ -298,7 +298,9 @@ func (u *Utxorpc) runWatchTxOnce() error {
 		}
 	}()
 
-	req := connect.NewRequest(&watchpb.WatchTxRequest{})
+	req := connect.NewRequest(&watchpb.WatchTxRequest{
+		Intersect: u.watchIntersectRefs(),
+	})
 	stream, err := u.client.WatchTxWithContext(ctx, req)
 	if err != nil {
 		return fmt.Errorf("utxorpc WatchTx: %w", err)
@@ -346,16 +348,24 @@ func (u *Utxorpc) runWatchTxOnce() error {
 	}
 }
 
-// buildIntersect parses the intersectPoint configuration into BlockRef entries
-// for the FollowTipRequest. Format: "slot.hash" or "slot1.hash1,slot2.hash2".
-func (u *Utxorpc) buildIntersect() []*syncpb.BlockRef {
+// intersectPoint holds slot/hash parsed from intersect configuration.
+// Sync and watch APIs use different protobuf packages for BlockRef but identical
+// field semantics; parse once and map to each request type.
+type intersectPoint struct {
+	slot uint64
+	hash []byte
+}
+
+// parseIntersectPoints parses intersectPoint configuration. Format: "slot.hash"
+// or "slot1.hash1,slot2.hash2".
+func (u *Utxorpc) parseIntersectPoints() []intersectPoint {
 	if u.intersectPoint == "" {
 		return nil
 	}
 	pointsSlice := strings.Split(u.intersectPoint, ",")
-	refs := make([]*syncpb.BlockRef, 0, len(pointsSlice))
+	out := make([]intersectPoint, 0, len(pointsSlice))
 	for _, point := range pointsSlice {
-		parts := strings.SplitN(point, ".", 2)
+		parts := strings.SplitN(strings.TrimSpace(point), ".", 2)
 		if len(parts) != 2 {
 			if u.logger != nil {
 				u.logger.Warn("ignoring invalid intersect point", "point", point)
@@ -376,10 +386,34 @@ func (u *Utxorpc) buildIntersect() []*syncpb.BlockRef {
 			}
 			continue
 		}
-		refs = append(refs, &syncpb.BlockRef{Slot: slot, Hash: hashBytes})
+		out = append(out, intersectPoint{slot: slot, hash: hashBytes})
 	}
-	if len(refs) == 0 {
+	if len(out) == 0 {
 		return nil
+	}
+	return out
+}
+
+func (u *Utxorpc) syncIntersectRefs() []*syncpb.BlockRef {
+	pts := u.parseIntersectPoints()
+	if len(pts) == 0 {
+		return nil
+	}
+	refs := make([]*syncpb.BlockRef, len(pts))
+	for i, p := range pts {
+		refs[i] = &syncpb.BlockRef{Slot: p.slot, Hash: p.hash}
+	}
+	return refs
+}
+
+func (u *Utxorpc) watchIntersectRefs() []*watchpb.BlockRef {
+	pts := u.parseIntersectPoints()
+	if len(pts) == 0 {
+		return nil
+	}
+	refs := make([]*watchpb.BlockRef, len(pts))
+	for i, p := range pts {
+		refs[i] = &watchpb.BlockRef{Slot: p.slot, Hash: p.hash}
 	}
 	return refs
 }

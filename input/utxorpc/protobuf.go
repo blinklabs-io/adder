@@ -541,6 +541,9 @@ func pbGovernanceCertificates(certs []*cardanopb.Certificate) (
 	committee []event.CommitteeCertificateData,
 ) {
 	for _, cert := range certs {
+		if cert == nil {
+			continue
+		}
 		inner := cert.GetCertificate()
 		if inner == nil {
 			continue
