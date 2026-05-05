@@ -527,6 +527,23 @@ func TestWatchTxUndoEmitsRollback(t *testing.T) {
 	assert.Equal(t, "input.rollback", evts[0].Type)
 }
 
+func TestWatchTxUndoNeitherPathErrors(t *testing.T) {
+	resp := &watchpb.WatchTxResponse{
+		Action: &watchpb.WatchTxResponse_Undo{
+			Undo: &watchpb.AnyChainTx{
+				Chain: &watchpb.AnyChainTx_Cardano{
+					Cardano: &cardanopb.Tx{Hash: []byte{0xdd}},
+				},
+				Block: &watchpb.AnyChainBlock{},
+			},
+		},
+	}
+
+	_, err := mapWatchTxResponse(resp, 0)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "neither NativeBytes nor Cardano block header")
+}
+
 func TestWatchTxUndoNativeBytesEmitsRollback(t *testing.T) {
 	block, nativeBytes := decodeProviderBlock(t)
 

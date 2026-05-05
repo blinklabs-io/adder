@@ -226,19 +226,21 @@ func mapWatchTxResponse(resp *watchpb.WatchTxResponse, networkMagic uint32) ([]e
 	}
 
 	if undo := resp.GetUndo(); undo != nil {
-		if header := watchTxBlockHeader(undo.GetBlock()); header != nil {
-			return []event.Event{
-				event.New(
-					"input.rollback",
-					time.Now(),
-					nil,
-					event.NewRollbackEvent(common.NewPoint(
-						header.GetSlot(),
-						header.GetHash(),
-					)),
-				),
-			}, nil
+		header := watchTxBlockHeader(undo.GetBlock())
+		if header == nil {
+			return nil, errors.New("utxorpc WatchTx Undo: neither NativeBytes nor Cardano block header present")
 		}
+		return []event.Event{
+			event.New(
+				"input.rollback",
+				time.Now(),
+				nil,
+				event.NewRollbackEvent(common.NewPoint(
+					header.GetSlot(),
+					header.GetHash(),
+				)),
+			),
+		}, nil
 	}
 
 	// Idle or unrecognised action — no events.

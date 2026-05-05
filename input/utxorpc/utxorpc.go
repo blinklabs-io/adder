@@ -38,6 +38,7 @@ const (
 	modeWatchTx   = "watch-tx"
 
 	maxReconnectDelay = 60 * time.Second
+	eventChanBuffer   = 2048
 )
 
 // Utxorpc is an input plugin that consumes UTxO RPC streaming endpoints
@@ -108,7 +109,7 @@ func (u *Utxorpc) Start() error {
 		u.wg.Wait()
 	}
 	if u.eventChan == nil {
-		u.eventChan = make(chan event.Event, 10)
+		u.eventChan = make(chan event.Event, eventChanBuffer)
 	}
 	if u.errorChan == nil {
 		u.errorChan = make(chan error, 1)
@@ -197,7 +198,10 @@ func (u *Utxorpc) run() {
 		}
 
 		if err == nil {
-			// Stream ended cleanly; exit unless asked to reconnect.
+			// Stream ended cleanly — reset backoff so the next reconnect starts at 1s,
+			// not the capped value from an older failure streak (see input/chainsync).
+			backoff = time.Second
+			// Exit unless asked to reconnect.
 			if !u.autoReconnect {
 				return
 			}
@@ -206,7 +210,6 @@ func (u *Utxorpc) run() {
 			case <-u.doneChan:
 				return
 			case u.errorChan <- err:
-			default:
 			}
 		}
 
@@ -222,9 +225,12 @@ func (u *Utxorpc) run() {
 			return
 		case <-time.After(backoff):
 		}
-		backoff *= 2
-		if backoff > maxReconnectDelay {
-			backoff = maxReconnectDelay
+		// Only grow backoff on failures; successful sessions reset above.
+		if err != nil {
+			backoff *= 2
+			if backoff > maxReconnectDelay {
+				backoff = maxReconnectDelay
+			}
 		}
 	}
 }
