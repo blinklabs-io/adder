@@ -82,13 +82,13 @@ func pbTransactionEvent(blockHash []byte, tx *cardanopb.Tx) event.TransactionEve
 		// guards. VotingProcedures() always returns nil here because utxorpc v1alpha does
 		// not expose votes in cardanopb.Tx; this will be populated once go-codegen
 		// upgrades to a version that includes them (currently available in v1beta).
-		Transaction:     pbBuildTransaction(tx, inputs, outputs, refInputs, poolCerts, ttl),
-		BlockHash:       hex.EncodeToString(blockHash),
-		Fee:             pbFee(tx),
-		Inputs:          inputs,
-		Outputs:         outputs,
-		Certificates:    poolCerts,
-		TTL:             ttl,
+		Transaction:  pbBuildTransaction(tx, inputs, outputs, refInputs, poolCerts, ttl),
+		BlockHash:    hex.EncodeToString(blockHash),
+		Fee:          pbFee(tx),
+		Inputs:       inputs,
+		Outputs:      outputs,
+		Certificates: poolCerts,
+		TTL:          ttl,
 	}
 	if len(refInputs) > 0 {
 		evt.ReferenceInputs = refInputs
@@ -403,25 +403,25 @@ type pbTransaction struct {
 	isValid   bool
 }
 
-func (t *pbTransaction) Id() lcommon.Blake2b256                   { return t.txHash }
-func (t *pbTransaction) Inputs() []lcommon.TransactionInput       { return t.inputs }
-func (t *pbTransaction) Outputs() []lcommon.TransactionOutput     { return t.outputs }
+func (t *pbTransaction) Id() lcommon.Blake2b256                      { return t.txHash }
+func (t *pbTransaction) Inputs() []lcommon.TransactionInput          { return t.inputs }
+func (t *pbTransaction) Outputs() []lcommon.TransactionOutput        { return t.outputs }
 func (t *pbTransaction) ReferenceInputs() []lcommon.TransactionInput { return t.refInputs }
-func (t *pbTransaction) Certificates() []lcommon.Certificate      { return t.certs }
-func (t *pbTransaction) Fee() *big.Int                            { return t.fee }
-func (t *pbTransaction) TTL() uint64                              { return t.ttl }
+func (t *pbTransaction) Certificates() []lcommon.Certificate         { return t.certs }
+func (t *pbTransaction) Fee() *big.Int                               { return t.fee }
+func (t *pbTransaction) TTL() uint64                                 { return t.ttl }
 
 // Transaction-level methods (not TransactionBody).
-func (t *pbTransaction) Type() int                                          { return 0 }
-func (t *pbTransaction) Cbor() []byte                                       { return nil }
-func (t *pbTransaction) Hash() lcommon.Blake2b256                           { return t.txHash }
-func (t *pbTransaction) LeiosHash() lcommon.Blake2b256                      { return t.txHash }
-func (t *pbTransaction) Metadata() lcommon.TransactionMetadatum             { return nil }
-func (t *pbTransaction) AuxiliaryData() lcommon.AuxiliaryData               { return nil }
-func (t *pbTransaction) IsValid() bool                                      { return t.isValid }
-func (t *pbTransaction) Consumed() []lcommon.TransactionInput               { return t.inputs }
-func (t *pbTransaction) Produced() []lcommon.Utxo                           { return nil }
-func (t *pbTransaction) Witnesses() lcommon.TransactionWitnessSet           { return nil }
+func (t *pbTransaction) Type() int                                { return 0 }
+func (t *pbTransaction) Cbor() []byte                             { return nil }
+func (t *pbTransaction) Hash() lcommon.Blake2b256                 { return t.txHash }
+func (t *pbTransaction) LeiosHash() lcommon.Blake2b256            { return t.txHash }
+func (t *pbTransaction) Metadata() lcommon.TransactionMetadatum   { return nil }
+func (t *pbTransaction) AuxiliaryData() lcommon.AuxiliaryData     { return nil }
+func (t *pbTransaction) IsValid() bool                            { return t.isValid }
+func (t *pbTransaction) Consumed() []lcommon.TransactionInput     { return t.inputs }
+func (t *pbTransaction) Produced() []lcommon.Utxo                 { return nil }
+func (t *pbTransaction) Witnesses() lcommon.TransactionWitnessSet { return nil }
 func (t *pbTransaction) ProtocolParameterUpdates() (uint64, map[lcommon.Blake2b224]lcommon.ProtocolParameterUpdate) {
 	return 0, nil
 }
