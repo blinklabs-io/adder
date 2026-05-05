@@ -17,27 +17,22 @@ import (
 	watchpb "github.com/utxorpc/go-codegen/utxorpc/v1alpha/watch"
 )
 
-//go:embed testdata/shelley_block.hex
-var shelleyBlockHex string
+//go:embed testdata/mainnet_nativebytes.hex
+var mainnetNativeBytesHex string
 
-const blockTypeShelley = 2
-
-func wrappedShelleyBlock() []byte {
-	blockCbor, err := hex.DecodeString(strings.TrimSpace(shelleyBlockHex))
+// mainnetNativeBytes returns the NtC-wrapped CBOR bytes captured from
+// a real Demeter mainnet UTxO RPC provider (Conway era, block 13380271).
+func mainnetNativeBytes() []byte {
+	b, err := hex.DecodeString(strings.TrimSpace(mainnetNativeBytesHex))
 	if err != nil {
 		panic(err)
 	}
-	wb := blockfetch.WrappedBlock{Type: blockTypeShelley, RawBlock: cbor.RawMessage(blockCbor)}
-	encoded, err := cbor.Encode(wb)
-	if err != nil {
-		panic(err)
-	}
-	return encoded
+	return b
 }
 
-func decodeShelleyBlock(t *testing.T) (ledger.Block, []byte) {
+func decodeProviderBlock(t *testing.T) (ledger.Block, []byte) {
 	t.Helper()
-	nativeBytes := wrappedShelleyBlock()
+	nativeBytes := mainnetNativeBytes()
 	var wb blockfetch.WrappedBlock
 	_, err := cbor.Decode(nativeBytes, &wb)
 	require.NoError(t, err)
@@ -49,8 +44,44 @@ func decodeShelleyBlock(t *testing.T) (ledger.Block, []byte) {
 
 // --------------- FollowTip: CBOR path ---------------
 
+// TestFollowTipApplyCBORRealProviderBlock feeds NativeBytes captured from a
+// live Demeter provider through mapFollowTipResponse and asserts that the
+// WrappedBlock wire format is decoded correctly into adder events.
+// This is the test that reviewer item 5 asked for.
+func TestFollowTipApplyCBORRealProviderBlock(t *testing.T) {
+	nativeBytes := mainnetNativeBytes()
+
+	resp := &syncpb.FollowTipResponse{
+		Action: &syncpb.FollowTipResponse_Apply{
+			Apply: &syncpb.AnyChainBlock{
+				NativeBytes: nativeBytes,
+			},
+		},
+	}
+
+	evts, err := mapFollowTipResponse(resp, false, 764824073)
+	require.NoError(t, err)
+	require.Greater(t, len(evts), 1, "should produce at least block + transaction events")
+
+	assert.Equal(t, "input.block", evts[0].Type)
+
+	blockCtx := evts[0].Context.(event.BlockContext)
+	assert.Equal(t, uint64(13380271), blockCtx.BlockNumber)
+	assert.Equal(t, uint64(186435630), blockCtx.SlotNumber)
+
+	blockEvt := evts[0].Payload.(event.BlockEvent)
+	assert.Equal(t, uint64(25), blockEvt.TransactionCount)
+
+	for _, e := range evts[1:] {
+		assert.Contains(t,
+			[]string{"input.transaction", "input.governance", "input.drep-registration", "input.drep-update", "input.drep-retirement"},
+			e.Type,
+		)
+	}
+}
+
 func TestFollowTipApplyCBORFansOut(t *testing.T) {
-	nativeBytes := wrappedShelleyBlock()
+	nativeBytes := mainnetNativeBytes()
 
 	resp := &syncpb.FollowTipResponse{
 		Action: &syncpb.FollowTipResponse_Apply{
@@ -73,6 +104,70 @@ func TestFollowTipApplyCBORFansOut(t *testing.T) {
 }
 
 // --------------- FollowTip: Protobuf fallback ---------------
+
+// TestFollowTipApplyProtobufPopulatesFilterFields verifies that the protobuf
+// fallback path populates te.Transaction, te.Certificates, and output.Assets()
+// so that filter/cardano matchers are not silently skipped.
+func TestFollowTipApplyProtobufPopulatesFilterFields(t *testing.T) {
+	policyId := make([]byte, 28)
+	policyId[0] = 0xde
+	poolKeyHash := make([]byte, 28)
+	poolKeyHash[0] = 0xab
+
+	resp := &syncpb.FollowTipResponse{
+		Action: &syncpb.FollowTipResponse_Apply{
+			Apply: &syncpb.AnyChainBlock{
+				Chain: &syncpb.AnyChainBlock_Cardano{
+					Cardano: &cardanopb.Block{
+						Header: &cardanopb.BlockHeader{Slot: 1, Hash: []byte{0x01}, Height: 1},
+						Body: &cardanopb.BlockBody{
+							Tx: []*cardanopb.Tx{
+								{
+									Hash: []byte{0xff},
+									Fee:  &cardanopb.BigInt{BigInt: &cardanopb.BigInt_Int{Int: 170000}},
+									Outputs: []*cardanopb.TxOutput{{
+										Address: []byte{0x61, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
+										Coin:    &cardanopb.BigInt{BigInt: &cardanopb.BigInt_Int{Int: 2000000}},
+										Assets: []*cardanopb.Multiasset{{
+											PolicyId: policyId,
+											Assets: []*cardanopb.Asset{{
+												Name:     []byte("tokenA"),
+												Quantity: &cardanopb.Asset_OutputCoin{OutputCoin: &cardanopb.BigInt{BigInt: &cardanopb.BigInt_Int{Int: 10}}},
+											}},
+										}},
+									}},
+									Certificates: []*cardanopb.Certificate{{
+										Certificate: &cardanopb.Certificate_StakeDelegation{
+											StakeDelegation: &cardanopb.StakeDelegationCert{
+												PoolKeyhash: poolKeyHash,
+											},
+										},
+									}},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	evts, err := mapFollowTipResponse(resp, false, 0)
+	require.NoError(t, err)
+	require.Len(t, evts, 2)
+
+	txEvt := evts[1].Payload.(event.TransactionEvent)
+
+	// te.Transaction must be non-nil so filter guards are not skipped.
+	assert.NotNil(t, txEvt.Transaction, "Transaction must be populated")
+
+	// te.Certificates must contain the pool cert for matchPoolFilterTx.
+	require.Len(t, txEvt.Certificates, 1, "pool cert must be in Certificates")
+
+	// output.Assets() must return non-nil for matchPolicyFilter/matchAssetFilter.
+	require.Len(t, txEvt.Outputs, 1)
+	assert.NotNil(t, txEvt.Outputs[0].Assets(), "output.Assets() must be non-nil")
+}
 
 func TestFollowTipApplyProtobufFansOut(t *testing.T) {
 	txHash, _ := hex.DecodeString("aabbccdd")
@@ -191,6 +286,17 @@ func TestFollowTipApplyNeitherPathErrors(t *testing.T) {
 
 // --------------- FollowTip: Undo / Reset ---------------
 
+func TestFollowTipUndoNeitherPathErrors(t *testing.T) {
+	resp := &syncpb.FollowTipResponse{
+		Action: &syncpb.FollowTipResponse_Undo{
+			Undo: &syncpb.AnyChainBlock{},
+		},
+	}
+	_, err := mapFollowTipResponse(resp, false, 0)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "neither NativeBytes nor Cardano block header")
+}
+
 func TestFollowTipUndoProducesRollback(t *testing.T) {
 	hashBytes, _ := hex.DecodeString("02")
 	resp := &syncpb.FollowTipResponse{
@@ -211,7 +317,7 @@ func TestFollowTipUndoProducesRollback(t *testing.T) {
 }
 
 func TestFollowTipUndoNativeBytesProducesRollback(t *testing.T) {
-	block, nativeBytes := decodeShelleyBlock(t)
+	block, nativeBytes := decodeProviderBlock(t)
 
 	resp := &syncpb.FollowTipResponse{
 		Action: &syncpb.FollowTipResponse_Undo{
@@ -245,7 +351,7 @@ func TestFollowTipResetProducesRollback(t *testing.T) {
 // --------------- WatchTx: NativeBytes header extraction ---------------
 
 func TestWatchTxApplyNativeBytesExtractsHeader(t *testing.T) {
-	block, nativeBytes := decodeShelleyBlock(t)
+	block, nativeBytes := decodeProviderBlock(t)
 	firstTx := block.Transactions()[0]
 
 	resp := &watchpb.WatchTxResponse{
@@ -337,6 +443,7 @@ func TestWatchTxApplyProtobufNoBlock(t *testing.T) {
 }
 
 func TestWatchTxApplyProtobufGovernance(t *testing.T) {
+	drepKeyHash, _ := hex.DecodeString("aabbccdd")
 	resp := &watchpb.WatchTxResponse{
 		Action: &watchpb.WatchTxResponse_Apply{
 			Apply: &watchpb.AnyChainTx{
@@ -348,6 +455,35 @@ func TestWatchTxApplyProtobufGovernance(t *testing.T) {
 								GovernanceAction: &cardanopb.GovernanceAction_InfoAction{InfoAction: 6},
 							}},
 						},
+						Certificates: []*cardanopb.Certificate{
+							{
+								Certificate: &cardanopb.Certificate_RegDrepCert{
+									RegDrepCert: &cardanopb.RegDRepCert{
+										DrepCredential: &cardanopb.StakeCredential{
+											StakeCredential: &cardanopb.StakeCredential_AddrKeyHash{AddrKeyHash: drepKeyHash},
+										},
+									},
+								},
+							},
+							{
+								Certificate: &cardanopb.Certificate_UpdateDrepCert{
+									UpdateDrepCert: &cardanopb.UpdateDRepCert{
+										DrepCredential: &cardanopb.StakeCredential{
+											StakeCredential: &cardanopb.StakeCredential_AddrKeyHash{AddrKeyHash: drepKeyHash},
+										},
+									},
+								},
+							},
+							{
+								Certificate: &cardanopb.Certificate_UnregDrepCert{
+									UnregDrepCert: &cardanopb.UnRegDRepCert{
+										DrepCredential: &cardanopb.StakeCredential{
+											StakeCredential: &cardanopb.StakeCredential_AddrKeyHash{AddrKeyHash: drepKeyHash},
+										},
+									},
+								},
+							},
+						},
 					},
 				},
 			},
@@ -356,9 +492,12 @@ func TestWatchTxApplyProtobufGovernance(t *testing.T) {
 
 	evts, err := mapWatchTxResponse(resp, 0)
 	require.NoError(t, err)
-	require.Len(t, evts, 2, "tx + governance")
+	require.Len(t, evts, 5, "tx + governance + 3 drep events")
 	assert.Equal(t, "input.transaction", evts[0].Type)
 	assert.Equal(t, "input.governance", evts[1].Type)
+	assert.Equal(t, "input.drep-registration", evts[2].Type)
+	assert.Equal(t, "input.drep-update", evts[3].Type)
+	assert.Equal(t, "input.drep-retirement", evts[4].Type)
 }
 
 // --------------- WatchTx: Undo / Idle ---------------
@@ -389,7 +528,7 @@ func TestWatchTxUndoEmitsRollback(t *testing.T) {
 }
 
 func TestWatchTxUndoNativeBytesEmitsRollback(t *testing.T) {
-	block, nativeBytes := decodeShelleyBlock(t)
+	block, nativeBytes := decodeProviderBlock(t)
 
 	resp := &watchpb.WatchTxResponse{
 		Action: &watchpb.WatchTxResponse_Undo{

@@ -20,7 +20,10 @@ import (
 	"math/big"
 
 	"github.com/blinklabs-io/adder/event"
+	"github.com/blinklabs-io/gouroboros/cbor"
+	"github.com/blinklabs-io/gouroboros/ledger"
 	lcommon "github.com/blinklabs-io/gouroboros/ledger/common"
+	"github.com/blinklabs-io/gouroboros/ledger/mary"
 	"github.com/blinklabs-io/gouroboros/ledger/shelley"
 	cardanopb "github.com/utxorpc/go-codegen/utxorpc/v1alpha/cardano"
 	"google.golang.org/protobuf/encoding/protowire"
@@ -63,17 +66,32 @@ func pbTransactionContext(
 }
 
 func pbTransactionEvent(blockHash []byte, tx *cardanopb.Tx) event.TransactionEvent {
+	inputs := pbInputsToLedger(tx.GetInputs())
+	outputs := pbOutputsToLedger(tx.GetOutputs())
+	refInputs := pbInputsToLedger(tx.GetReferenceInputs())
+	poolCerts := pbPoolCertificatesToLedger(tx.GetCertificates())
+
+	ttl := uint64(0)
+	if v := tx.GetValidity(); v != nil {
+		ttl = v.GetTtl()
+	}
+
 	evt := event.TransactionEvent{
-		BlockHash: hex.EncodeToString(blockHash),
-		Fee:       pbFee(tx),
-		Inputs:    pbInputsToLedger(tx.GetInputs()),
-		Outputs:   pbOutputsToLedger(tx.GetOutputs()),
+		// Transaction is populated so that filter/cardano matchers (matchDRepFilterTx,
+		// matchPoolFilterTx, etc.) are not silently skipped by their te.Transaction != nil
+		// guards. VotingProcedures() always returns nil here because utxorpc v1alpha does
+		// not expose votes in cardanopb.Tx; this will be populated once go-codegen
+		// upgrades to a version that includes them (currently available in v1beta).
+		Transaction:     pbBuildTransaction(tx, inputs, outputs, refInputs, poolCerts, ttl),
+		BlockHash:       hex.EncodeToString(blockHash),
+		Fee:             pbFee(tx),
+		Inputs:          inputs,
+		Outputs:         outputs,
+		Certificates:    poolCerts,
+		TTL:             ttl,
 	}
-	if v := tx.GetValidity(); v != nil && v.GetTtl() > 0 {
-		evt.TTL = v.GetTtl()
-	}
-	if refs := tx.GetReferenceInputs(); len(refs) > 0 {
-		evt.ReferenceInputs = pbInputsToLedger(refs)
+	if len(refInputs) > 0 {
+		evt.ReferenceInputs = refInputs
 	}
 	if w := pbWithdrawals(tx.GetWithdrawals()); len(w) > 0 {
 		evt.Withdrawals = w
@@ -346,6 +364,126 @@ func pbWithdrawals(withdrawals []*cardanopb.Withdrawal) map[string]uint64 {
 	return out
 }
 
+// pbBuildTransaction constructs a ledger.Transaction from available protobuf
+// fields so that filter/cardano matchers receive a non-nil Transaction.
+func pbBuildTransaction(
+	tx *cardanopb.Tx,
+	inputs []lcommon.TransactionInput,
+	outputs []lcommon.TransactionOutput,
+	refInputs []lcommon.TransactionInput,
+	certs []lcommon.Certificate,
+	ttl uint64,
+) ledger.Transaction {
+	fee := new(big.Int).SetUint64(pbFee(tx))
+	txHash := lcommon.NewBlake2b256(tx.GetHash())
+	return &pbTransaction{
+		txHash:    txHash,
+		inputs:    inputs,
+		outputs:   outputs,
+		refInputs: refInputs,
+		certs:     certs,
+		fee:       fee,
+		ttl:       ttl,
+		isValid:   tx.GetSuccessful(),
+	}
+}
+
+// pbTransaction implements ledger.Transaction using available protobuf data.
+// VotingProcedures always returns nil because the utxorpc v1alpha schema does
+// not expose votes in cardanopb.Tx; update once go-codegen provides them.
+type pbTransaction struct {
+	lcommon.TransactionBodyBase
+	txHash    lcommon.Blake2b256
+	inputs    []lcommon.TransactionInput
+	outputs   []lcommon.TransactionOutput
+	refInputs []lcommon.TransactionInput
+	certs     []lcommon.Certificate
+	fee       *big.Int
+	ttl       uint64
+	isValid   bool
+}
+
+func (t *pbTransaction) Id() lcommon.Blake2b256                   { return t.txHash }
+func (t *pbTransaction) Inputs() []lcommon.TransactionInput       { return t.inputs }
+func (t *pbTransaction) Outputs() []lcommon.TransactionOutput     { return t.outputs }
+func (t *pbTransaction) ReferenceInputs() []lcommon.TransactionInput { return t.refInputs }
+func (t *pbTransaction) Certificates() []lcommon.Certificate      { return t.certs }
+func (t *pbTransaction) Fee() *big.Int                            { return t.fee }
+func (t *pbTransaction) TTL() uint64                              { return t.ttl }
+
+// Transaction-level methods (not TransactionBody).
+func (t *pbTransaction) Type() int                                          { return 0 }
+func (t *pbTransaction) Cbor() []byte                                       { return nil }
+func (t *pbTransaction) Hash() lcommon.Blake2b256                           { return t.txHash }
+func (t *pbTransaction) LeiosHash() lcommon.Blake2b256                      { return t.txHash }
+func (t *pbTransaction) Metadata() lcommon.TransactionMetadatum             { return nil }
+func (t *pbTransaction) AuxiliaryData() lcommon.AuxiliaryData               { return nil }
+func (t *pbTransaction) IsValid() bool                                      { return t.isValid }
+func (t *pbTransaction) Consumed() []lcommon.TransactionInput               { return t.inputs }
+func (t *pbTransaction) Produced() []lcommon.Utxo                           { return nil }
+func (t *pbTransaction) Witnesses() lcommon.TransactionWitnessSet           { return nil }
+func (t *pbTransaction) ProtocolParameterUpdates() (uint64, map[lcommon.Blake2b224]lcommon.ProtocolParameterUpdate) {
+	return 0, nil
+}
+
+// pbPoolCertificatesToLedger converts pool-related protobuf certificates to
+// gouroboros ledger Certificate types for use in event.TransactionEvent.Certificates.
+// Only StakeDelegation, PoolRetirement, and PoolRegistration are mapped here;
+// governance certificates are handled separately via pbGovernanceCertificates.
+func pbPoolCertificatesToLedger(certs []*cardanopb.Certificate) []lcommon.Certificate {
+	var out []lcommon.Certificate
+	for _, cert := range certs {
+		if cert == nil {
+			continue
+		}
+		switch c := cert.GetCertificate().(type) {
+		case *cardanopb.Certificate_StakeDelegation:
+			d := c.StakeDelegation
+			poolHash := lcommon.NewBlake2b224(d.GetPoolKeyhash())
+			out = append(out, &lcommon.StakeDelegationCertificate{
+				PoolKeyHash: poolHash,
+			})
+		case *cardanopb.Certificate_PoolRetirement:
+			d := c.PoolRetirement
+			poolHash := lcommon.NewBlake2b224(d.GetPoolKeyhash())
+			out = append(out, &lcommon.PoolRetirementCertificate{
+				PoolKeyHash: poolHash,
+				Epoch:       d.GetEpoch(),
+			})
+		case *cardanopb.Certificate_PoolRegistration:
+			d := c.PoolRegistration
+			operatorHash := lcommon.NewBlake2b224(d.GetOperator())
+			out = append(out, &lcommon.PoolRegistrationCertificate{
+				Operator: operatorHash,
+			})
+		}
+	}
+	return out
+}
+
+// pbMultiAssetsToLedger converts UTxO RPC protobuf multi-asset data to the
+// gouroboros MultiAsset type used by output.Assets().
+func pbMultiAssetsToLedger(assets []*cardanopb.Multiasset) *lcommon.MultiAsset[lcommon.MultiAssetTypeOutput] {
+	data := make(map[lcommon.Blake2b224]map[cbor.ByteString]lcommon.MultiAssetTypeOutput)
+	for _, ma := range assets {
+		if len(ma.GetPolicyId()) == 0 {
+			continue
+		}
+		policyId := lcommon.NewBlake2b224(ma.GetPolicyId())
+		assetMap, ok := data[policyId]
+		if !ok {
+			assetMap = make(map[cbor.ByteString]lcommon.MultiAssetTypeOutput)
+			data[policyId] = assetMap
+		}
+		for _, asset := range ma.GetAssets() {
+			name := cbor.NewByteString(asset.GetName())
+			assetMap[name] = new(big.Int).SetUint64(utxorpcBigIntToUint64(asset.GetOutputCoin()))
+		}
+	}
+	ma := lcommon.NewMultiAsset(data)
+	return &ma
+}
+
 // pbInputsToLedger converts UTxO RPC protobuf inputs to gouroboros ledger inputs.
 func pbInputsToLedger(inputs []*cardanopb.TxInput) []lcommon.TransactionInput {
 	if len(inputs) == 0 {
@@ -362,22 +500,35 @@ func pbInputsToLedger(inputs []*cardanopb.TxInput) []lcommon.TransactionInput {
 }
 
 // pbOutputsToLedger converts UTxO RPC protobuf outputs to gouroboros ledger outputs.
+// Outputs with multi-asset data use MaryTransactionOutput so that output.Assets()
+// returns the correct policy/asset information for filter/cardano matchers.
 func pbOutputsToLedger(outputs []*cardanopb.TxOutput) []lcommon.TransactionOutput {
 	if len(outputs) == 0 {
 		return nil
 	}
 	out := make([]lcommon.TransactionOutput, len(outputs))
 	for i, o := range outputs {
-		txOut := &shelley.ShelleyTransactionOutput{
-			OutputAmount: utxorpcBigIntToUint64(o.GetCoin()),
-		}
+		coin := utxorpcBigIntToUint64(o.GetCoin())
+		var addr lcommon.Address
 		if addrBytes := o.GetAddress(); len(addrBytes) > 0 {
-			addr, err := lcommon.NewAddressFromBytes(addrBytes)
-			if err == nil {
-				txOut.OutputAddress = addr
+			if a, err := lcommon.NewAddressFromBytes(addrBytes); err == nil {
+				addr = a
 			}
 		}
-		out[i] = txOut
+		if pbAssets := o.GetAssets(); len(pbAssets) > 0 {
+			out[i] = &mary.MaryTransactionOutput{
+				OutputAddress: addr,
+				OutputAmount: mary.MaryTransactionOutputValue{
+					Amount: coin,
+					Assets: pbMultiAssetsToLedger(pbAssets),
+				},
+			}
+		} else {
+			out[i] = &shelley.ShelleyTransactionOutput{
+				OutputAddress: addr,
+				OutputAmount:  coin,
+			}
+		}
 	}
 	return out
 }

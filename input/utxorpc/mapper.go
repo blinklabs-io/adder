@@ -15,6 +15,7 @@
 package utxorpc
 
 import (
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"math"
@@ -57,16 +58,17 @@ func mapFollowTipResponse(resp *syncpb.FollowTipResponse, includeCbor bool, netw
 				header = b.GetHeader()
 			}
 		}
-		if header != nil {
-			return []event.Event{
-				event.New(
-					"input.rollback",
-					time.Now(),
-					nil,
-					event.NewRollbackEvent(common.NewPoint(header.GetSlot(), header.GetHash())),
-				),
-			}, nil
+		if header == nil {
+			return nil, errors.New("utxorpc Undo: neither NativeBytes nor Cardano block header present")
 		}
+		return []event.Event{
+			event.New(
+				"input.rollback",
+				time.Now(),
+				nil,
+				event.NewRollbackEvent(common.NewPoint(header.GetSlot(), header.GetHash())),
+			),
+		}, nil
 	}
 
 	if reset := resp.GetReset_(); reset != nil {
@@ -126,7 +128,7 @@ func followTipApplyCBOR(nativeBytes []byte, includeCbor bool, networkMagic uint3
 		if drepCerts := event.ExtractDRepCertificates(transaction); len(drepCerts) > 0 {
 			drepCtx := event.NewGovernanceContext(block, transaction, idx, networkMagic)
 			for _, cert := range drepCerts {
-				if evtType, ok := event.DRepEventType(cert.CertificateType); ok {
+				if evtType, ok := inputDRepEventType(cert.CertificateType); ok {
 					out = append(out, event.New(evtType, time.Now(), drepCtx,
 						event.NewDRepCertificateEvent(block, cert)))
 				}
@@ -182,6 +184,23 @@ func followTipApplyProtobuf(cb *cardanopb.Block, networkMagic uint32) ([]event.E
 				pbGovernanceContext(header, txHash, idx, networkMagic),
 				pbGovernanceEvent(blockHash, tx),
 			))
+		}
+		drepCerts, _, _ := pbGovernanceCertificates(tx.GetCertificates())
+		if len(drepCerts) > 0 {
+			drepCtx := pbGovernanceContext(header, txHash, idx, networkMagic)
+			for _, cert := range drepCerts {
+				if evtType, ok := inputDRepEventType(cert.CertificateType); ok {
+					out = append(out, event.New(
+						evtType,
+						now,
+						drepCtx,
+						event.DRepCertificateEvent{
+							BlockHash:   hex.EncodeToString(blockHash),
+							Certificate: cert,
+						},
+					))
+				}
+			}
 		}
 	}
 	return out, nil
@@ -294,6 +313,23 @@ func watchTxApplyProtobuf(
 			pbGovernanceEvent(blockHash, tx),
 		))
 	}
+	drepCerts, _, _ := pbGovernanceCertificates(tx.GetCertificates())
+	if len(drepCerts) > 0 {
+		drepCtx := pbGovernanceContext(header, txHash, 0, networkMagic)
+		for _, cert := range drepCerts {
+			if evtType, ok := inputDRepEventType(cert.CertificateType); ok {
+				out = append(out, event.New(
+					evtType,
+					now,
+					drepCtx,
+					event.DRepCertificateEvent{
+						BlockHash:   hex.EncodeToString(blockHash),
+						Certificate: cert,
+					},
+				))
+			}
+		}
+	}
 
 	return out, nil
 }
@@ -323,4 +359,17 @@ func hasGovernanceData(tx *cardanopb.Tx) bool {
 		}
 	}
 	return false
+}
+
+func inputDRepEventType(certType string) (string, bool) {
+	switch certType {
+	case event.DRepCertificateTypeRegistration:
+		return "input.drep-registration", true
+	case event.DRepCertificateTypeUpdate:
+		return "input.drep-update", true
+	case event.DRepCertificateTypeDeregistration:
+		return "input.drep-retirement", true
+	default:
+		return "", false
+	}
 }
