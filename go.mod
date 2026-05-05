@@ -25,7 +25,6 @@ require (
 	github.com/utxorpc/go-codegen v0.18.1
 	github.com/utxorpc/go-sdk v0.0.2
 	go.uber.org/automaxprocs v1.6.0
-<<<<<<< HEAD
 	golang.org/x/oauth2 v0.36.0
 	gopkg.in/yaml.v2 v2.4.0
 	gopkg.in/yaml.v3 v3.0.1
