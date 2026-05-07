@@ -4,7 +4,7 @@ go 1.25.7
 
 require (
 	connectrpc.com/connect v1.19.1
-	fyne.io/systray v1.12.0
+	fyne.io/systray v1.12.1
 	github.com/SundaeSwap-finance/kugo v1.3.0
 	github.com/SundaeSwap-finance/ogmigo/v6 v6.2.1
 	github.com/blinklabs-io/gouroboros v0.166.0
@@ -26,6 +26,7 @@ require (
 	github.com/utxorpc/go-sdk v0.0.2
 	go.uber.org/automaxprocs v1.6.0
 	golang.org/x/oauth2 v0.36.0
+	google.golang.org/protobuf v1.36.11
 	gopkg.in/yaml.v2 v2.4.0
 	gopkg.in/yaml.v3 v3.0.1
 )
@@ -100,5 +101,4 @@ require (
 	golang.org/x/sys v0.43.0 // indirect
 	golang.org/x/text v0.36.0 // indirect
 	golang.org/x/tools v0.43.0 // indirect
-	google.golang.org/protobuf v1.36.11 // indirect
 )
