@@ -3,7 +3,7 @@ module github.com/blinklabs-io/adder
 go 1.25.7
 
 require (
-	connectrpc.com/connect v1.19.1
+	connectrpc.com/connect v1.19.2
 	fyne.io/systray v1.12.1
 	github.com/SundaeSwap-finance/kugo v1.3.0
 	github.com/SundaeSwap-finance/ogmigo/v6 v6.2.1
@@ -22,7 +22,7 @@ require (
 	github.com/swaggo/files v1.0.1
 	github.com/swaggo/gin-swagger v1.6.1
 	github.com/swaggo/swag v1.16.6
-	github.com/utxorpc/go-codegen v0.18.1
+	github.com/utxorpc/go-codegen v0.19.0
 	github.com/utxorpc/go-sdk v0.0.2
 	go.uber.org/automaxprocs v1.6.0
 	golang.org/x/oauth2 v0.36.0
