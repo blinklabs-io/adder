@@ -169,7 +169,12 @@ Each event is output individually. The log output supports two formats:
   piping to `jq` or other tooling):
 
   ```json
-  {"type":"input.block","timestamp":"2026-02-07T09:18:40Z","context":{"blockNumber":9876543,"slotNumber":12345678},"payload":{"blockHash":"abc12345..."}}
+  {
+    "type": "input.block",
+    "timestamp": "2026-02-07T09:18:40Z",
+    "context": { "blockNumber": 9876543, "slotNumber": 12345678 },
+    "payload": { "blockHash": "abc12345..." }
+  }
   ```
 
 Select the format with `--output-log-format`:

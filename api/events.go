@@ -56,7 +56,7 @@ func NewEventHub(ringSize uint) *EventHub {
 	if ringSize == 0 {
 		ringSize = defaultRingSize
 	}
-	size := int(ringSize)
+	size := int(ringSize) //nolint:gosec // uint size constraint enforced by API config
 	return &EventHub{
 		clients:  make(map[*eventClient]struct{}),
 		ring:     make([]event.Event, size),
@@ -145,7 +145,7 @@ func (h *EventHub) InputChan() chan<- event.Event {
 func (h *EventHub) recentEventsLocked(
 	typeFilter map[string]bool,
 ) []event.Event {
-	var events []event.Event
+	events := make([]event.Event, 0, len(h.ring))
 	start := 0
 	count := h.ringPos
 	if h.ringFull {

@@ -126,3 +126,17 @@ func serviceStatusCheck() (ServiceStatus, error) {
 
 	return ServiceRegistered, nil
 }
+
+func startService() error {
+	if out, err := exec.Command("systemctl", "--user", "start", serviceName).CombinedOutput(); err != nil {
+		return fmt.Errorf("starting service: %s: %w", strings.TrimSpace(string(out)), err)
+	}
+	return nil
+}
+
+func stopService() error {
+	if out, err := exec.Command("systemctl", "--user", "stop", serviceName).CombinedOutput(); err != nil {
+		return fmt.Errorf("stopping service: %s: %w", strings.TrimSpace(string(out)), err)
+	}
+	return nil
+}

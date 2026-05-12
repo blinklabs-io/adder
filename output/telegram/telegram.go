@@ -499,7 +499,7 @@ func truncateMessage(text string, maxLen int) string {
 	if keepUnits <= 0 {
 		return suffix
 	}
-	var runes []rune
+	runes := make([]rune, 0, len(text))
 	units := 0
 	for _, r := range text {
 		need := 1

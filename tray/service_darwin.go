@@ -27,8 +27,10 @@ import (
 	"text/template"
 )
 
-const launchAgentLabel = "io.blinklabs.adder"
-const launchAgentFile = "io.blinklabs.adder.plist"
+const (
+	launchAgentLabel = "io.blinklabs.adder"
+	launchAgentFile  = "io.blinklabs.adder.plist"
+)
 
 const plistTemplate = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -110,24 +112,30 @@ func registerService(cfg ServiceConfig) error {
 		return err
 	}
 
-	if err := os.WriteFile(servicePlistPath(), data, 0o644); err != nil {
+	if err := os.WriteFile(servicePlistPath(), data, 0o644); err != nil { //nolint:gosec // plist files need 0644 permissions
 		return fmt.Errorf("writing plist file: %w", err)
 	}
 
-	if out, err := exec.Command(
-		"launchctl", "load", "-w", servicePlistPath(),
+	target := fmt.Sprintf("gui/%d", os.Getuid())
+	if out, err := exec.Command( //nolint:gosec // paths are generated internally
+		"launchctl", "bootstrap", target, servicePlistPath(),
 	).CombinedOutput(); err != nil {
-		return fmt.Errorf("loading launch agent: %s: %w", strings.TrimSpace(string(out)), err)
+		if !strings.Contains(string(out), "service already bootstrapped") {
+			return fmt.Errorf("loading launch agent: %s: %w", strings.TrimSpace(string(out)), err)
+		}
 	}
 
 	return nil
 }
 
 func unregisterService() error {
-	if out, err := exec.Command(
-		"launchctl", "unload", servicePlistPath(),
+	target := fmt.Sprintf("gui/%d/%s", os.Getuid(), launchAgentLabel)
+	if out, err := exec.Command( //nolint:gosec // paths are generated internally
+		"launchctl", "bootout", target,
 	).CombinedOutput(); err != nil {
-		return fmt.Errorf("unloading launch agent: %s: %w", strings.TrimSpace(string(out)), err)
+		if !strings.Contains(string(out), "Could not find service") {
+			return fmt.Errorf("unloading launch agent: %s: %w", strings.TrimSpace(string(out)), err)
+		}
 	}
 
 	if err := os.Remove(servicePlistPath()); err != nil && !os.IsNotExist(err) {
@@ -147,4 +155,28 @@ func serviceStatusCheck() (ServiceStatus, error) {
 	}
 
 	return ServiceRegistered, nil
+}
+
+func startService() error {
+	target := fmt.Sprintf("gui/%d", os.Getuid())
+	if out, err := exec.Command( //nolint:gosec // paths are generated internally
+		"launchctl", "bootstrap", target, servicePlistPath(),
+	).CombinedOutput(); err != nil {
+		if !strings.Contains(string(out), "service already bootstrapped") {
+			return fmt.Errorf("starting launch agent: %s: %w", strings.TrimSpace(string(out)), err)
+		}
+	}
+	return nil
+}
+
+func stopService() error {
+	target := fmt.Sprintf("gui/%d/%s", os.Getuid(), launchAgentLabel)
+	if out, err := exec.Command( //nolint:gosec // paths are generated internally
+		"launchctl", "bootout", target,
+	).CombinedOutput(); err != nil {
+		if !strings.Contains(string(out), "Could not find service") {
+			return fmt.Errorf("stopping launch agent: %s: %w", strings.TrimSpace(string(out)), err)
+		}
+	}
+	return nil
 }
