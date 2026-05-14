@@ -81,3 +81,15 @@ func UnregisterService() error {
 func ServiceStatusCheck() (ServiceStatus, error) {
 	return serviceStatusCheck()
 }
+
+// StartService starts the adder system service using the
+// platform-specific mechanism.
+func StartService() error {
+	return startService()
+}
+
+// StopService stops the adder system service using the
+// platform-specific mechanism.
+func StopService() error {
+	return stopService()
+}

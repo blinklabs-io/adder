@@ -15,9 +15,12 @@
 package tray
 
 import (
+	"image/color"
 	"log/slog"
 	"os/exec"
 	"runtime"
+	"strconv"
+	"time"
 
 	"fyne.io/systray"
 )
@@ -69,13 +72,9 @@ func (a *App) onReady() {
 	mStatus.Disable()
 	systray.AddSeparator()
 
-	mConnect := systray.AddMenuItem("Connect", "Connect to adder")
-	mDisconnect := systray.AddMenuItem(
-		"Disconnect", "Disconnect from adder",
-	)
-	mReconnect := systray.AddMenuItem(
-		"Reconnect", "Reconnect to adder",
-	)
+	mStart := systray.AddMenuItem("Start", "Start adder service")
+	mStop := systray.AddMenuItem("Stop", "Stop adder service")
+	mRestart := systray.AddMenuItem("Restart", "Restart adder service")
 	systray.AddSeparator()
 
 	mShowConfig := systray.AddMenuItem(
@@ -86,32 +85,79 @@ func (a *App) onReady() {
 	)
 	systray.AddSeparator()
 
+	mAbout := systray.AddMenuItem("About", "About Adder")
 	mQuit := systray.AddMenuItem("Quit", "Quit adder-tray")
 
 	// Update status menu item when connection status changes
 	a.conn.status.OnChange(func(s Status) {
 		mStatus.SetTitle("Status: " + s.String())
+
+		// Update icon color based on status
+		switch s {
+		case StatusConnected:
+			systray.SetIcon(generateIcon(color.RGBA{0, 255, 0, 255})) // Green
+		case StatusReconnecting, StatusStarting:
+			systray.SetIcon(generateIcon(color.RGBA{255, 255, 0, 255})) // Yellow
+		case StatusStopped, StatusError:
+			systray.SetIcon(generateIcon(color.RGBA{255, 0, 0, 255})) // Red
+		default:
+			systray.SetIcon(generateIcon(color.RGBA{128, 128, 128, 255})) // Gray
+		}
 	})
+
+	// Initial icon state
+	systray.SetIcon(generateIcon(color.RGBA{128, 128, 128, 255}))
+
+	// Event tracking for tooltip
+	go func() {
+		var eventCount int
+		var lastEvent time.Time
+		for range a.conn.Events() {
+			eventCount++
+			lastEvent = time.Now()
+
+			tooltip := "Adder - Cardano Event Streamer"
+			if eventCount > 0 {
+				tooltip += "\nEvents: " + strconv.Itoa(eventCount) + "\nLast: " + lastEvent.Format("15:04:05")
+			}
+			systray.SetTooltip(tooltip)
+		}
+	}()
 
 	go func() {
 		for {
 			select {
-			case <-mConnect.ClickedCh:
+			case <-mStart.ClickedCh:
+				if err := StartService(); err != nil {
+					slog.Error("failed to start service", "error", err)
+				}
 				if err := a.conn.Connect(); err != nil {
 					slog.Error(
 						"failed to connect",
 						"error", err,
 					)
 				}
-			case <-mDisconnect.ClickedCh:
+			case <-mStop.ClickedCh:
 				a.conn.Disconnect()
-			case <-mReconnect.ClickedCh:
-				if err := a.conn.Reconnect(); err != nil {
+				if err := StopService(); err != nil {
+					slog.Error("failed to stop service", "error", err)
+				}
+			case <-mRestart.ClickedCh:
+				a.conn.Disconnect()
+				if err := StopService(); err != nil {
+					slog.Error("failed to stop service", "error", err)
+				}
+				if err := StartService(); err != nil {
+					slog.Error("failed to start service", "error", err)
+				}
+				if err := a.conn.Connect(); err != nil {
 					slog.Error(
-						"failed to reconnect",
+						"failed to connect",
 						"error", err,
 					)
 				}
+			case <-mAbout.ClickedCh:
+				openURL("https://github.com/blinklabs-io/adder")
 			case <-mShowConfig.ClickedCh:
 				openFolder(ConfigDir())
 			case <-mShowLogs.ClickedCh:
@@ -161,6 +207,29 @@ func openFolder(dir string) {
 	p := exec.Command(cmd, dir) //nolint:gosec // directory path from internal config
 	if err := p.Start(); err != nil {
 		slog.Error("failed to open folder", "dir", dir, "error", err)
+		return
+	}
+	_ = p.Process.Release()
+}
+
+// openURL opens the given URL in the default browser.
+func openURL(url string) {
+	var cmd string
+	var args []string
+	switch runtime.GOOS {
+	case "darwin":
+		cmd = "open"
+		args = []string{url}
+	case "windows":
+		cmd = "cmd"
+		args = []string{"/c", "start", "", url}
+	default:
+		cmd = "xdg-open"
+		args = []string{url}
+	}
+	p := exec.Command(cmd, args...) //nolint:gosec // hardcoded URL
+	if err := p.Start(); err != nil {
+		slog.Error("failed to open URL", "url", url, "error", err)
 		return
 	}
 	_ = p.Process.Release()

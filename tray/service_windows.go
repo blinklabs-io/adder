@@ -90,3 +90,23 @@ func serviceStatusCheck() (ServiceStatus, error) {
 
 	return ServiceRegistered, nil
 }
+
+func startService() error {
+	out, err := exec.Command(
+		"schtasks.exe", "/Run", "/TN", taskName,
+	).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("starting scheduled task: %s: %w", strings.TrimSpace(string(out)), err)
+	}
+	return nil
+}
+
+func stopService() error {
+	out, err := exec.Command(
+		"schtasks.exe", "/End", "/TN", taskName,
+	).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("stopping scheduled task: %s: %w", strings.TrimSpace(string(out)), err)
+	}
+	return nil
+}
