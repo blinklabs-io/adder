@@ -307,3 +307,28 @@ func waitForStatus(
 		expected, timeout, tracker.Status(),
 	)
 }
+
+func TestBackoffDelay(t *testing.T) {
+	// Base delay is 500ms
+	// Max delay is 30s
+	
+	tests := []struct {
+		attempt  int
+		expected time.Duration
+	}{
+		{0, 500 * time.Millisecond},
+		{1, 500 * time.Millisecond},
+		{2, 1000 * time.Millisecond},
+		{3, 2000 * time.Millisecond},
+		{4, 4000 * time.Millisecond},
+		{5, 8000 * time.Millisecond},
+		{6, 16000 * time.Millisecond},
+		{7, 30000 * time.Millisecond}, // Capped at 30s
+		{10, 30000 * time.Millisecond}, // Capped at 30s
+	}
+
+	for _, tc := range tests {
+		actual := backoffDelay(tc.attempt)
+		assert.Equal(t, tc.expected, actual, "attempt %d", tc.attempt)
+	}
+}
