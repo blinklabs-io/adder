@@ -1,7 +1,7 @@
 cloud.google.com/go/compute/metadata v0.3.0 h1:Tz+eQXMEqDIKRsmY3cHTL6FVaynIjX2QxYC4trgAKZc=
 cloud.google.com/go/compute/metadata v0.3.0/go.mod h1:zFmK7XCadkQkj6TtorcaGlCW1hT1fIilQDwofLpJ20k=
-connectrpc.com/connect v1.19.2 h1:McQ83FGdzL+t60peksi0gXC7MQ/iLKgLduAnThbM0mo=
-connectrpc.com/connect v1.19.2/go.mod h1:tN20fjdGlewnSFeZxLKb0xwIZ6ozc3OQs2hTXy4du9w=
+connectrpc.com/connect v1.20.0 h1:6TNDAB+WeNd2uolWNlYczB5E0KNNaVMNUEx8JEUsPmQ=
+connectrpc.com/connect v1.20.0/go.mod h1:A2ygJrukXwWy32vkCAAHNVguZrqZ+jeZ9rGRnGR4dN4=
 filippo.io/edwards25519 v1.2.0 h1:crnVqOiS4jqYleHd9vaKZ+HKtHfllngJIiOpNpoJsjo=
 filippo.io/edwards25519 v1.2.0/go.mod h1:xzAOLCNug/yB62zG1bQ8uziwrIqIuxhctzJT18Q77mc=
 fyne.io/systray v1.12.1 h1:ygBD6aZXwiOmZoY5N+ukbH9pih0Kq6fYgVeMYbr5skQ=
@@ -227,8 +227,8 @@ github.com/twitchyliquid64/golang-asm v0.15.1 h1:SU5vSMR7hnwNxj24w34ZyCi/FmDZTkS
 github.com/twitchyliquid64/golang-asm v0.15.1/go.mod h1:a1lVb/DtPvCB8fslRZhAngC2+aY1QWCk3Cedj/Gdt08=
 github.com/ugorji/go/codec v1.3.0 h1:Qd2W2sQawAfG8XSvzwhBeoGq71zXOC/Q1E9y/wUcsUA=
 github.com/ugorji/go/codec v1.3.0/go.mod h1:pRBVtBSKl77K30Bv8R2P+cLSGaTtex6fsA2Wjqmfxj4=
-github.com/utxorpc/go-codegen v0.19.0 h1:a3/p2ZhKuMYxPm5+qUMoq77MUcox4vdic7PIx0h/5JY=
-github.com/utxorpc/go-codegen v0.19.0/go.mod h1:jPWCYnBvdZy6x/SSeN3zeQTKlZFXCAoFAaoJLi2QIT0=
+github.com/utxorpc/go-codegen v0.19.2 h1:IG8OhSc0GILy6emTeUM1/+t/PXbzJTmpJuRAhoWEkbM=
+github.com/utxorpc/go-codegen v0.19.2/go.mod h1:QG/UEOXM8HVrm6H7LhuYAeMSA1OFgL2kTjzIeNUWFNg=
 github.com/utxorpc/go-sdk v0.0.4 h1:taU2B2FXXuokcXu+Zb33BrvSm13Q+dM3Ij+fJ3mv9mU=
 github.com/utxorpc/go-sdk v0.0.4/go.mod h1:zTghoIs70MW8yobU/ZH+ZuNdzc40FsPeqyAXv5D+KoQ=
 github.com/x448/float16 v0.8.4 h1:qLwI1I70+NjRFUR3zs1JPUCgaCXSh3SW62uAKT1mSBM=
