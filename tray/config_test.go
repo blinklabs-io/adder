@@ -17,7 +17,6 @@ package tray
 import (
 	"os"
 	"path/filepath"
-	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -46,17 +45,15 @@ func TestDefaultConfig(t *testing.T) {
 	assert.Equal(t, uint(8080), cfg.APIPort)
 	assert.Equal(t, "", cfg.AdderConfig)
 	assert.False(t, cfg.AutoStart)
+	assert.NotNil(t, cfg.NotifyPrefs)
+	assert.Empty(t, cfg.NotifyPrefs)
 }
 
 func TestLoadConfigMissing(t *testing.T) {
-	if runtime.GOOS != "linux" {
-		t.Skip("XDG_CONFIG_HOME only applies on Linux")
-	}
 	// When no config file exists, LoadConfig should return defaults
-	// without error. We set XDG_CONFIG_HOME to a temp dir so we
-	// don't accidentally read a real config.
+	// without error.
 	tmpDir := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+	t.Setenv("ADDER_TRAY_CONFIG_DIR", tmpDir)
 
 	cfg, err := LoadConfig()
 	require.NoError(t, err)
@@ -64,17 +61,15 @@ func TestLoadConfigMissing(t *testing.T) {
 }
 
 func TestSaveAndLoadConfig(t *testing.T) {
-	if runtime.GOOS != "linux" {
-		t.Skip("XDG_CONFIG_HOME only applies on Linux")
-	}
 	tmpDir := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+	t.Setenv("ADDER_TRAY_CONFIG_DIR", tmpDir)
 
 	original := TrayConfig{
 		APIAddress:  "192.168.1.100",
 		APIPort:     9090,
 		AdderConfig: "/etc/adder/config.yaml",
 		AutoStart:   true,
+		NotifyPrefs: make(map[string]bool),
 	}
 
 	err := SaveConfig(original)
@@ -90,11 +85,8 @@ func TestSaveAndLoadConfig(t *testing.T) {
 }
 
 func TestLoadConfigInvalidAddress(t *testing.T) {
-	if runtime.GOOS != "linux" {
-		t.Skip("XDG_CONFIG_HOME only applies on Linux")
-	}
 	tmpDir := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+	t.Setenv("ADDER_TRAY_CONFIG_DIR", tmpDir)
 
 	// Write a config with empty api_address
 	err := SaveConfig(TrayConfig{
@@ -116,10 +108,6 @@ func TestLoadConfigInvalidAddress(t *testing.T) {
 }
 
 func TestLoadConfigInvalidPort(t *testing.T) {
-	if runtime.GOOS != "linux" {
-		t.Skip("XDG_CONFIG_HOME only applies on Linux")
-	}
-
 	tests := []struct {
 		name    string
 		content string
@@ -141,7 +129,7 @@ func TestLoadConfigInvalidPort(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			tmpDir := t.TempDir()
-			t.Setenv("XDG_CONFIG_HOME", tmpDir)
+			t.Setenv("ADDER_TRAY_CONFIG_DIR", tmpDir)
 
 			err := os.MkdirAll(filepath.Dir(ConfigPath()), 0o700)
 			require.NoError(t, err)
@@ -160,11 +148,8 @@ func TestLoadConfigInvalidPort(t *testing.T) {
 }
 
 func TestConfigExists(t *testing.T) {
-	if runtime.GOOS != "linux" {
-		t.Skip("XDG_CONFIG_HOME only applies on Linux")
-	}
 	tmpDir := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+	t.Setenv("ADDER_TRAY_CONFIG_DIR", tmpDir)
 
 	assert.False(
 		t,

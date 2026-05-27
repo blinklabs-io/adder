@@ -47,27 +47,36 @@ jobs:
     strategy:
       matrix:
         include:
+          # Set tray: false on any row to quickly disable that platform's
+          # GUI tray build while still producing the core adder binary.
           - runner: macos-latest
             os: darwin
             arch: arm64
+            tray: true
           - runner: ubuntu-latest
             os: freebsd
             arch: amd64
+            tray: true
           - runner: ubuntu-latest
             os: freebsd
             arch: arm64
+            tray: true
           - runner: ubuntu-latest
             os: linux
             arch: amd64
+            tray: true
           - runner: ubuntu-latest
             os: linux
             arch: arm64
+            tray: true
           - runner: windows-latest
             os: windows
             arch: amd64
+            tray: true
           - runner: windows-latest
             os: windows
             arch: arm64
+            tray: true
     runs-on: ${{ matrix.runner }}
     needs: [create-draft-release]
     permissions:
@@ -94,6 +103,17 @@ jobs:
       - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0 https://github.com/actions/setup-go/releases/tag/v6.4.0
         with:
           go-version: 1.26.x
+      - name: Install Linux dependencies
+        if: matrix.os == 'linux' && matrix.tray
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc libgl1-mesa-dev xorg-dev libxcursor-dev libxrandr-dev libxinerama-dev libxi-dev libxxf86vm-dev
+
+      - name: Install FreeBSD tray build toolchain
+        if: matrix.os == 'freebsd' && matrix.tray
+        run: |
+          go install github.com/fyne-io/fyne-cross@v1.6.2
+
       - name: Build binary (Windows)
         if: matrix.os == 'windows'
         shell: pwsh
@@ -101,9 +121,20 @@ jobs:
           $env:GOOS = "${{ matrix.os }}"
           $env:GOARCH = "${{ matrix.arch }}"
           make build
+          if ("${{ matrix.tray }}" -eq "true") {
+            make build-tray
+          }
       - name: Build binary
         if: matrix.os != 'windows'
-        run: GOOS=${{ matrix.os }} GOARCH=${{ matrix.arch }} make build
+        run: |
+          GOOS=${{ matrix.os }} GOARCH=${{ matrix.arch }} make build
+          if [ "${{ matrix.tray }}" = "true" ]; then
+            if [ "${{ matrix.os }}" = "freebsd" ]; then
+              "$(go env GOPATH)/bin/fyne-cross" freebsd -arch=${{ matrix.arch }} -name adder-tray -icon .github/assets/adder-logo-with-buffer.png -env GOTOOLCHAIN=auto ./cmd/adder-tray
+            else
+              GOOS=${{ matrix.os }} GOARCH=${{ matrix.arch }} make build-tray
+            fi
+          fi
 
       # Sign Windows build
       - name: Set up Java

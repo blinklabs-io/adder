@@ -311,7 +311,7 @@ func waitForStatus(
 func TestBackoffDelay(t *testing.T) {
 	// Base delay is 500ms
 	// Max delay is 30s
-	
+
 	tests := []struct {
 		attempt  int
 		expected time.Duration
@@ -323,7 +323,7 @@ func TestBackoffDelay(t *testing.T) {
 		{4, 4000 * time.Millisecond},
 		{5, 8000 * time.Millisecond},
 		{6, 16000 * time.Millisecond},
-		{7, 30000 * time.Millisecond}, // Capped at 30s
+		{7, 30000 * time.Millisecond},  // Capped at 30s
 		{10, 30000 * time.Millisecond}, // Capped at 30s
 	}
 

@@ -163,6 +163,20 @@ func (cm *ConnectionManager) Events() <-chan event.Event {
 	return cm.events
 }
 
+// SetAddress updates the adder API address for future connections.
+func (cm *ConnectionManager) SetAddress(address string) {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+	cm.apiAddress = address
+}
+
+// SetPort updates the adder API port for future connections.
+func (cm *ConnectionManager) SetPort(port uint) {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+	cm.apiPort = port
+}
+
 // IsConnected reports whether the EventClient is actively connected.
 func (cm *ConnectionManager) IsConnected() bool {
 	return cm.status.Status() == StatusConnected

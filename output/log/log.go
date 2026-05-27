@@ -35,6 +35,8 @@ type LogOutput struct {
 	doneChan  chan struct{}
 	logger    plugin.Logger
 	format    string
+	path      string
+	file      *os.File
 }
 
 func New(options ...LogOptionFunc) *LogOutput {
@@ -55,6 +57,15 @@ func (l *LogOutput) Start() error {
 	l.eventChan = make(chan event.Event, 10)
 	l.errorChan = make(chan error)
 	l.doneChan = make(chan struct{})
+
+	if l.path != "" {
+		f, err := os.OpenFile(l.path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+		if err != nil {
+			return fmt.Errorf("failed to open log file: %w", err)
+		}
+		l.file = f
+	}
+
 	// Capture channels locally to avoid races with Stop()
 	eventChan := l.eventChan
 	doneChan := l.doneChan
@@ -127,7 +138,14 @@ func (l *LogOutput) writeText(evt event.Event) {
 		)
 	}
 
-	fmt.Fprintln(os.Stdout, line)
+	out := os.Stdout
+	if l.file != nil {
+		out = l.file
+	}
+	if _, err := fmt.Fprintln(out, line); err != nil {
+		// Fallback to stderr if primary write fails
+		fmt.Fprintf(os.Stderr, "failed to write log: %v; original: %s\n", err, line)
+	}
 }
 
 // writeJSON writes events as newline-delimited JSON to stdout.
@@ -142,7 +160,13 @@ func (l *LogOutput) writeJSON(evt event.Event) {
 		)
 		return
 	}
-	os.Stdout.Write(append(data, '\n'))
+	out := os.Stdout
+	if l.file != nil {
+		out = l.file
+	}
+	if _, err := out.Write(append(data, '\n')); err != nil {
+		fmt.Fprintf(os.Stderr, "error writing JSON log: %v\n", err)
+	}
 }
 
 // Stop the log output
@@ -158,6 +182,14 @@ func (l *LogOutput) Stop() error {
 	if l.errorChan != nil {
 		close(l.errorChan)
 		l.errorChan = nil
+	}
+	if l.file != nil {
+		if err := l.file.Close(); err != nil {
+			l.logger.Error("failed to close log file",
+				"path", l.path,
+				"error", err)
+		}
+		l.file = nil
 	}
 	return nil
 }

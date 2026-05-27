@@ -31,3 +31,10 @@ func WithFormat(format string) LogOptionFunc {
 		o.format = format
 	}
 }
+
+// WithFilePath specifies the file path to write logs to
+func WithFilePath(path string) LogOptionFunc {
+	return func(o *LogOutput) {
+		o.path = path
+	}
+}

@@ -14,7 +14,7 @@
 
 //go:build linux
 
-package tray
+package setup
 
 import (
 	"log/slog"

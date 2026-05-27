@@ -12,15 +12,34 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package tray
+//go:build darwin
 
-// ConfigDir returns the platform-specific directory for storing
-// configuration files.
-func ConfigDir() string {
-	return configDir()
+package setup
+
+import (
+	"log/slog"
+	"os"
+	"path/filepath"
+)
+
+func homeOrTmp() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		slog.Warn(
+			"unable to determine home directory, falling back to os.TempDir()",
+			"error", err,
+		)
+		return os.TempDir()
+	}
+	return home
 }
 
-// LogDir returns the platform-specific directory for storing log files.
-func LogDir() string {
-	return logDir()
+func configDir() string {
+	return filepath.Join(
+		homeOrTmp(), "Library", "Application Support", "Adder",
+	)
+}
+
+func logDir() string {
+	return filepath.Join(homeOrTmp(), "Library", "Logs", "Adder")
 }

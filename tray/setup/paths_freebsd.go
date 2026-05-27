@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build windows
+//go:build freebsd
 
-package tray
+package setup
 
 import (
 	"log/slog"
@@ -35,15 +35,15 @@ func homeOrTmp() string {
 }
 
 func configDir() string {
-	if dir := os.Getenv("APPDATA"); dir != "" {
-		return filepath.Join(dir, "Adder")
+	if dir := os.Getenv("XDG_CONFIG_HOME"); dir != "" {
+		return filepath.Join(dir, "adder")
 	}
-	return filepath.Join(homeOrTmp(), "AppData", "Roaming", "Adder")
+	return filepath.Join(homeOrTmp(), ".config", "adder")
 }
 
 func logDir() string {
-	if dir := os.Getenv("LOCALAPPDATA"); dir != "" {
-		return filepath.Join(dir, "Adder", "Logs")
+	if dir := os.Getenv("XDG_STATE_HOME"); dir != "" {
+		return filepath.Join(dir, "adder")
 	}
-	return filepath.Join(homeOrTmp(), "AppData", "Local", "Adder", "Logs")
+	return filepath.Join(homeOrTmp(), ".local", "state", "adder")
 }

@@ -90,46 +90,43 @@ func (w *WebhookOutput) Start() error {
 	w.doneChan = make(chan struct{})
 	logger := logging.GetLogger()
 	logger.Info("starting webhook server")
+
+	// Capture channels locally to avoid races with Stop()
+	eventChan := w.eventChan
+	doneChan := w.doneChan
+
 	w.wg.Add(1)
 	go func() {
 		defer w.wg.Done()
 		for {
 			select {
-			case <-w.doneChan:
+			case <-doneChan:
 				return
-			case evt, ok := <-w.eventChan:
+			case evt, ok := <-eventChan:
 				// Channel has been closed, which means we're shutting down
 				if !ok {
 					return
 				}
-				payload := evt.Payload
-				if payload == nil {
-					panic(fmt.Errorf("ERROR: %v", payload))
+				if evt.Payload == nil {
+					logger.Error("webhook received event with nil payload", "event_type", evt.Type)
+					continue
 				}
-				context := evt.Context
 				switch evt.Type {
 				case "input.block":
-					if context == nil {
-						panic(fmt.Errorf("ERROR: %v", context))
+					if evt.Context == nil {
+						logger.Error("webhook received block event with nil context")
+						continue
 					}
-					be := payload.(event.BlockEvent)
-					bc := context.(event.BlockContext)
-					evt.Payload = be
-					evt.Context = bc
-				case "input.rollback":
-					re := payload.(event.RollbackEvent)
-					evt.Payload = re
 				case "input.transaction":
-					te := payload.(event.TransactionEvent)
-					evt.Payload = te
+					if evt.Context == nil {
+						logger.Error("webhook received transaction event with nil context")
+						continue
+					}
 				case "input.governance":
-					ge := payload.(event.GovernanceEvent)
-					gc := context.(event.GovernanceContext)
-					evt.Payload = ge
-					evt.Context = gc
-				default:
-					logger.Error("unknown event type: " + evt.Type)
-					continue
+					if evt.Context == nil {
+						logger.Error("webhook received governance event with nil context")
+						continue
+					}
 				}
 				// Send webhook with retry logic and exponential backoff
 				w.sendWebhookWithRetry(&evt)
@@ -340,11 +337,16 @@ func (w *WebhookOutput) SendWebhook(e *event.Event) error {
 	if resp == nil {
 		return fmt.Errorf("failed to send payload: %s", data)
 	}
+	defer resp.Body.Close()
+
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return fmt.Errorf("%w", err)
 	}
-	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("server returned status: %d", resp.StatusCode)
+	}
 
 	logger.Info(
 		fmt.Sprintf("sent: %s, payload: %s, body: %s, response: %s, status: %d",
@@ -364,6 +366,8 @@ func (w *WebhookOutput) sendWebhookWithRetry(e *event.Event) {
 	var lastErr error
 	backoff := w.initialBackoff
 
+	logger.Debug("starting webhook delivery with retry", "url", w.url, "max_retries", w.maxRetries)
+
 	for attempt := 0; attempt <= w.maxRetries; attempt++ {
 		if attempt > 0 {
 			logger.Warn(
@@ -377,7 +381,13 @@ func (w *WebhookOutput) sendWebhookWithRetry(e *event.Event) {
 				"event_type", e.Type,
 				"error", lastErr,
 			)
-			time.Sleep(backoff)
+
+			// Responsive sleep
+			select {
+			case <-w.doneChan:
+				return
+			case <-time.After(backoff):
+			}
 
 			// Calculate next backoff with exponential increase
 			backoff = time.Duration(float64(backoff) * w.backoffFactor)
@@ -429,10 +439,10 @@ func (w *WebhookOutput) sendWebhookWithRetry(e *event.Event) {
 func (w *WebhookOutput) Stop() error {
 	if w.doneChan != nil {
 		close(w.doneChan)
+		// Wait for goroutine to exit before clearing field
+		w.wg.Wait()
 		w.doneChan = nil
 	}
-	// Wait for goroutine to exit before closing channels
-	w.wg.Wait()
 	if w.eventChan != nil {
 		close(w.eventChan)
 		w.eventChan = nil

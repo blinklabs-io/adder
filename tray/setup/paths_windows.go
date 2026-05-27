@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build darwin
+//go:build windows
 
-package tray
+package setup
 
 import (
 	"log/slog"
@@ -35,11 +35,15 @@ func homeOrTmp() string {
 }
 
 func configDir() string {
-	return filepath.Join(
-		homeOrTmp(), "Library", "Application Support", "Adder",
-	)
+	if dir := os.Getenv("APPDATA"); dir != "" {
+		return filepath.Join(dir, "Adder")
+	}
+	return filepath.Join(homeOrTmp(), "AppData", "Roaming", "Adder")
 }
 
 func logDir() string {
-	return filepath.Join(homeOrTmp(), "Library", "Logs", "Adder")
+	if dir := os.Getenv("LOCALAPPDATA"); dir != "" {
+		return filepath.Join(dir, "Adder", "Logs")
+	}
+	return filepath.Join(homeOrTmp(), "AppData", "Local", "Adder", "Logs")
 }
