@@ -151,6 +151,34 @@ input.governance:
                     "dataHash": "81f156d98e1f02123abccdef5439a89d71fa9d8b76c8db028c7df0e1..."
                 }
             }
+        ],
+        "drepCertificates": [
+            {
+                "certificateType": "Registration",
+                "drepHash": "81f156d98e1f02123abccdef5439a89d71fa9d8b76c8db028c7df0e1",
+                "drepId": "drep1abcd...",
+                "deposit": 500000000,
+                "anchor": {
+                    "url": "https://example.com/drep.json",
+                    "dataHash": "81f156d98e1f02123abccdef5439a89d71fa9d8b76c8db028c7df0e1..."
+                }
+            }
+        ],
+        "voteDelegationCertificates": [
+            {
+                "certificateType": "VoteDelegation",
+                "stakeCredential": "81f156d98e1f02123abccdef5439a89d71fa9d8b76c8db028c7df0e1",
+                "drepType": "KeyHash",
+                "drepHash": "81f156d98e1f02123abccdef5439a89d71fa9d8b76c8db028c7df0e1",
+                "drepId": "drep1abcd..."
+            }
+        ],
+        "committeeCertificates": [
+            {
+                "certificateType": "AuthHot",
+                "coldCredential": "81f156d98e1f02123abccdef5439a89d71fa9d8b76c8db028c7df0e1",
+                "hotCredential": "81f156d98e1f02123abccdef5439a89d71fa9d8b76c8db028c7df0e1..."
+            }
         ]
     }
 }
@@ -298,26 +326,43 @@ generic pipeline rules described below. See
 for simple target matching, advanced rule groups, DRep and pool behavior, and
 the current ChainSync notification inventory.
 
-You can get a list of all available filter options by using the `-h`/`-help`
+You can get a list of all available filter options by using the `-h`/`--help`
 flag.
 
 ```bash
-$ ./adder -h
-Usage of adder:
+$ ./adder --help
 ...
-  -filter-address string
-        specifies address to filter on
-  -filter-asset string
-        specifies the asset fingerprint (asset1xxx) to filter on
-  -filter-policy string
-        specifies asset policy ID to filter on
-  -filter-type string
-        specifies event type to filter on
+      --filter-address string   specifies address(es) to filter on (comma-separated)
+      --filter-asset string     specifies asset fingerprint(s) to filter on (comma-separated)
+      --filter-drep string      specifies DRep ID(s) to filter on (comma-separated, hex or bech32)
+      --filter-policy string    specifies asset policy ID(s) to filter on (comma-separated)
+      --filter-pool string      specifies Pool ID(s) to filter on (comma-separated)
+      --filter-type string      specifies event type to filter on
 ...
 ```
 
 Multiple filter options can be used together, and only events matching all
 filters will be output.
+
+The following filters are available:
+
+| Flag               | Filters on                  | Applies to event types                          |
+| ------------------ | --------------------------- | ----------------------------------------------- |
+| `--filter-type`    | Top-level event type        | all                                             |
+| `--filter-address` | Payment or stake address    | `input.transaction`, `input.governance`         |
+| `--filter-policy`  | Asset policy ID             | `input.transaction`                             |
+| `--filter-asset`   | Asset fingerprint (asset1…) | `input.transaction`                             |
+| `--filter-pool`    | Stake pool (SPO) ID         | `input.block`, `input.transaction`, `input.governance` |
+| `--filter-drep`    | DRep ID (hex or bech32)     | `input.transaction`, `input.governance`         |
+
+An event type that a given filter does not apply to is passed through
+unaffected by that filter. For example, an `input.block` event is never
+removed by `--filter-policy`, and an `input.governance` event is never removed
+by `--filter-asset`.
+
+> **Note:** long flags require the double-dash form (`--filter-type`). The
+> single-dash form (`-filter-type`) is parsed as a cluster of shorthand flags
+> and is rejected.
 
 ## Using Adder as a Library
 
@@ -344,7 +389,7 @@ Alternatively using equivalent commandline options:
 
 ```bash
 ./adder \
-  -input-chainsync-network preview
+  --input-chainsync-network preview
 ```
 
 ### In Docker using local node
@@ -366,13 +411,19 @@ docker run --rm -ti \
 Only output `input.transaction` event types
 
 ```bash
-adder -filter-type input.transaction
+adder --filter-type input.transaction
 ```
 
 Only output `input.transaction` and `input.block` event types
 
 ```bash
-adder -filter-type input.transaction,input.block
+adder --filter-type input.transaction,input.block
+```
+
+Only output governance events
+
+```bash
+adder --filter-type input.governance
 ```
 
 #### Filtering on asset policy
@@ -380,8 +431,8 @@ adder -filter-type input.transaction,input.block
 Only output transactions involving an asset with a particular policy ID
 
 ```bash
-adder -filter-type input.transaction \
-  -filter-policy 13aa2accf2e1561723aa26871e071fdf32c867cff7e7d50ad470d62f
+adder --filter-type input.transaction \
+  --filter-policy 13aa2accf2e1561723aa26871e071fdf32c867cff7e7d50ad470d62f
 ```
 
 #### Filtering on asset fingerprint
@@ -389,8 +440,8 @@ adder -filter-type input.transaction \
 Only output transactions involving a particular asset
 
 ```bash
-adder -filter-type input.transaction \
-  -filter-asset asset108xu02ckwrfc8qs9d97mgyh4kn8gdu9w8f5sxk
+adder --filter-type input.transaction \
+  --filter-asset asset108xu02ckwrfc8qs9d97mgyh4kn8gdu9w8f5sxk
 ```
 
 #### Filtering on a policy ID and asset fingerprint
@@ -399,9 +450,9 @@ Only output transactions involving both a particular policy ID and a particular
 asset (which do not need to be related)
 
 ```bash
-adder -filter-type input.transaction \
-  -filter-asset asset108xu02ckwrfc8qs9d97mgyh4kn8gdu9w8f5sxk \
-  -filter-policy 13aa2accf2e1561723aa26871e071fdf32c867cff7e7d50ad470d62f
+adder --filter-type input.transaction \
+  --filter-asset asset108xu02ckwrfc8qs9d97mgyh4kn8gdu9w8f5sxk \
+  --filter-policy 13aa2accf2e1561723aa26871e071fdf32c867cff7e7d50ad470d62f
 ```
 
 #### Filtering on an address
@@ -409,8 +460,8 @@ adder -filter-type input.transaction \
 Only output transactions with outputs matching a particular address
 
 ```bash
-adder -filter-type input.transaction \
-  -filter-address addr1qyht4ja0zcn45qvyx477qlyp6j5ftu5ng0prt9608dxp6l2j2c79gy9l76sdg0xwhd7r0c0kna0tycz4y5s6mlenh8pq4jxtdy
+adder --filter-type input.transaction \
+  --filter-address addr1qyht4ja0zcn45qvyx477qlyp6j5ftu5ng0prt9608dxp6l2j2c79gy9l76sdg0xwhd7r0c0kna0tycz4y5s6mlenh8pq4jxtdy
 ```
 
 #### Filtering on a stake address
@@ -418,9 +469,46 @@ adder -filter-type input.transaction \
 Only output transactions with outputs matching a particular stake address
 
 ```bash
-adder -filter-type input.transaction \
-  -filter-address stake1u9f9v0z5zzlldgx58n8tklphu8mf7h4jvp2j2gddluemnssjfnkzz
+adder --filter-type input.transaction \
+  --filter-address stake1u9f9v0z5zzlldgx58n8tklphu8mf7h4jvp2j2gddluemnssjfnkzz
 ```
+
+#### Filtering on multiple addresses
+
+Pass multiple values to a single filter as a comma-separated list. The event
+matches if it involves _any_ of the listed addresses.
+
+```bash
+adder --filter-type input.transaction \
+  --filter-address addr1qyht4ja0zcn45qvyx477qlyp6j5ftu5ng0prt9608dxp6l2j2c79gy9l76sdg0xwhd7r0c0kna0tycz4y5s6mlenh8pq4jxtdy,stake1u9f9v0z5zzlldgx58n8tklphu8mf7h4jvp2j2gddluemnssjfnkzz
+```
+
+#### Filtering on a stake pool (SPO)
+
+Only output blocks minted by a particular stake pool. Pool IDs may be given in
+either bech32 (`pool1…`) or hex form.
+
+```bash
+adder --filter-type input.block \
+  --filter-pool pool1z5uqdk7dzdxaae5633fqfcu2eqzy3a3rgtuvy087fdld7yws0xt
+```
+
+#### Filtering on a DRep
+
+Only output governance events involving a particular DRep — votes cast by that
+DRep, that DRep's registration/update/retirement certificates, and vote
+delegations to that DRep. DRep IDs may be given in either bech32 (`drep1…` /
+`drep_script1…`) or hex form.
+
+```bash
+adder --filter-type input.governance \
+  --filter-drep drep1p4h4ea7y70ede2wy7x3t83x4umm63wwq68308f94cmt7szexmnr
+```
+
+The `--filter-drep`, `--filter-pool`, and `--filter-address` filters also apply
+to `input.governance` events. See the
+[Governance events](#governance-events) section for exactly what each filter
+matches against in a governance event.
 
 ### Push notifications
 
@@ -432,7 +520,136 @@ Push notifications will be sent to the FCM `project_id` specified in the
 details on how to send push notifications to mobile.
 
 ```bash
-adder -filter-type input.block \
-  -output push \
-  -output-push-serviceAccountFilePath /path/to/serviceAccount.json
+adder --filter-type input.block \
+  --output push \
+  --output-push-serviceAccountFilePath /path/to/serviceAccount.json
+```
+
+## Governance events
+
+The chainsync input emits an `input.governance` event for every transaction
+that contains Conway-era on-chain governance data. A single transaction
+produces exactly one `input.governance` event, and that event collects all of
+the governance data found in the transaction.
+
+### When it fires
+
+An `input.governance` event is emitted when a transaction contains any of the
+following:
+
+- one or more **proposal procedures** (new governance actions),
+- one or more **voting procedures** (votes cast on governance actions), or
+- one or more **governance certificates** — DRep
+  registration/update/retirement, vote-delegation, or Constitutional Committee
+  hot-key authorization/cold-key resignation.
+
+Transactions with no governance data do not produce an `input.governance`
+event. The governance event is emitted _in addition to_ the regular
+`input.transaction` event for the same transaction.
+
+### Context
+
+The `context` object identifies the transaction and chain position the
+governance data was found in:
+
+| Field             | Type   | Description                                  |
+| ----------------- | ------ | -------------------------------------------- |
+| `transactionHash` | string | Hash of the transaction (hex)                |
+| `blockNumber`     | number | Block height containing the transaction      |
+| `slotNumber`      | number | Slot of the containing block                 |
+| `transactionIdx`  | number | Index of the transaction within the block    |
+| `networkMagic`    | number | Network magic of the connected node          |
+
+### Payload
+
+The `payload` object always contains `blockHash`, optionally
+`transactionCbor` (only when the input is run with
+`--input-chainsync-include-cbor`), and up to five arrays of governance data.
+Each array is omitted when empty.
+
+| Field                        | Type  | Description                                              |
+| ---------------------------- | ----- | -------------------------------------------------------- |
+| `blockHash`                  | string | Hash of the containing block (hex)                      |
+| `transactionCbor`            | string | Raw transaction CBOR (hex); present only with `--input-chainsync-include-cbor` |
+| `proposalProcedures`         | array | Governance actions proposed in this transaction          |
+| `votingProcedures`           | array | Votes cast in this transaction                           |
+| `drepCertificates`           | array | DRep registration / update / retirement certificates     |
+| `voteDelegationCertificates` | array | Vote-delegation certificates                             |
+| `committeeCertificates`      | array | Constitutional Committee hot-auth / cold-resign certs    |
+
+#### `proposalProcedures[]`
+
+| Field           | Type   | Description                                                     |
+| --------------- | ------ | --------------------------------------------------------------- |
+| `index`         | number | Index of the proposal within the transaction                    |
+| `deposit`       | number | Deposit (lovelace) locked for the proposal                      |
+| `rewardAccount` | string | Stake/reward address the deposit is returned to                 |
+| `actionType`    | string | One of `ParameterChange`, `HardForkInitiation`, `TreasuryWithdrawal`, `NoConfidence`, `UpdateCommittee`, `NewConstitution`, `Info` |
+| `actionData`    | object | Action-specific data; exactly one field is populated, keyed by the action (e.g. `parameterChange`, `treasuryWithdrawal`, `newConstitution`, `updateCommittee`, `hardForkInitiation`, `noConfidence`, `info`) |
+| `anchor`        | object | Optional `{ "url", "dataHash" }` pointing at off-chain metadata |
+
+#### `votingProcedures[]`
+
+| Field            | Type   | Description                                                |
+| ---------------- | ------ | ---------------------------------------------------------- |
+| `voterType`      | string | One of `DRep`, `SPO`, `CCHot`                              |
+| `voterHash`      | string | Voter credential hash (hex)                                |
+| `voterId`        | string | Voter identifier (bech32 where applicable)                 |
+| `govActionTxId`  | string | Transaction ID of the governance action being voted on     |
+| `govActionIndex` | number | Index of the governance action within that transaction     |
+| `vote`           | string | One of `Yes`, `No`, `Abstain`                              |
+| `anchor`         | object | Optional `{ "url", "dataHash" }` vote-rationale metadata    |
+
+#### `drepCertificates[]`
+
+| Field             | Type   | Description                                                |
+| ----------------- | ------ | ---------------------------------------------------------- |
+| `certificateType` | string | One of `Registration`, `Update`, `Deregistration`         |
+| `drepHash`        | string | DRep credential hash (hex)                                 |
+| `drepId`          | string | DRep ID in bech32 (`drep1…` or `drep_script1…`)            |
+| `deposit`         | number | Deposit (lovelace); present for registration/deregistration |
+| `anchor`          | object | Optional `{ "url", "dataHash" }` metadata                  |
+
+#### `voteDelegationCertificates[]`
+
+| Field             | Type   | Description                                                              |
+| ----------------- | ------ | ----------------------------------------------------------------------- |
+| `certificateType` | string | One of `VoteDelegation`, `StakeVoteDelegation`, `VoteRegistrationDelegation`, `StakeVoteRegistrationDelegation` |
+| `stakeCredential` | string | Delegating stake credential hash (hex)                                  |
+| `drepType`        | string | One of `KeyHash`, `ScriptHash`, `Abstain`, `NoConfidence`               |
+| `drepHash`        | string | DRep credential hash (hex); present for `KeyHash`/`ScriptHash`          |
+| `drepId`          | string | DRep ID in bech32; present for `KeyHash`/`ScriptHash`                   |
+| `poolKeyHash`     | string | Pool key hash (hex); present for the combined stake+vote delegation types |
+| `deposit`         | number | Deposit (lovelace); present for the registration-delegation types       |
+
+#### `committeeCertificates[]`
+
+| Field             | Type   | Description                                            |
+| ----------------- | ------ | ------------------------------------------------------ |
+| `certificateType` | string | `AuthHot` (hot-key authorization) or `ResignCold`      |
+| `coldCredential`  | string | Committee cold credential hash (hex)                   |
+| `hotCredential`   | string | Committee hot credential hash (hex); present for `AuthHot` |
+| `anchor`          | object | Optional `{ "url", "dataHash" }`; present for `ResignCold` |
+
+### Filtering governance events
+
+Three of the Cardano filters apply to `input.governance` events. A governance
+event matches a filter if any of the listed data references the filtered value:
+
+- **`--filter-drep`** — matches DRep certificates, vote-delegation
+  certificates that delegate to the DRep, and voting procedures where the voter
+  is the DRep.
+- **`--filter-pool`** — matches voting procedures cast by the pool as an SPO,
+  and vote-delegation certificates referencing the pool's key hash.
+- **`--filter-address`** — matches a proposal's `rewardAccount`, treasury
+  withdrawal destination addresses, and vote-delegation stake credentials.
+
+The `--filter-policy` and `--filter-asset` filters do **not** apply to
+governance events; an `input.governance` event passes through them unaffected.
+
+Example — only governance events involving a specific DRep:
+
+```bash
+adder --filter-type input.governance \
+  --filter-drep drep1p4h4ea7y70ede2wy7x3t83x4umm63wwq68308f94cmt7szexmnr
 ```
