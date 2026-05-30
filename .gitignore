@@ -2,6 +2,10 @@
 /adder
 /adder-tray
 
+# macOS installer build output (packaging/macos/build-pkg.sh)
+/dist/
+/build/
+
 # Test binary, built with `go test -c`
 *.test
 

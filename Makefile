@@ -16,7 +16,7 @@ GO_LDFLAGS=-ldflags "-s -w -X '$(GOMODULE)/internal/version.Version=$(shell git 
 GO_CGO_CFLAGS=$(shell go env CGO_CFLAGS)
 TRAY_CGO_CFLAGS=$(strip $(GO_CGO_CFLAGS) $(if $(filter windows/arm64,$(GOOS)/$(GOARCH)),-DWINBOOL=BOOL,))
 
-.PHONY: build build-tray mod-tidy clean test bundle-macos
+.PHONY: build build-tray mod-tidy clean test bundle-macos pkg-macos pkg-macos-adhoc
 
 # Alias for building program binary
 build: $(BINARIES)
@@ -24,6 +24,18 @@ build: $(BINARIES)
 # Create a local Adder.app for macOS
 bundle-macos:
 	./bundle-macos.sh
+
+# Build a (signed + notarized when secrets are set) macOS .pkg installer
+# containing both adder and adder-tray inside Adder.app. See
+# packaging/macos/README.md for the env-var contract.
+pkg-macos:
+	./packaging/macos/build-pkg.sh
+
+# Build an ad-hoc-signed macOS .pkg for LOCAL testing (no Developer ID needed).
+# The bundle is ad-hoc signed so the app runs and notifications work; the pkg
+# itself is unsigned (install via `sudo installer -pkg <pkg> -target /`).
+pkg-macos-adhoc:
+	ADHOC=1 ./packaging/macos/build-pkg.sh
 
 mod-tidy:
 	# Needed to fetch new dependencies and add them to go.mod

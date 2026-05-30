@@ -50,9 +50,17 @@ jobs:
         include:
           # Set tray: false on any row to quickly disable that platform's
           # GUI tray build while still producing the core adder binary.
+          # macOS .pkg builds inline on a native runner per arch (arm64 on
+          # macos-15, amd64 on macos-15-intel), not a separate download-artifacts
+          # job: adder-tray needs CGO (Fyne) and can't be cross-compiled, so it
+          # must build on its target arch. build-pkg.sh builds + signs + notarizes.
           - runner: macos-15
             os: darwin
             arch: arm64
+            tray: true
+          - runner: macos-15-intel
+            os: darwin
+            arch: amd64
             tray: true
           - runner: ubuntu-latest
             os: freebsd
@@ -165,7 +173,7 @@ jobs:
             make build-tray
           }
       - name: Build binary
-        if: matrix.os != 'windows'
+        if: matrix.os != 'windows' && matrix.os != 'darwin'
         run: |
           GOOS=${{ matrix.os }} GOARCH=${{ matrix.arch }} make build
           if [ "${{ matrix.tray }}" = "true" ]; then
@@ -232,56 +240,71 @@ jobs:
           Write-Host "Cleaning up certificate chain"
           Remove-Item -Path "codesign-chain.pem" -Force
 
-      # Sign MacOS build
-
-      - name: Create macOS app bundle
-        if: ${{ startsWith(github.ref, 'refs/tags/') && matrix.os == 'darwin' }}
+      # Build macOS .pkg installer
+      #
+      # On tag pushes: import both Developer ID certs, store notarytool creds,
+      # then run build-pkg.sh which produces a signed + notarized + stapled
+      # .pkg under dist/. On non-tag pushes: run build-pkg.sh unsigned to
+      # validate the packaging path on every push.
+      - name: Build macOS .pkg
+        if: matrix.os == 'darwin'
+        env:
+          IS_RELEASE: ${{ startsWith(github.ref, 'refs/tags/') }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_INSTALLER_CERTIFICATE: ${{ secrets.APPLE_INSTALLER_CERTIFICATE }}
+          APPLE_INSTALLER_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_INSTALLER_CERTIFICATE_PASSWORD }}
+          APPLE_KEYCHAIN_PASSWORD: ${{ secrets.APPLE_KEYCHAIN_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
-          echo "Packaging ${{ env.APPLICATION_NAME }}..."
-          mkdir -p ${{ env.APPLICATION_NAME }}.app/Contents/MacOS
-          mkdir -p ${{ env.APPLICATION_NAME }}.app/Contents/Resources
-          cp ${{ env.APPLICATION_NAME }} ${{ env.APPLICATION_NAME }}.app/Contents/MacOS/${{ env.APPLICATION_NAME }}
-          chmod +x ${{ env.APPLICATION_NAME }}.app/Contents/MacOS/${{ env.APPLICATION_NAME }}
-          cp .github/assets/${{ env.APPLICATION_NAME }}.icns ${{ env.APPLICATION_NAME }}.app/Contents/Resources
-          export RELEASE_TAG="${{ env.RELEASE_TAG }}"
-          CLEAN_VERSION="${RELEASE_TAG#v}"
-          cat <<EOF > ${{ env.APPLICATION_NAME }}.app/Contents/Info.plist
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
-              <key>CFBundleExecutable</key>
-              <string>${{ env.APPLICATION_NAME }}</string>
-              <key>CFBundleIdentifier</key>
-              <string>com.blinklabssoftware.${{ env.APPLICATION_NAME }}</string>
-              <key>CFBundleName</key>
-              <string>${{ env.APPLICATION_NAME }}</string>
-              <key>CFBundleIconFile</key>
-              <string>${{ env.APPLICATION_NAME }}</string>
-              <key>CFBundleVersion</key>
-              <string>${CLEAN_VERSION}</string>
-              <key>CFBundleShortVersionString</key>
-              <string>${CLEAN_VERSION}</string>
-          </dict>
-          </plist>
-          EOF
+          set -euo pipefail
 
-      - name: Sign and notarize macOS binary
-        if: ${{ startsWith(github.ref, 'refs/tags/') && matrix.os == 'darwin' }}
-        run: |
-          echo "Decoding and importing Apple certificate..."
-          echo -n "${{ secrets.APPLE_CERTIFICATE }}" | base64 --decode -o apple_certificate.p12
-          security create-keychain -p "${{ secrets.APPLE_KEYCHAIN_PASSWORD }}" build.keychain
-          security default-keychain -s build.keychain
-          security set-keychain-settings -lut 21600 build.keychain
-          security unlock-keychain -p "${{ secrets.APPLE_KEYCHAIN_PASSWORD }}" build.keychain
-          security import apple_certificate.p12 -k build.keychain -P "${{ secrets.APPLE_CERTIFICATE_PASSWORD }}" -T /usr/bin/codesign
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "${{ secrets.APPLE_KEYCHAIN_PASSWORD }}" build.keychain
-          /usr/bin/codesign --force -s "Developer ID Application: Blink Labs Software (${{ secrets.APPLE_TEAM_ID }})" --options runtime ${{ env.APPLICATION_NAME }}.app -v
-          xcrun notarytool store-credentials "notarytool-profile" --apple-id "${{ secrets.APPLE_ID }}" --team-id "${{ secrets.APPLE_TEAM_ID }}" --password "${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}"
-          ditto -c -k --keepParent "${{ env.APPLICATION_NAME }}.app" "notarization.zip"
-          xcrun notarytool submit "notarization.zip" --keychain-profile "notarytool-profile" --wait
-          xcrun stapler staple "${{ env.APPLICATION_NAME }}.app"
+          if [ "${IS_RELEASE}" = "true" ]; then
+            echo "::group::Import Apple Developer ID certificates"
+            echo -n "${APPLE_CERTIFICATE}"           | base64 --decode -o apple_app.p12
+            echo -n "${APPLE_INSTALLER_CERTIFICATE}" | base64 --decode -o apple_installer.p12
+
+            security create-keychain  -p "${APPLE_KEYCHAIN_PASSWORD}" build.keychain
+            security default-keychain -s build.keychain
+            security set-keychain-settings -lut 21600 build.keychain
+            security unlock-keychain  -p "${APPLE_KEYCHAIN_PASSWORD}" build.keychain
+
+            # Application cert signs binaries / .app; installer cert signs the pkg.
+            security import apple_app.p12       -k build.keychain -P "${APPLE_CERTIFICATE_PASSWORD}"           -T /usr/bin/codesign
+            security import apple_installer.p12 -k build.keychain -P "${APPLE_INSTALLER_CERTIFICATE_PASSWORD}" -T /usr/bin/productsign
+            security set-key-partition-list -S apple-tool:,apple:,codesign:,productsign: -s -k "${APPLE_KEYCHAIN_PASSWORD}" build.keychain
+
+            rm -f apple_app.p12 apple_installer.p12
+            echo "::endgroup::"
+
+            echo "::group::Store notarytool credentials"
+            xcrun notarytool store-credentials "adder-notary" \
+              --apple-id "${APPLE_ID}" \
+              --team-id  "${APPLE_TEAM_ID}" \
+              --password "${APPLE_APP_SPECIFIC_PASSWORD}"
+            echo "::endgroup::"
+
+            export SIGNING_IDENTITY="Developer ID Application: Blink Labs Software (${APPLE_TEAM_ID})"
+            export INSTALLER_IDENTITY="Developer ID Installer: Blink Labs Software (${APPLE_TEAM_ID})"
+            export TEAM_ID="${APPLE_TEAM_ID}"
+            export NOTARY_PROFILE="adder-notary"
+            export VERSION="${RELEASE_TAG#v}"
+          fi
+
+          export ARCH="${{ matrix.arch }}"
+          ./packaging/macos/build-pkg.sh
+
+          if [ "${IS_RELEASE}" = "true" ]; then
+            echo "::group::Verify pkg with spctl (must be accepted + Notarized Developer ID)"
+            PKG_PATH="dist/${APPLICATION_NAME}-${VERSION}-darwin-${{ matrix.arch }}.pkg"
+            spctl_out=$(spctl -a -vv --type install "${PKG_PATH}" 2>&1)
+            echo "${spctl_out}"
+            echo "${spctl_out}" | grep -q 'accepted'
+            echo "${spctl_out}" | grep -q 'Notarized Developer ID'
+            echo "::endgroup::"
+          fi
 
       - name: Upload release asset (Windows)
         if: startsWith(github.ref, 'refs/tags/') && matrix.os == 'windows'
@@ -298,22 +321,32 @@ jobs:
           $uploadUrl = "https://uploads.github.com/repos/${{ github.repository }}/releases/${{ needs.create-draft-release.outputs.RELEASE_ID }}/assets?name=$filename"
           Invoke-RestMethod -Uri $uploadUrl -Method Post -Headers $headers -InFile $filename
 
-      - name: Upload release asset
-        if: startsWith(github.ref, 'refs/tags/') && matrix.os != 'windows'
+      - name: Upload release asset (macOS pkg)
+        if: startsWith(github.ref, 'refs/tags/') && matrix.os == 'darwin'
         run: |
-          _filename=${{ env.APPLICATION_NAME }}-${{ env.RELEASE_TAG }}-${{ matrix.os }}-${{ matrix.arch }}.tar.gz
-          if [[ "${{ matrix.os }}" != "windows" ]]; then
-            tar czf ${_filename} ${{ env.APPLICATION_NAME }}
-          fi
-          if [[ "${{ matrix.os }}" == "darwin" ]]; then
-            _filename=${{ env.APPLICATION_NAME }}-${{ env.RELEASE_TAG }}-${{ matrix.os }}-${{ matrix.arch }}.zip
-            zip -r ${_filename} ${{ env.APPLICATION_NAME }}.app
-          fi
-          curl \
+          set -euo pipefail
+          _version="${RELEASE_TAG#v}"
+          _filename="${APPLICATION_NAME}-${_version}-${{ matrix.os }}-${{ matrix.arch }}.pkg"
+          _path="dist/${_filename}"
+          curl --fail --show-error --silent \
             -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
             -H "Content-Type: application/octet-stream" \
-            --data-binary @${_filename} \
-            https://uploads.github.com/repos/${{ github.repository_owner }}/adder/releases/${{ needs.create-draft-release.outputs.RELEASE_ID }}/assets?name=${_filename}
+            --data-binary @"${_path}" \
+            "https://uploads.github.com/repos/${{ github.repository }}/releases/${{ needs.create-draft-release.outputs.RELEASE_ID }}/assets?name=${_filename}"
+
+      - name: Upload release asset
+        if: startsWith(github.ref, 'refs/tags/') && matrix.os != 'windows' && matrix.os != 'darwin'
+        run: |
+          set -euo pipefail
+          # Build from runtime env (not GitHub expression expansion) so a
+          # crafted tag name can't inject shell; quote all paths.
+          _filename="${APPLICATION_NAME}-${RELEASE_TAG}-${{ matrix.os }}-${{ matrix.arch }}.tar.gz"
+          tar czf "${_filename}" "${APPLICATION_NAME}"
+          curl --fail --show-error --silent \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Content-Type: application/octet-stream" \
+            --data-binary @"${_filename}" \
+            "https://uploads.github.com/repos/${{ github.repository }}/releases/${{ needs.create-draft-release.outputs.RELEASE_ID }}/assets?name=${_filename}"
 
       - name: Attest binary (Windows)
         if: startsWith(github.ref, 'refs/tags/') && matrix.os == 'windows'
@@ -321,8 +354,14 @@ jobs:
         with:
           subject-path: '${{ env.APPLICATION_NAME }}.exe'
 
+      - name: Attest pkg (macOS)
+        if: startsWith(github.ref, 'refs/tags/') && matrix.os == 'darwin'
+        uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0 https://github.com/actions/attest/releases/tag/v4.1.0
+        with:
+          subject-path: 'dist/*.pkg'
+
       - name: Attest binary
-        if: startsWith(github.ref, 'refs/tags/') && matrix.os != 'windows'
+        if: startsWith(github.ref, 'refs/tags/') && matrix.os != 'windows' && matrix.os != 'darwin'
         uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0 https://github.com/actions/attest/releases/tag/v4.1.0
         with:
           subject-path: '${{ env.APPLICATION_NAME }}'
