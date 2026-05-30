@@ -24,6 +24,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -1105,9 +1106,7 @@ func (a *App) addRecentAlert(req notifications.Request) {
 
 		// Keep the latest 10 matching alerts, newest first so the most recent
 		// transaction or chain event is immediately visible at the top.
-		a.recentEvents = append(a.recentEvents, recentAlert{})
-		copy(a.recentEvents[1:], a.recentEvents[:len(a.recentEvents)-1])
-		a.recentEvents[0] = alert
+		a.recentEvents = slices.Insert(a.recentEvents, 0, alert)
 		if len(a.recentEvents) > 10 {
 			a.recentEvents = a.recentEvents[:10]
 		}

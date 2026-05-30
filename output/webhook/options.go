@@ -53,7 +53,10 @@ func WithFormat(format string) WebhookOptionFunc {
 }
 
 // WithRetryConfig specifies the retry configuration for webhook delivery
-func WithRetryConfig(maxRetries int, initialBackoff, maxBackoff time.Duration) WebhookOptionFunc {
+func WithRetryConfig(
+	maxRetries int,
+	initialBackoff, maxBackoff time.Duration,
+) WebhookOptionFunc {
 	return func(o *WebhookOutput) {
 		if maxRetries >= 0 {
 			o.maxRetries = maxRetries
