@@ -14,7 +14,7 @@
 
 //go:build linux
 
-package tray
+package setup
 
 import (
 	"os"
@@ -82,7 +82,6 @@ func TestServiceUnitTemplate(t *testing.T) {
 	assert.Contains(t, content, "Restart=on-failure")
 	assert.Contains(t, content, "WantedBy=default.target")
 
-	// Verify it can be written and read back
 	tmpDir := t.TempDir()
 	unitPath := filepath.Join(tmpDir, "adder.service")
 	err = os.WriteFile(unitPath, data, 0o644)

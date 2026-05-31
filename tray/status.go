@@ -98,9 +98,23 @@ func (t *StatusTracker) Set(s Status) {
 }
 
 // OnChange registers a callback that is invoked whenever the status
-// changes. Only one observer can be registered at a time.
+// changes. It is immediately called once with the current status
+// synchronously. Only one observer can be registered at a time.
 func (t *StatusTracker) OnChange(fn func(Status)) {
 	t.mu.Lock()
-	defer t.mu.Unlock()
 	t.observer = fn
+	s := t.status
+	t.mu.Unlock()
+
+	if fn != nil {
+		defer func() {
+			if r := recover(); r != nil {
+				slog.Error("status observer panicked on initial call",
+					"status", s,
+					"panic", r,
+				)
+			}
+		}()
+		fn(s)
+	}
 }

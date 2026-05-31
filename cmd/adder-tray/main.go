@@ -20,11 +20,31 @@ import (
 	"os/signal"
 	"syscall"
 
+	"fyne.io/fyne/v2/app"
+	"github.com/blinklabs-io/adder/internal/config"
+	"github.com/blinklabs-io/adder/internal/logging"
+	"github.com/blinklabs-io/adder/internal/ui/assets"
 	"github.com/blinklabs-io/adder/tray"
 )
 
 func main() {
-	application, err := tray.NewApp()
+	// Initialize logging
+	cfg := config.GetConfig()
+	if err := cfg.Load(""); err != nil {
+		slog.Warn("failed to load environment config", "error", err)
+	}
+	logging.Configure()
+	slog.SetDefault(logging.GetLogger())
+	cfgLevel := config.GetConfig().Logging.Level
+	slog.Debug("logging initialized", "level", cfgLevel)
+
+	// Initialize Fyne app with a unique ID for professional persistence
+	a := app.NewWithID("io.blinklabs.adder.tray")
+
+	// Set application metadata
+	a.SetIcon(assets.GetFullResource())
+
+	application, err := tray.NewApp(a)
 	if err != nil {
 		slog.Error("failed to create application", "error", err)
 		os.Exit(1)
@@ -45,5 +65,6 @@ func main() {
 		application.Shutdown()
 	}()
 
+	// Start the application. This blocks until a.Quit() is called.
 	application.Run()
 }

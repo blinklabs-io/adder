@@ -44,7 +44,7 @@ func TestStatusTracker_ObserverNotified(t *testing.T) {
 
 	var mu sync.Mutex
 	var received []Status
-	done := make(chan struct{}, 2)
+	done := make(chan struct{}, 3)
 	tracker.OnChange(func(s Status) {
 		mu.Lock()
 		received = append(received, s)
@@ -55,8 +55,8 @@ func TestStatusTracker_ObserverNotified(t *testing.T) {
 	tracker.Set(StatusStarting)
 	tracker.Set(StatusConnected)
 
-	// Wait for both async callbacks
-	for i := 0; i < 2; i++ {
+	// Wait for 3 async callbacks (1 from OnChange, 2 from Set)
+	for i := 0; i < 3; i++ {
 		select {
 		case <-done:
 		case <-time.After(time.Second):
@@ -66,7 +66,8 @@ func TestStatusTracker_ObserverNotified(t *testing.T) {
 
 	mu.Lock()
 	defer mu.Unlock()
-	require.Len(t, received, 2)
+	require.Len(t, received, 3)
+	assert.Contains(t, received, StatusStopped)
 	assert.Contains(t, received, StatusStarting)
 	assert.Contains(t, received, StatusConnected)
 }
@@ -75,14 +76,21 @@ func TestStatusTracker_ObserverNotCalledForSameStatus(t *testing.T) {
 	tracker := NewStatusTracker()
 
 	var callCount atomic.Int32
-	done := make(chan struct{}, 2)
+	done := make(chan struct{}, 3)
 	tracker.OnChange(func(s Status) {
 		callCount.Add(1)
 		done <- struct{}{}
 	})
 
+	// Wait for the immediate callback from OnChange
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for immediate observer callback")
+	}
+
 	tracker.Set(StatusStarting)
-	// Wait for the first callback
+	// Wait for the first Set callback
 	select {
 	case <-done:
 	case <-time.After(time.Second):
@@ -98,17 +106,24 @@ func TestStatusTracker_ObserverNotCalledForSameStatus(t *testing.T) {
 	case <-time.After(50 * time.Millisecond):
 	}
 
-	assert.Equal(t, int32(1), callCount.Load())
+	assert.Equal(t, int32(2), callCount.Load())
 }
 
 func TestStatusTracker_ObserverPanicRecovery(t *testing.T) {
 	tracker := NewStatusTracker()
 
-	done := make(chan struct{})
+	done := make(chan struct{}, 2)
 	tracker.OnChange(func(s Status) {
 		defer func() { done <- struct{}{} }()
 		panic("test panic")
 	})
+
+	// Wait for the immediate panic from OnChange
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for panicking observer (immediate)")
+	}
 
 	// Should not panic the caller
 	tracker.Set(StatusStarting)
@@ -116,7 +131,7 @@ func TestStatusTracker_ObserverPanicRecovery(t *testing.T) {
 	select {
 	case <-done:
 	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for panicking observer")
+		t.Fatal("timed out waiting for panicking observer (set)")
 	}
 
 	// Tracker still works after observer panic

@@ -14,7 +14,7 @@
 
 //go:build windows
 
-package tray
+package setup
 
 import (
 	"fmt"
@@ -24,11 +24,25 @@ import (
 
 const taskName = "Adder"
 
-func registerService(cfg ServiceConfig) error {
+// renderUnit returns the command line string as the "unit definition" for
+// comparison.
+func renderUnit(cfg ServiceConfig) ([]byte, error) {
 	command := fmt.Sprintf(`"%s"`, cfg.BinaryPath)
 	if cfg.ConfigPath != "" {
 		command = fmt.Sprintf(`"%s" --config "%s"`, cfg.BinaryPath, cfg.ConfigPath)
 	}
+	return []byte(command), nil
+}
+
+// serviceUnitPath is not applicable for Windows Task Scheduler in the same way,
+// but we'll use a virtual path or just return a constant for consistency.
+func serviceUnitPath() string {
+	return "schtasks://" + taskName
+}
+
+func registerService(cfg ServiceConfig) error {
+	data, _ := renderUnit(cfg)
+	command := string(data)
 
 	out, err := exec.Command( //nolint:gosec // command args constructed from validated config
 		"schtasks.exe",
@@ -40,7 +54,11 @@ func registerService(cfg ServiceConfig) error {
 		"/F",
 	).CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("creating scheduled task: %s: %w", strings.TrimSpace(string(out)), err)
+		return fmt.Errorf(
+			"creating scheduled task: %s: %w",
+			strings.TrimSpace(string(out)),
+			err,
+		)
 	}
 
 	return nil
@@ -54,7 +72,11 @@ func unregisterService() error {
 		"/F",
 	).CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("deleting scheduled task: %s: %w", strings.TrimSpace(string(out)), err)
+		return fmt.Errorf(
+			"deleting scheduled task: %s: %w",
+			strings.TrimSpace(string(out)),
+			err,
+		)
 	}
 
 	return nil
@@ -96,7 +118,11 @@ func startService() error {
 		"schtasks.exe", "/Run", "/TN", taskName,
 	).CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("starting scheduled task: %s: %w", strings.TrimSpace(string(out)), err)
+		return fmt.Errorf(
+			"starting scheduled task: %s: %w",
+			strings.TrimSpace(string(out)),
+			err,
+		)
 	}
 	return nil
 }
@@ -106,7 +132,11 @@ func stopService() error {
 		"schtasks.exe", "/End", "/TN", taskName,
 	).CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("stopping scheduled task: %s: %w", strings.TrimSpace(string(out)), err)
+		return fmt.Errorf(
+			"stopping scheduled task: %s: %w",
+			strings.TrimSpace(string(out)),
+			err,
+		)
 	}
 	return nil
 }

@@ -17,26 +17,19 @@ package tray
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 
+	"github.com/blinklabs-io/adder/tray/setup"
 	"gopkg.in/yaml.v3"
 )
 
 const configFileName = "adder-tray.yaml"
 
-// TrayConfig holds the configuration for the adder-tray application.
-type TrayConfig struct {
-	// APIAddress is the address of the adder API server.
-	APIAddress string `yaml:"api_address"`
-	// APIPort is the port of the adder API server.
-	APIPort uint `yaml:"api_port"`
-	// AdderConfig is the path to the adder configuration file.
-	AdderConfig string `yaml:"adder_config"`
-	// AutoStart controls whether the tray connects to adder
-	// automatically on launch.
-	AutoStart bool `yaml:"auto_start"`
-}
+// TrayConfig is an alias for setup.TrayConfig to maintain backward
+// compatibility.
+type TrayConfig = setup.TrayConfig
 
 // DefaultConfig returns a TrayConfig with sensible defaults.
 func DefaultConfig() TrayConfig {
@@ -45,7 +38,21 @@ func DefaultConfig() TrayConfig {
 		APIPort:     8080,
 		AdderConfig: "",
 		AutoStart:   false,
+		NotifyPrefs: make(map[string]bool),
 	}
+}
+
+// ConfigDir returns the platform-specific directory for storing
+// configuration files. It can be overridden by the ADDER_TRAY_CONFIG_DIR
+// environment variable.
+func ConfigDir() string {
+	return setup.ConfigDir()
+}
+
+// LogDir returns the platform-specific directory for storing log files.
+// It can be overridden by the ADDER_TRAY_LOG_DIR environment variable.
+func LogDir() string {
+	return setup.LogDir()
 }
 
 // ConfigPath returns the full path to the tray configuration file.
@@ -68,6 +75,7 @@ func LoadConfig() (TrayConfig, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
+			slog.Info("config file not found, using defaults", "path", path)
 			return cfg, nil
 		}
 		return cfg, fmt.Errorf("reading config: %w", err)
@@ -78,9 +86,11 @@ func LoadConfig() (TrayConfig, error) {
 	}
 
 	if err := validateConfig(cfg); err != nil {
+		slog.Error("config validation failed", "error", err)
 		return cfg, err
 	}
 
+	slog.Info("successfully loaded config", "path", path)
 	return cfg, nil
 }
 

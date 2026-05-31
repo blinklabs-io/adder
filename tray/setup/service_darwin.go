@@ -14,7 +14,7 @@
 
 //go:build darwin
 
-package tray
+package setup
 
 import (
 	"bytes"
@@ -25,6 +25,7 @@ import (
 	"path/filepath"
 	"strings"
 	"text/template"
+	"time"
 )
 
 const (
@@ -63,8 +64,8 @@ func servicePlistDir() string {
 	return filepath.Join(homeOrTmp(), "Library", "LaunchAgents")
 }
 
-// servicePlistPath returns the full path to the adder LaunchAgent plist.
-func servicePlistPath() string {
+// serviceUnitPath returns the full path to the adder LaunchAgent plist.
+func serviceUnitPath() string {
 	return filepath.Join(servicePlistDir(), launchAgentFile)
 }
 
@@ -77,8 +78,8 @@ func xmlEscapeString(s string) string {
 	return buf.String()
 }
 
-// renderPlist renders the LaunchAgent plist template with the given config.
-func renderPlist(cfg ServiceConfig) ([]byte, error) {
+// renderUnit renders the LaunchAgent plist template with the given config.
+func renderUnit(cfg ServiceConfig) ([]byte, error) {
 	funcMap := template.FuncMap{
 		"xmlEscape": xmlEscapeString,
 	}
@@ -107,18 +108,18 @@ func registerService(cfg ServiceConfig) error {
 		return fmt.Errorf("creating log dir: %w", err)
 	}
 
-	data, err := renderPlist(cfg)
+	data, err := renderUnit(cfg)
 	if err != nil {
 		return err
 	}
 
-	if err := os.WriteFile(servicePlistPath(), data, 0o644); err != nil { //nolint:gosec // plist files need 0644 permissions
+	if err := os.WriteFile(serviceUnitPath(), data, 0o644); err != nil { //nolint:gosec // plist files need 0644 permissions
 		return fmt.Errorf("writing plist file: %w", err)
 	}
 
 	target := fmt.Sprintf("gui/%d", os.Getuid())
 	if out, err := exec.Command( //nolint:gosec // paths are generated internally
-		"launchctl", "bootstrap", target, servicePlistPath(),
+		"launchctl", "bootstrap", target, serviceUnitPath(),
 	).CombinedOutput(); err != nil {
 		if !strings.Contains(string(out), "service already bootstrapped") {
 			return fmt.Errorf("loading launch agent: %s: %w", strings.TrimSpace(string(out)), err)
@@ -138,7 +139,7 @@ func unregisterService() error {
 		}
 	}
 
-	if err := os.Remove(servicePlistPath()); err != nil && !os.IsNotExist(err) {
+	if err := os.Remove(serviceUnitPath()); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("removing plist file: %w", err)
 	}
 
@@ -146,7 +147,7 @@ func unregisterService() error {
 }
 
 func serviceStatusCheck() (ServiceStatus, error) {
-	if _, err := os.Stat(servicePlistPath()); os.IsNotExist(err) {
+	if _, err := os.Stat(serviceUnitPath()); os.IsNotExist(err) {
 		return ServiceNotRegistered, nil
 	}
 
@@ -158,25 +159,56 @@ func serviceStatusCheck() (ServiceStatus, error) {
 }
 
 func startService() error {
+	plistPath := serviceUnitPath()
+	if st, err := os.Stat(plistPath); err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("service not registered: %s does not exist", plistPath)
+		}
+		return fmt.Errorf("checking service plist: %w", err)
+	} else if st.IsDir() {
+		return fmt.Errorf("service plist path is a directory: %s", plistPath)
+	}
+
+	// Check if already running to avoid "Bootstrap failed: 5" errors
+	if err := exec.Command("launchctl", "list", launchAgentLabel).Run(); err == nil {
+		return nil // Already running
+	}
+
 	target := fmt.Sprintf("gui/%d", os.Getuid())
-	if out, err := exec.Command( //nolint:gosec // paths are generated internally
-		"launchctl", "bootstrap", target, servicePlistPath(),
-	).CombinedOutput(); err != nil {
-		if !strings.Contains(string(out), "service already bootstrapped") {
-			return fmt.Errorf("starting launch agent: %s: %w", strings.TrimSpace(string(out)), err)
+	cmd := exec.Command("launchctl", "bootstrap", target, plistPath)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		output := strings.TrimSpace(string(out))
+		// Fallback check for "already bootstrapped" in error output
+		if strings.Contains(output, "service already bootstrapped") ||
+			strings.Contains(output, "Bootstrap failed: 5") {
+			// Already started, this is fine
+		} else {
+			return fmt.Errorf("starting launch agent: %s: %w", output, err)
 		}
 	}
+
+	// Verify that it's actually running after a short settling period
+	time.Sleep(500 * time.Millisecond)
+	status, err := serviceStatusCheck()
+	if err != nil {
+		return fmt.Errorf("verifying service status: %w", err)
+	}
+	if status != ServiceRunning {
+		return fmt.Errorf("service failed to start (status: %s)", status.String())
+	}
+
 	return nil
 }
 
 func stopService() error {
 	target := fmt.Sprintf("gui/%d/%s", os.Getuid(), launchAgentLabel)
-	if out, err := exec.Command( //nolint:gosec // paths are generated internally
-		"launchctl", "bootout", target,
-	).CombinedOutput(); err != nil {
-		if !strings.Contains(string(out), "Could not find service") {
-			return fmt.Errorf("stopping launch agent: %s: %w", strings.TrimSpace(string(out)), err)
+	cmd := exec.Command("launchctl", "bootout", target)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		output := strings.TrimSpace(string(out))
+		if strings.Contains(output, "Could not find service") {
+			return nil
 		}
+		return fmt.Errorf("stopping launch agent: %s: %w", output, err)
 	}
 	return nil
 }

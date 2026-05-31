@@ -10,3 +10,11 @@
 
 # Dependency directories (remove the comment below to include it)
 # vendor/
+**/__debug_bin*
+Adder.app/
+AdderApp.app/
+AdderTray.app/
+
+# Local editor and OS metadata
+.vscode/
+.DS_Store

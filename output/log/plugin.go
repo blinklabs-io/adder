@@ -21,6 +21,7 @@ import (
 
 var cmdlineOptions struct {
 	format string
+	path   string
 }
 
 func init() {
@@ -28,7 +29,7 @@ func init() {
 		plugin.PluginEntry{
 			Type:               plugin.PluginTypeOutput,
 			Name:               "log",
-			Description:        "display events to the console using the logger",
+			Description:        "display events to the console or write to a file",
 			NewFromOptionsFunc: NewFromCmdlineOptions,
 			Options: []plugin.PluginOption{
 				{
@@ -37,6 +38,13 @@ func init() {
 					Description:  "specifies the output format: text (human-readable, default) or json (machine-parseable)",
 					DefaultValue: "text",
 					Dest:         &(cmdlineOptions.format),
+				},
+				{
+					Name:         "path",
+					Type:         plugin.PluginOptionTypeString,
+					Description:  "specifies the file path to write logs to (default is stdout)",
+					DefaultValue: "",
+					Dest:         &(cmdlineOptions.path),
 				},
 			},
 		},
@@ -49,6 +57,7 @@ func NewFromCmdlineOptions() plugin.Plugin {
 			logging.GetLogger().With("plugin", "output.log"),
 		),
 		WithFormat(cmdlineOptions.format),
+		WithFilePath(cmdlineOptions.path),
 	)
 	return p
 }

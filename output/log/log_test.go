@@ -32,11 +32,45 @@ func TestNewDefaults(t *testing.T) {
 	assert.Equal(t, FormatText, l.format)
 }
 
-func TestNewWithOptions(t *testing.T) {
+func TestLogToFile(t *testing.T) {
+	tmpFile, err := os.CreateTemp("", "adder-log-test-*.log")
+	require.NoError(t, err)
+	tmpPath := tmpFile.Name()
+	tmpFile.Close()
+	defer os.Remove(tmpPath)
+
 	l := New(
-		WithFormat(FormatJSON),
+		WithFormat(FormatText),
+		WithFilePath(tmpPath),
 	)
-	assert.Equal(t, FormatJSON, l.format)
+	err = l.Start()
+	require.NoError(t, err)
+
+	evt := event.Event{
+		Type:      "input.block",
+		Timestamp: time.Date(2026, 5, 24, 12, 0, 0, 0, time.UTC),
+		Context: event.BlockContext{
+			BlockNumber: 100,
+			SlotNumber:  2000,
+			Era:         "Babbage",
+		},
+		Payload: event.BlockEvent{
+			BlockHash:        "abc123hash",
+			TransactionCount: 5,
+			BlockBodySize:    1024,
+		},
+	}
+
+	l.InputChan() <- evt
+	err = l.Stop()
+	require.NoError(t, err)
+
+	// Read file content
+	content, err := os.ReadFile(tmpPath)
+	require.NoError(t, err)
+
+	expected := "2026-05-24 12:00:00 BLOCK        slot=2000       block=100      hash=abc123hash era=Babbage txs=5 size=1024\n"
+	assert.Equal(t, expected, string(content))
 }
 
 func TestFormatJSONOutput(t *testing.T) {
