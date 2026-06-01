@@ -73,7 +73,7 @@ jobs:
             os: windows
             arch: amd64
             tray: true
-          - runner: windows-latest
+          - runner: windows-11-arm
             os: windows
             arch: arm64
             tray: true
@@ -106,8 +106,22 @@ jobs:
       - name: Install Linux dependencies
         if: matrix.os == 'linux' && matrix.tray
         run: |
-          sudo apt-get update
-          sudo apt-get install -y gcc libgl1-mesa-dev xorg-dev libxcursor-dev libxrandr-dev libxinerama-dev libxi-dev libxxf86vm-dev
+          if [ "${{ matrix.arch }}" = "arm64" ]; then
+            sudo dpkg --add-architecture arm64
+            sudo apt-get update
+            sudo apt-get install -y \
+              gcc-aarch64-linux-gnu \
+              libgl1-mesa-dev:arm64 \
+              libx11-dev:arm64 \
+              libxcursor-dev:arm64 \
+              libxrandr-dev:arm64 \
+              libxinerama-dev:arm64 \
+              libxi-dev:arm64 \
+              libxxf86vm-dev:arm64
+          else
+            sudo apt-get update
+            sudo apt-get install -y gcc libgl1-mesa-dev xorg-dev libxcursor-dev libxrandr-dev libxinerama-dev libxi-dev libxxf86vm-dev
+          fi
 
       - name: Install FreeBSD tray build toolchain
         if: matrix.os == 'freebsd' && matrix.tray
@@ -131,6 +145,10 @@ jobs:
           if [ "${{ matrix.tray }}" = "true" ]; then
             if [ "${{ matrix.os }}" = "freebsd" ]; then
               "$(go env GOPATH)/bin/fyne-cross" freebsd -arch=${{ matrix.arch }} -name adder-tray -icon .github/assets/adder-logo-with-buffer.png -env GOTOOLCHAIN=auto ./cmd/adder-tray
+            elif [ "${{ matrix.os }}" = "linux" ] && [ "${{ matrix.arch }}" = "arm64" ]; then
+              CC=aarch64-linux-gnu-gcc \
+                PKG_CONFIG_PATH=/usr/lib/aarch64-linux-gnu/pkgconfig \
+                GOOS=linux GOARCH=arm64 make build-tray
             else
               GOOS=${{ matrix.os }} GOARCH=${{ matrix.arch }} make build-tray
             fi
