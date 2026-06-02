@@ -13,6 +13,9 @@ GOMODULE=$(shell grep ^module $(ROOT_DIR)/go.mod | awk '{ print $$2 }')
 # Set version strings based on git tag and current ref
 GO_LDFLAGS=-ldflags "-s -w -X '$(GOMODULE)/internal/version.Version=$(shell git describe --tags --exact-match 2>/dev/null)' -X '$(GOMODULE)/internal/version.CommitHash=$(shell git rev-parse --short HEAD)'"
 
+GO_CGO_CFLAGS=$(shell go env CGO_CFLAGS)
+TRAY_CGO_CFLAGS=$(strip $(GO_CGO_CFLAGS) $(if $(filter windows/arm64,$(GOOS)/$(GOARCH)),-DWINBOOL=BOOL,))
+
 .PHONY: build build-tray mod-tidy clean test bundle-macos
 
 # Alias for building program binary
@@ -46,7 +49,7 @@ test: mod-tidy
 # Build adder-tray binary
 # CGO is required on all platforms for Fyne UI support.
 build-tray: mod-tidy $(GO_FILES)
-	CGO_ENABLED=1 go build \
+	CGO_CFLAGS="$(TRAY_CGO_CFLAGS)" CGO_ENABLED=1 go build \
 		$(GO_LDFLAGS) \
 		-o adder-tray$(if $(filter windows,$(GOOS)),.exe,) \
 		./cmd/adder-tray
