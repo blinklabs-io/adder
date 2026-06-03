@@ -60,18 +60,40 @@ func (p SetupPlan) ToEngineConfig(base config.Config) config.Config {
 		c.Plugin["filter"]["cardano"] = make(map[any]any)
 	}
 
-	// Clear existing filters
+	// Clear existing filters: ToEngineConfig is the single source of
+	// truth for the cardano-filter knobs, so removed targets must not
+	// linger in the persisted config.
 	delete(c.Plugin["filter"]["cardano"], "address")
 	delete(c.Plugin["filter"]["cardano"], "drep")
 	delete(c.Plugin["filter"]["cardano"], "pool")
 
-	switch p.Filter.Template {
-	case "Watch Wallet":
-		c.Plugin["filter"]["cardano"]["address"] = p.Filter.Param
-	case "Track DRep":
-		c.Plugin["filter"]["cardano"]["drep"] = p.Filter.Param
-	case "Monitor Pool":
-		c.Plugin["filter"]["cardano"]["pool"] = p.Filter.Param
+	// MonitorEverything bypasses per-target filtering entirely. Until
+	// the tray subscribes to the firehose and the notifications engine
+	// is wired into the dispatch path, the adder cardano filter is the
+	// thing that limits the event stream — so we populate one knob per
+	// list when MonitorEverything is off. Multi-list combinations get
+	// AND-filtered on transaction events in this interim state (see
+	// Adder-behavior.md); these writes go away once the engine performs
+	// per-rule OR matching.
+	if !p.Filter.MonitorEverything {
+		if len(p.Filter.Wallets) > 0 {
+			c.Plugin["filter"]["cardano"]["address"] = strings.Join(
+				p.Filter.Wallets,
+				",",
+			)
+		}
+		if len(p.Filter.DReps) > 0 {
+			c.Plugin["filter"]["cardano"]["drep"] = strings.Join(
+				p.Filter.DReps,
+				",",
+			)
+		}
+		if len(p.Filter.Pools) > 0 {
+			c.Plugin["filter"]["cardano"]["pool"] = strings.Join(
+				p.Filter.Pools,
+				",",
+			)
+		}
 	}
 
 	// 4. Output Configuration
@@ -100,6 +122,14 @@ func (p SetupPlan) ToEngineConfig(base config.Config) config.Config {
 // SetupPlanFromEngineConfig reconstructs a SetupPlan from an existing engine
 // configuration and tray settings.
 func SetupPlanFromEngineConfig(c config.Config, tray TrayConfig) SetupPlan {
+	// Copy the prefs map rather than aliasing tray.NotifyPrefs:
+	// NotificationPrefs is map[string]bool, so a type conversion shares
+	// the underlying map header. Aliasing would let any later mutation
+	// of plan.Notify silently mutate the caller's TrayConfig.
+	notify := make(NotificationPrefs, len(tray.NotifyPrefs))
+	for k, v := range tray.NotifyPrefs {
+		notify[k] = v
+	}
 	plan := SetupPlan{
 		API: APIConfig{
 			Address: c.Api.ListenAddress,
@@ -108,7 +138,7 @@ func SetupPlanFromEngineConfig(c config.Config, tray TrayConfig) SetupPlan {
 		App: AppConfig{
 			AutoStart: tray.AutoStart,
 		},
-		Notify: NotificationPrefs(tray.NotifyPrefs),
+		Notify: notify,
 	}
 
 	// Network
@@ -127,20 +157,28 @@ func SetupPlanFromEngineConfig(c config.Config, tray TrayConfig) SetupPlan {
 		}
 	}
 
-	// Filter
-	if cardano, ok := c.Plugin["filter"]["cardano"]; ok {
+	// Filter — reverse of ToEngineConfig's write. Each present knob
+	// becomes a (possibly comma-joined) list on the plan. Both a
+	// missing cardano-filter section AND a present-but-empty one map
+	// to MonitorEverything, so an imported config without the filter
+	// subtree round-trips cleanly through the wizard instead of
+	// leaving the user stuck at step 3.
+	cardano, hasCardano := c.Plugin["filter"]["cardano"]
+	if hasCardano {
 		if addr, ok := cardano["address"]; ok {
-			plan.Filter.Template = "Watch Wallet"
-			plan.Filter.Param = fmt.Sprint(addr)
-		} else if drep, ok := cardano["drep"]; ok {
-			plan.Filter.Template = "Track DRep"
-			plan.Filter.Param = fmt.Sprint(drep)
-		} else if pool, ok := cardano["pool"]; ok {
-			plan.Filter.Template = "Monitor Pool"
-			plan.Filter.Param = fmt.Sprint(pool)
-		} else {
-			plan.Filter.Template = "Monitor Everything"
+			plan.Filter.Wallets = splitCSV(fmt.Sprint(addr))
 		}
+		if drep, ok := cardano["drep"]; ok {
+			plan.Filter.DReps = splitCSV(fmt.Sprint(drep))
+		}
+		if pool, ok := cardano["pool"]; ok {
+			plan.Filter.Pools = splitCSV(fmt.Sprint(pool))
+		}
+	}
+	if len(plan.Filter.Wallets) == 0 &&
+		len(plan.Filter.DReps) == 0 &&
+		len(plan.Filter.Pools) == 0 {
+		plan.Filter.MonitorEverything = true
 	}
 
 	// Output
@@ -167,4 +205,20 @@ func SetupPlanFromEngineConfig(c config.Config, tray TrayConfig) SetupPlan {
 	}
 
 	return plan
+}
+
+// splitCSV splits a comma-separated string into trimmed, non-empty
+// entries — the inverse of strings.Join(list, ",") used by
+// ToEngineConfig when persisting each cardano-filter knob.
+func splitCSV(s string) []string {
+	if strings.TrimSpace(s) == "" {
+		return nil
+	}
+	var out []string
+	for _, p := range strings.Split(s, ",") {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }

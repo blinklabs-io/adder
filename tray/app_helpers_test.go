@@ -217,7 +217,7 @@ func TestSetupTrayBuildsDesktopMenu(t *testing.T) {
 	deskApp := &desktopTestApp{App: baseApp}
 	reconfigurePlan := setup.SetupPlan{
 		Network: setup.NetworkConfig{Name: "preview"},
-		Filter:  setup.FilterConfig{Template: "Monitor Everything"},
+		Filter:  setup.FilterConfig{MonitorEverything: true},
 		API:     setup.APIConfig{Address: "127.0.0.1", Port: 8080},
 		Output: setup.OutputConfig{
 			Type:   "none",
@@ -342,7 +342,7 @@ func TestOnWizardFinishReloadsTrayConfigOnSuccess(t *testing.T) {
 
 	trayApp.onWizardFinish(context.Background(), setup.SetupPlan{
 		Network: setup.NetworkConfig{Name: "mainnet"},
-		Filter:  setup.FilterConfig{Template: "Monitor Everything"},
+		Filter:  setup.FilterConfig{MonitorEverything: true},
 		API:     setup.APIConfig{Address: "127.0.0.1", Port: 9090},
 		Output:  setup.OutputConfig{Type: "none", Config: make(map[string]string)},
 		Notify:  make(setup.NotificationPrefs),

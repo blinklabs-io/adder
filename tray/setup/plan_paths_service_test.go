@@ -25,87 +25,170 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestValidateTemplateParam(t *testing.T) {
+func TestValidateWalletAddr(t *testing.T) {
 	tests := []struct {
 		name      string
-		template  string
 		param     string
 		wantError string
 	}{
+		{name: "payment address", param: "addr1test"},
+		{name: "stake address", param: "stake1test"},
 		{
-			name:     "monitor everything accepts empty param",
-			template: "Monitor Everything",
+			name:      "empty rejected",
+			param:     "",
+			wantError: "must not be empty",
 		},
 		{
-			name:      "wallet requires param",
-			template:  "Watch Wallet",
-			wantError: "parameter is required",
-		},
-		{
-			name:     "wallet accepts comma separated addresses",
-			template: "Watch Wallet",
-			param:    "addr1test, stake1test",
-		},
-		{
-			name:      "wallet rejects unknown prefix",
-			template:  "Watch Wallet",
+			name:      "DRep input → cross-template hint",
 			param:     "drep1test",
+			wantError: "did you mean to pick \"Track DRep\"",
+		},
+		{
+			name:      "pool input → cross-template hint",
+			param:     "pool1test",
+			wantError: "did you mean to pick \"Monitor Pool\"",
+		},
+		{
+			name:      "truly unknown prefix",
+			param:     "xyz1test",
 			wantError: "invalid address",
 		},
-		{
-			name:      "empty list entry is rejected",
-			template:  "Watch Wallet",
-			param:     "addr1test,",
-			wantError: "empty entry",
-		},
-		{
-			name:     "drep accepts bech32",
-			template: "Track DRep",
-			param:    "drep1test",
-		},
-		{
-			name:     "drep accepts hex",
-			template: "Track DRep",
-			param:    "deadbeef",
-		},
-		{
-			name:      "drep rejects non hex",
-			template:  "Track DRep",
-			param:     "not-hex",
-			wantError: "invalid DRep ID",
-		},
-		{
-			name:     "pool accepts bech32",
-			template: "Monitor Pool",
-			param:    "pool1test",
-		},
-		{
-			name:     "pool accepts hex",
-			template: "Monitor Pool",
-			param:    "feedface",
-		},
-		{
-			name:      "pool rejects non hex",
-			template:  "Monitor Pool",
-			param:     "not-hex",
-			wantError: "invalid Pool ID",
-		},
-		{
-			name:     "unknown template currently does not enforce format",
-			template: "Future Template",
-			param:    "anything",
-		},
 	}
-
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			err := ValidateTemplateParam(tc.template, tc.param)
+			err := ValidateWalletAddr(tc.param)
 			if tc.wantError != "" {
 				require.Error(t, err)
 				assert.Contains(t, err.Error(), tc.wantError)
 				return
 			}
 			assert.NoError(t, err)
+		})
+	}
+}
+
+func TestValidateDRepID(t *testing.T) {
+	tests := []struct {
+		name      string
+		param     string
+		wantError string
+	}{
+		{name: "bech32", param: "drep1test"},
+		{name: "hex", param: "deadbeef"},
+		{
+			// Regression: hex.DecodeString("") returns nil, so the
+			// validator must reject "" explicitly before falling
+			// through to the hex check.
+			name:      "empty rejected",
+			param:     "",
+			wantError: "must not be empty",
+		},
+		{
+			name:      "pool input → cross-template hint",
+			param:     "pool1w7c2j0px43jmudhf48ezp7dy8j7904c9l3wc7809lhh2z026hch",
+			wantError: "did you mean to pick \"Monitor Pool\"",
+		},
+		{
+			name:      "wallet input → cross-template hint",
+			param:     "addr1xyz",
+			wantError: "did you mean to pick \"Watch Wallet\"",
+		},
+		{
+			name:      "non hex",
+			param:     "not-hex",
+			wantError: "invalid DRep ID",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := ValidateDRepID(tc.param)
+			if tc.wantError != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tc.wantError)
+				return
+			}
+			assert.NoError(t, err)
+		})
+	}
+}
+
+func TestValidatePoolID(t *testing.T) {
+	tests := []struct {
+		name      string
+		param     string
+		wantError string
+	}{
+		{name: "bech32", param: "pool1test"},
+		{name: "hex", param: "feedface"},
+		{
+			name:      "empty rejected",
+			param:     "",
+			wantError: "must not be empty",
+		},
+		{
+			name:      "DRep input → cross-template hint",
+			param:     "drep1abc",
+			wantError: "did you mean to pick \"Track DRep\"",
+		},
+		{
+			name:      "wallet input → cross-template hint",
+			param:     "stake1xyz",
+			wantError: "did you mean to pick \"Watch Wallet\"",
+		},
+		{
+			name:      "non hex",
+			param:     "not-hex",
+			wantError: "invalid Pool ID",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := ValidatePoolID(tc.param)
+			if tc.wantError != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tc.wantError)
+				return
+			}
+			assert.NoError(t, err)
+		})
+	}
+}
+
+func TestSummarizeFilter(t *testing.T) {
+	cases := []struct {
+		name   string
+		filter FilterConfig
+		want   string
+	}{
+		{"empty", FilterConfig{}, "nothing configured"},
+		{
+			"everything",
+			FilterConfig{MonitorEverything: true},
+			"everything",
+		},
+		{
+			"single wallet",
+			FilterConfig{Wallets: []string{"addr1"}},
+			"1 wallet",
+		},
+		{
+			"two wallets",
+			FilterConfig{Wallets: []string{"a", "b"}},
+			"2 wallets",
+		},
+		{
+			"combined",
+			FilterConfig{
+				Wallets: []string{"a", "b"},
+				DReps:   []string{"d"},
+				Pools:   []string{"p1", "p2", "p3"},
+			},
+			"2 wallets, 1 DRep, 3 pools",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, SummarizeFilter(tc.filter))
 		})
 	}
 }
@@ -253,7 +336,10 @@ func TestServiceRenderingAndSafeStatusPaths(t *testing.T) {
 				strings.Contains(err.Error(), "not implemented"),
 		)
 
-		err = (&OSManager{}).RestartIfConfigChanged("/tmp/adder", "/tmp/config.yaml")
+		err = (&OSManager{}).RestartIfConfigChanged(
+			"/tmp/adder",
+			"/tmp/config.yaml",
+		)
 		require.Error(t, err)
 		assert.True(t,
 			strings.Contains(err.Error(), "service not registered") ||
@@ -278,7 +364,9 @@ func TestServiceConfigValidationAndStatusStrings(t *testing.T) {
 
 func TestRegisterServiceCreateDirError(t *testing.T) {
 	if runtime.GOOS == "windows" || runtime.GOOS == "freebsd" {
-		t.Skip("platform service command differs or is intentionally unsupported")
+		t.Skip(
+			"platform service command differs or is intentionally unsupported",
+		)
 	}
 
 	notDir := filepath.Join(t.TempDir(), "not-a-dir")
@@ -293,7 +381,9 @@ func TestRegisterServiceCreateDirError(t *testing.T) {
 
 func TestServiceLifecycleWithFakePlatformCommand(t *testing.T) {
 	if runtime.GOOS == "windows" || runtime.GOOS == "freebsd" {
-		t.Skip("platform service command differs or is intentionally unsupported")
+		t.Skip(
+			"platform service command differs or is intentionally unsupported",
+		)
 	}
 
 	home := t.TempDir()
@@ -317,8 +407,14 @@ func TestServiceLifecycleWithFakePlatformCommand(t *testing.T) {
 
 	require.NoError(t, mgr.EnsureRunning())
 
-	require.NoError(t, os.WriteFile(serviceUnitFilePath(), []byte("stale"), 0o644))
-	require.NoError(t, mgr.RestartIfConfigChanged(cfg.BinaryPath, cfg.ConfigPath))
+	require.NoError(
+		t,
+		os.WriteFile(serviceUnitFilePath(), []byte("stale"), 0o644),
+	)
+	require.NoError(
+		t,
+		mgr.RestartIfConfigChanged(cfg.BinaryPath, cfg.ConfigPath),
+	)
 
 	require.NoError(t, StartService())
 	require.NoError(t, StopService())
@@ -344,6 +440,9 @@ exit 0
 	}
 
 	binDir := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(binDir, name), []byte(script), 0o755))
+	require.NoError(
+		t,
+		os.WriteFile(filepath.Join(binDir, name), []byte(script), 0o755),
+	)
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 }

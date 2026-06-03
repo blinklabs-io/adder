@@ -15,9 +15,7 @@
 package wizard
 
 import (
-	"errors"
 	"fmt"
-	"runtime"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -93,17 +91,23 @@ func (s *notificationsStep) createLayout() fyne.CanvasObject {
 	s.verifyResult.Wrapping = fyne.TextWrapWord
 	s.verifyResult.Hide()
 
-	permBtn := widget.NewButtonWithIcon("Send Test Notification", theme.ConfirmIcon(), func() {
-		// Trigger the native permission dialog
-		fyne.CurrentApp().SendNotification(fyne.NewNotification(
-			"Adder Verification",
-			"Did this notification appear? If so, "+
-				"permissions are correctly set.",
-		))
-		s.verifyBox.Show()
-		s.verifyResult.SetText("A test notification was sent. Did you see it?")
-		s.verifyResult.Show()
-	})
+	permBtn := widget.NewButtonWithIcon(
+		"Send Test Notification",
+		theme.ConfirmIcon(),
+		func() {
+			// Trigger the native permission dialog
+			fyne.CurrentApp().SendNotification(fyne.NewNotification(
+				"Adder Verification",
+				"Did this notification appear? If so, "+
+					"permissions are correctly set.",
+			))
+			s.verifyBox.Show()
+			s.verifyResult.SetText(
+				"A test notification was sent. Did you see it?",
+			)
+			s.verifyResult.Show()
+		},
+	)
 	permBtn.Importance = widget.HighImportance
 
 	s.verifyBox = container.NewHBox(
@@ -122,7 +126,8 @@ func (s *notificationsStep) createLayout() fyne.CanvasObject {
 	s.verifyBox.Hide()
 
 	s.summaryLine = widget.NewLabel("")
-	if s.plan != nil && s.plan.Output.Type != "" && s.plan.Output.Type != "none" {
+	if s.plan != nil && s.plan.Output.Type != "" &&
+		s.plan.Output.Type != "none" {
 		s.summaryLine.SetText(
 			fmt.Sprintf("Events will also be sent to %s.", s.plan.Output.Type),
 		)
@@ -138,8 +143,14 @@ func (s *notificationsStep) createLayout() fyne.CanvasObject {
 		widget.NewSeparator(),
 		s.connection,
 		widget.NewSeparator(),
-		widget.NewLabelWithStyle("System Verification", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
-		widget.NewLabel("macOS requires explicit permission for notifications."),
+		widget.NewLabelWithStyle(
+			"System Verification",
+			fyne.TextAlignLeading,
+			fyne.TextStyle{Bold: true},
+		),
+		widget.NewLabel(
+			"macOS requires explicit permission for notifications.",
+		),
 		permBtn,
 		s.verifyResult,
 		s.verifyBox,
@@ -147,48 +158,94 @@ func (s *notificationsStep) createLayout() fyne.CanvasObject {
 	)
 }
 
+// getCheckLabels returns the notification-preference checkboxes to show
+// for the current plan. When MonitorEverything is on we surface the
+// existing coarse set; otherwise we show the deduped union of the
+// per-kind prefs whose list is non-empty, so a user watching a wallet
+// AND a DRep sees both transaction and governance toggles.
 func (s *notificationsStep) getCheckLabels() []string {
-	switch s.plan.Filter.Template {
-	case "Monitor Everything":
+	if s.plan.Filter.MonitorEverything {
 		return []string{
 			setup.NotifyPrefBlocksMinted,
 			setup.NotifyPrefIncomingTx,
 			setup.NotifyPrefVotesCast,
 		}
-	case "Watch Wallet":
-		return []string{
-			setup.NotifyPrefIncomingTx,
+	}
+
+	// Order matters for UI stability — preserve the per-kind grouping
+	// (wallet → DRep → pool) the user is used to. seen guards against
+	// duplicates when two kinds share a pref (e.g. NotifyPrefBlocksMinted
+	// is relevant for both pool and "everything", but at most one of
+	// those branches runs here).
+	var out []string
+	seen := map[string]bool{}
+	add := func(keys ...string) {
+		for _, k := range keys {
+			if !seen[k] {
+				seen[k] = true
+				out = append(out, k)
+			}
+		}
+	}
+	if len(s.plan.Filter.Wallets) > 0 {
+		add(setup.NotifyPrefIncomingTx,
 			setup.NotifyPrefOutgoingTx,
-			setup.NotifyPrefTokenTransfers,
-		}
-	case "Track DRep":
-		return []string{
-			setup.NotifyPrefGovProposals,
+			setup.NotifyPrefTokenTransfers)
+	}
+	if len(s.plan.Filter.DReps) > 0 {
+		add(setup.NotifyPrefGovProposals,
 			setup.NotifyPrefVotesCast,
-			setup.NotifyPrefRegChanges,
-		}
-	case "Monitor Pool":
-		return []string{
-			setup.NotifyPrefBlocksMinted,
-			setup.NotifyPrefPoolParams,
-		}
+			setup.NotifyPrefRegChanges)
 	}
-	return nil
+	if len(s.plan.Filter.Pools) > 0 {
+		add(setup.NotifyPrefBlocksMinted,
+			setup.NotifyPrefPoolParams)
+	}
+	return out
 }
 
+// Validate gates the wizard's Next/Finish button. The "Send Test
+// Notification" button remains available so the user can confirm macOS
+// has granted permission, but it is no longer required — blocking the
+// wizard on it was annoying during active development and unnecessary
+// in steady state: a user who never sees a notification can re-grant
+// permission via System Settings without redoing setup.
 func (s *notificationsStep) Validate() error {
-	if runtime.GOOS != "darwin" {
-		return nil
-	}
-	if !s.verified {
-		return errors.New("please verify that system notifications are working before finishing")
-	}
 	return nil
 }
 
+// Apply writes the wizard's notification preferences onto plan,
+// rebuilding plan.Notify so stale TRUE keys from earlier wizard runs
+// (e.g. user switched from "Watch Wallet" to DRep-only) do not survive
+// and re-trigger notifications the user no longer wants. Explicit user
+// "no" answers (false values) for prefs that step 4 is not currently
+// rendering ARE preserved — otherwise switching templates would silently
+// re-default disabled toggles back to true. The connection toggle is
+// independent of the target set and always written.
 func (s *notificationsStep) Apply(plan *setup.SetupPlan) {
+	// Capture explicit user "no" answers for off-display prefs before
+	// we replace the map.
+	preservedFalse := map[string]bool{}
+	for k, v := range plan.Notify {
+		if v {
+			continue // only preserve explicit negatives
+		}
+		if _, shown := s.checks[k]; shown {
+			continue // the current checkbox value will win
+		}
+		if k == setup.NotifyPrefConnectionIssues {
+			continue // handled below
+		}
+		preservedFalse[k] = false
+	}
+
+	plan.Notify = make(setup.NotificationPrefs,
+		len(s.checks)+len(preservedFalse)+1)
 	for label, check := range s.checks {
 		plan.Notify[label] = check.Checked
+	}
+	for k := range preservedFalse {
+		plan.Notify[k] = false
 	}
 	plan.Notify[setup.NotifyPrefConnectionIssues] = s.connection.Checked
 }

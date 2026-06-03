@@ -174,11 +174,12 @@ func (a *App) onWizardFinish(
 			if ctrl != nil {
 				ctrl.Close()
 			}
+			summary := setup.SummarizeFilter(plan.Filter)
 			successMsg := fmt.Sprintf(
 				"Successfully connected to Adder API at %s:%d.\n\nMonitoring: %s",
 				plan.API.Address,
 				plan.API.Port,
-				plan.Filter.Template,
+				summary,
 			)
 
 			// Show completion dialog if we have a window available
@@ -187,7 +188,7 @@ func (a *App) onWizardFinish(
 			}
 
 			a.fyneApp.SendNotification(fyne.NewNotification("Adder Started",
-				"Now monitoring "+plan.Filter.Template))
+				"Now monitoring "+summary))
 		})
 	}()
 }

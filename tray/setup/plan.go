@@ -61,10 +61,17 @@ type NetworkConfig struct {
 	CustomPort    uint
 }
 
-// FilterConfig defines the monitoring template and its parameters.
+// FilterConfig defines what the user wants to monitor. The three lists
+// (Wallets, DReps, Pools) can be populated independently; the engine
+// emits one rule per entry across all of them, so the user can watch a
+// wallet AND track a DRep AND monitor a pool at the same time. When
+// MonitorEverything is true the per-target lists are ignored and the
+// engine emits a single coarse rule per event type instead.
 type FilterConfig struct {
-	Template string // Watch Wallet, Track DRep, Monitor Pool, Monitor Everything
-	Param    string // Comma-separated list of IDs
+	MonitorEverything bool
+	Wallets           []string // addr1.../stake1...
+	DReps             []string // drep1... or hex
+	Pools             []string // pool1... or hex
 }
 
 // OutputConfig defines the external event destination.
@@ -87,48 +94,147 @@ type AppConfig struct {
 	AutoStart bool
 }
 
-// ValidateTemplateParam checks if the given parameter (or list of parameters)
-// is valid for the selected template.
-func ValidateTemplateParam(template, param string) error {
-	if template == "Monitor Everything" {
-		return nil
-	}
-	if param == "" {
-		return errors.New("parameter is required")
-	}
+// Template names used by the wizard's three per-target sections. These
+// strings are surfaced in cross-template hints (e.g. "looks like a
+// Monitor Pool parameter — did you mean to pick \"Monitor Pool\"?") so
+// they must match the wizard's section labels exactly.
+const (
+	templateWallet = "Watch Wallet"
+	templateDRep   = "Track DRep"
+	templatePool   = "Monitor Pool"
+)
 
-	parts := strings.Split(param, ",")
-	for _, p := range parts {
-		p = strings.TrimSpace(p)
-		if p == "" {
-			return errors.New("invalid parameter format: empty entry found in list")
-		}
-		if err := validateSingleParam(template, p); err != nil {
-			return err
-		}
+// SummarizeFilter returns a human-readable one-line description of a
+// FilterConfig for use in dialogs, notifications, and the wizard's
+// "Current configuration" line. Examples:
+//
+//	"everything"
+//	"2 wallets, 1 DRep, 1 pool"
+//	"nothing configured"
+func SummarizeFilter(f FilterConfig) string {
+	if f.MonitorEverything {
+		return "everything"
 	}
-	return nil
+	var parts []string
+	if n := len(f.Wallets); n > 0 {
+		parts = append(parts, plural(n, "wallet", "wallets"))
+	}
+	if n := len(f.DReps); n > 0 {
+		parts = append(parts, plural(n, "DRep", "DReps"))
+	}
+	if n := len(f.Pools); n > 0 {
+		parts = append(parts, plural(n, "pool", "pools"))
+	}
+	if len(parts) == 0 {
+		return "nothing configured"
+	}
+	return strings.Join(parts, ", ")
 }
 
-func validateSingleParam(template, p string) error {
-	switch template {
-	case "Watch Wallet":
-		if !strings.HasPrefix(p, "addr") &&
-			!strings.HasPrefix(p, "stake") {
-			return fmt.Errorf("invalid address: %s (must start with 'addr' or 'stake')", p)
+func plural(n int, singular, plural string) string {
+	if n == 1 {
+		return fmt.Sprintf("%d %s", n, singular)
+	}
+	return fmt.Sprintf("%d %s", n, plural)
+}
+
+// errEmptyParam is returned by each validator when called with an empty
+// string. hex.DecodeString("") returns nil, so without this guard the
+// DRep and Pool validators would silently accept "" as valid hex.
+var errEmptyParam = errors.New("parameter must not be empty")
+
+// ValidateWalletAddr checks that p is a Cardano payment or stake
+// address (Phase 1: prefix check only — bech32 checksum validation is a
+// follow-up). Surfaces a cross-template hint when the input's HRP
+// matches a different template.
+func ValidateWalletAddr(p string) error {
+	if p == "" {
+		return errEmptyParam
+	}
+	if strings.HasPrefix(p, "addr") ||
+		strings.HasPrefix(p, "stake") {
+		return nil
+	}
+	if hint := wrongTemplateHint(p, templateWallet); hint != "" {
+		return errors.New(hint)
+	}
+	return fmt.Errorf(
+		"invalid address: %s (must start with 'addr' or 'stake')",
+		p,
+	)
+}
+
+// ValidateDRepID checks that p is a DRep ID (drep1-prefixed bech32 or
+// hex bytes). Surfaces a cross-template hint when the input's HRP
+// matches a different template.
+func ValidateDRepID(p string) error {
+	if p == "" {
+		return errEmptyParam
+	}
+	if strings.HasPrefix(p, "drep1") {
+		return nil
+	}
+	if _, err := hex.DecodeString(p); err == nil {
+		return nil
+	}
+	if hint := wrongTemplateHint(p, templateDRep); hint != "" {
+		return errors.New(hint)
+	}
+	return fmt.Errorf(
+		"invalid DRep ID: %s "+
+			"(must start with 'drep1' or be hex bytes)",
+		p,
+	)
+}
+
+// ValidatePoolID checks that p is a stake-pool ID (pool1-prefixed
+// bech32 or hex bytes). Surfaces a cross-template hint when the input's
+// HRP matches a different template.
+func ValidatePoolID(p string) error {
+	if p == "" {
+		return errEmptyParam
+	}
+	if strings.HasPrefix(p, "pool1") {
+		return nil
+	}
+	if _, err := hex.DecodeString(p); err == nil {
+		return nil
+	}
+	if hint := wrongTemplateHint(p, templatePool); hint != "" {
+		return errors.New(hint)
+	}
+	return fmt.Errorf(
+		"invalid Pool ID: %s "+
+			"(must start with 'pool1' or be hex bytes)",
+		p,
+	)
+}
+
+// wrongTemplateHint returns a user-facing message when p's bech32 HRP
+// matches a different template than the one the user selected, so the
+// wizard can suggest switching sections rather than just rejecting the
+// input as malformed. Returns "" when no other template's HRP matches,
+// letting callers fall back to a generic format error.
+func wrongTemplateHint(p, selected string) string {
+	type hrp struct{ prefix, template string }
+	// HRPs are disjoint so prefix order does not matter here.
+	candidates := []hrp{
+		{"drep1", templateDRep},
+		{"pool1", templatePool},
+		{"addr", templateWallet},
+		{"stake", templateWallet},
+	}
+	for _, c := range candidates {
+		if c.template == selected {
+			continue
 		}
-	case "Track DRep":
-		if !strings.HasPrefix(p, "drep1") {
-			if _, err := hex.DecodeString(p); err != nil {
-				return fmt.Errorf("invalid DRep ID: %s (must be bech32 or hex)", p)
-			}
-		}
-	case "Monitor Pool":
-		if !strings.HasPrefix(p, "pool1") {
-			if _, err := hex.DecodeString(p); err != nil {
-				return fmt.Errorf("invalid Pool ID: %s (must be bech32 or hex)", p)
-			}
+		if strings.HasPrefix(p, c.prefix) {
+			return fmt.Sprintf(
+				"%q looks like a %s parameter — "+
+					"did you mean to pick %q?",
+				p, c.template, c.template,
+			)
 		}
 	}
-	return nil
+	return ""
 }
