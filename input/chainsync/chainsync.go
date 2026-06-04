@@ -270,8 +270,16 @@ func (c *ChainSync) setupConnection() error {
 	} else if c.dialFamily == "" || c.dialAddress == "" {
 		return errors.New("you must specify a host/port, UNIX socket path, or well-known network name")
 	}
+	blockFetchConfig, err := blockfetch.NewConfig(
+		blockfetch.WithBlockFunc(c.handleBlockFetchBlock),
+		blockfetch.WithBatchDoneFunc(c.handleBlockFetchBatchDone),
+		// Set the recv queue size to larger than our block batch size
+		blockfetch.WithRecvQueueSize(512),
+	)
+	if err != nil {
+		return err
+	}
 	// Create connection
-	var err error
 	c.oConn, err = ouroboros.NewConnection(
 		ouroboros.WithNetworkMagic(c.networkMagic),
 		ouroboros.WithNodeToNode(useNtn),
@@ -287,14 +295,7 @@ func (c *ChainSync) setupConnection() error {
 				ochainsync.WithRecvQueueSize(100),
 			),
 		),
-		ouroboros.WithBlockFetchConfig(
-			blockfetch.NewConfig(
-				blockfetch.WithBlockFunc(c.handleBlockFetchBlock),
-				blockfetch.WithBatchDoneFunc(c.handleBlockFetchBatchDone),
-				// Set the recv queue size to larger than our block batch size
-				blockfetch.WithRecvQueueSize(512),
-			),
-		),
+		ouroboros.WithBlockFetchConfig(blockFetchConfig),
 	)
 	if err != nil {
 		return err
