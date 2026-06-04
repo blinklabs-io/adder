@@ -56,7 +56,7 @@ Events are also available via the /events WebSocket/SSE API endpoint.`,
 		SilenceUsage: true,
 		Args:         cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return run()
+			return run(cmd)
 		},
 	}
 )
@@ -93,7 +93,7 @@ func init() {
 	}
 }
 
-func run() error {
+func run(cmd *cobra.Command) error {
 	if cfg.Version {
 		fmt.Printf("%s %s\n", programName, version.GetVersionString())
 		return nil
@@ -115,8 +115,9 @@ func run() error {
 		return nil
 	}
 
-	// Load config
-	if err := cfg.Load(cfg.ConfigFile); err != nil {
+	// Load config; pass the FlagSet so CLI-explicit flags win over
+	// YAML/env per the documented precedence (CLI > YAML > env).
+	if err := cfg.LoadWithFlags(cfg.ConfigFile, cmd.Flags()); err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
