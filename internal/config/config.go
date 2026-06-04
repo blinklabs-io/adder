@@ -135,22 +135,32 @@ var globalConfig = &Config{
 	},
 }
 
+// Load reads configuration from the environment and, if configFile is
+// non-empty, from the YAML file at that path, then applies populate*
+// defaults. Effective precedence: YAML > env > pre-set/default field
+// values on *c.
+//
+// Load is not safe to call more than once on the same *Config: neither
+// envconfig nor yaml clears fields that are absent from their source,
+// so a key removed from the YAML between reloads will retain whatever
+// value the previous Load left behind. Callers that need to reload
+// must construct a fresh *Config (and re-bind flags) on each call.
 func (c *Config) Load(configFile string) error {
-	// Load config file as YAML if provided
+	// Load env first so YAML (loaded next) takes precedence over env per
+	// the documented order (CLI > YAML > env). envconfig and yaml both
+	// only overwrite fields that are present in their source, so the
+	// last writer wins per-key.
+	if err := envconfig.Process("dummy", c); err != nil {
+		return fmt.Errorf("error processing environment: %w", err)
+	}
 	if configFile != "" {
 		buf, err := os.ReadFile(configFile)
 		if err != nil {
 			return fmt.Errorf("error reading config file: %w", err)
 		}
-		err = yaml.Unmarshal(buf, c)
-		if err != nil {
+		if err := yaml.Unmarshal(buf, c); err != nil {
 			return fmt.Errorf("error parsing config file: %w", err)
 		}
-	}
-	// Load config values from environment variables
-	err := envconfig.Process("dummy", c)
-	if err != nil {
-		return fmt.Errorf("error processing environment: %w", err)
 	}
 	// Populate Byron and Shelley genesis configs and transition epoch
 	c.populateByronGenesis()
