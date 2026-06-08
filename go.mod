@@ -8,7 +8,7 @@ require (
 	github.com/SundaeSwap-finance/kugo v1.3.0
 	github.com/SundaeSwap-finance/ogmigo/v6 v6.2.1
 	github.com/blinklabs-io/gouroboros v0.180.1
-	github.com/blinklabs-io/plutigo v0.1.14
+	github.com/blinklabs-io/plutigo v0.1.15
 	github.com/btcsuite/btcd/btcutil v1.2.0
 	github.com/gen2brain/beeep v0.11.2
 	github.com/gin-gonic/gin v1.12.0
