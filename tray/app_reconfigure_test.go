@@ -56,8 +56,9 @@ func TestReconfigurePlanLoadsSavedEngineConfig(t *testing.T) {
 	sourcePlan := setup.SetupPlan{
 		Network: setup.NetworkConfig{Name: "preprod"},
 		Filter: setup.FilterConfig{
-			Template: "Track DRep",
-			Param:    "drep1qxy648m6k96350t4tql82q0e8sqpks54uvlttclat4e0z6298lyp4578c7l655e09f8v7mwy5h653zls2nd335g58xvsf2y066",
+			DReps: []string{
+				"drep1qxy648m6k96350t4tql82q0e8sqpks54uvlttclat4e0z6298lyp4578c7l655e09f8v7mwy5h653zls2nd335g58xvsf2y066",
+			},
 		},
 		Output: setup.OutputConfig{
 			Type: "webhook",
@@ -87,8 +88,11 @@ func TestReconfigurePlanLoadsSavedEngineConfig(t *testing.T) {
 
 	assert.Equal(t, savedPath, store.loadedPath)
 	assert.Equal(t, sourcePlan.Network.Name, got.Network.Name)
-	assert.Equal(t, sourcePlan.Filter.Template, got.Filter.Template)
-	assert.Equal(t, sourcePlan.Filter.Param, got.Filter.Param)
+	assert.Equal(t, sourcePlan.Filter.MonitorEverything,
+		got.Filter.MonitorEverything)
+	assert.Equal(t, sourcePlan.Filter.Wallets, got.Filter.Wallets)
+	assert.Equal(t, sourcePlan.Filter.DReps, got.Filter.DReps)
+	assert.Equal(t, sourcePlan.Filter.Pools, got.Filter.Pools)
 	assert.Equal(t, sourcePlan.Output.Type, got.Output.Type)
 	assert.Equal(t, sourcePlan.Output.Config, got.Output.Config)
 	assert.Equal(t, sourcePlan.API.Address, got.API.Address)

@@ -74,8 +74,9 @@ func TestLocalStoreEngineRoundTrip(t *testing.T) {
 	plan := SetupPlan{
 		Network: NetworkConfig{Name: "preview"},
 		Filter: FilterConfig{
-			Template: "Watch Wallet",
-			Param:    "addr1qxy648m6k96350t4tql82q0e8sqpks54uvlttclat4e0z6298lyp4578c7l655e09f8v7mwy5h653zls2nd335g58xvsf2y066",
+			Wallets: []string{
+				"addr1qxy648m6k96350t4tql82q0e8sqpks54uvlttclat4e0z6298lyp4578c7l655e09f8v7mwy5h653zls2nd335g58xvsf2y066",
+			},
 		},
 		Output: OutputConfig{
 			Type: "webhook",
@@ -95,7 +96,8 @@ func TestLocalStoreEngineRoundTrip(t *testing.T) {
 	assert.Equal(t, want.Api.ListenAddress, got.Api.ListenAddress)
 	assert.Equal(t, want.Api.ListenPort, got.Api.ListenPort)
 	assert.Equal(t, "preview", got.Plugin["input"]["chainsync"]["network"])
-	assert.Equal(t, plan.Filter.Param, got.Plugin["filter"]["cardano"]["address"])
+	assert.Equal(t, plan.Filter.Wallets[0],
+		got.Plugin["filter"]["cardano"]["address"])
 	assert.Equal(t, "webhook", got.Output)
 	assert.Equal(t, "https://example.com/webhook", got.Plugin["output"]["webhook"]["url"])
 }

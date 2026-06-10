@@ -44,8 +44,9 @@ func TestHappyPath_WizardFinish(t *testing.T) {
 	plan := setup.SetupPlan{
 		Network: setup.NetworkConfig{Name: "preprod"},
 		Filter: setup.FilterConfig{
-			Template: "Watch Wallet",
-			Param:    "addr1qxy648m6k96350t4tql82q0e8sqpks54uvlttclat4e0z6298lyp4578c7l655e09f8v7mwy5h653zls2nd335g58xvsf2y066",
+			Wallets: []string{
+				"addr1qxy648m6k96350t4tql82q0e8sqpks54uvlttclat4e0z6298lyp4578c7l655e09f8v7mwy5h653zls2nd335g58xvsf2y066",
+			},
 		},
 		API: setup.APIConfig{
 			Address: "127.0.0.1",
@@ -99,7 +100,8 @@ func TestHappyPath_WizardFinish(t *testing.T) {
 	assert.Equal(t, "127.0.0.1", engineCfg.Api.ListenAddress)
 	assert.Equal(t, uint(9090), engineCfg.Api.ListenPort)
 	assert.Equal(t, "preprod", engineCfg.Plugin["input"]["chainsync"]["network"])
-	assert.Equal(t, plan.Filter.Param, engineCfg.Plugin["filter"]["cardano"]["address"])
+	assert.Equal(t, plan.Filter.Wallets[0],
+		engineCfg.Plugin["filter"]["cardano"]["address"])
 
 	// 6. Verify Tray Config
 	trayData, err := os.ReadFile(trayCfgPath)

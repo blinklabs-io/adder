@@ -111,7 +111,7 @@ func TestApplyDoesNotTouchHostServicesWithFakeManager(t *testing.T) {
 
 	plan := SetupPlan{
 		Network: NetworkConfig{Name: "mainnet"},
-		Filter:  FilterConfig{Template: "Monitor Everything"},
+		Filter:  FilterConfig{MonitorEverything: true},
 		API:     APIConfig{Address: "127.0.0.1", Port: 8080},
 	}
 
@@ -148,7 +148,7 @@ func TestApplyReturnsStoreErrorsBeforeServiceWork(t *testing.T) {
 
 			err := runner.Apply(context.Background(), SetupPlan{
 				Network: NetworkConfig{Name: "mainnet"},
-				Filter:  FilterConfig{Template: "Monitor Everything"},
+				Filter:  FilterConfig{MonitorEverything: true},
 			})
 			require.Error(t, err)
 			assert.ErrorIs(t, err, wantErr)
@@ -169,7 +169,7 @@ func TestApplyContinuesWhenBinaryFinderFails(t *testing.T) {
 
 	err := runner.Apply(context.Background(), SetupPlan{
 		Network: NetworkConfig{Name: "mainnet"},
-		Filter:  FilterConfig{Template: "Monitor Everything"},
+		Filter:  FilterConfig{MonitorEverything: true},
 	})
 	require.NoError(t, err)
 
@@ -192,7 +192,7 @@ func TestApplyHonorsContextCancellationBeforeReconnect(t *testing.T) {
 
 	err := runner.Apply(ctx, SetupPlan{
 		Network: NetworkConfig{Name: "mainnet"},
-		Filter:  FilterConfig{Template: "Monitor Everything"},
+		Filter:  FilterConfig{MonitorEverything: true},
 	})
 	require.ErrorIs(t, err, context.Canceled)
 
