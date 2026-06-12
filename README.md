@@ -309,6 +309,18 @@ Usage of adder:
 Multiple filter options can be used together, and only events matching all
 filters will be output.
 
+## Using Adder as a Library
+
+Adder can be used as a Go library to build custom blockchain indexers and applications.
+The [examples](./examples/) directory contains starter code demonstrating various use cases:
+
+- **[adder-publisher](./examples/adder-publisher/)** - Basic event publisher that logs all blockchain events
+- **[poolid-filter](./examples/poolid-filter/)** - Filter events by stake pool ID
+- **[event-address-filter](./examples/event-address-filter/)** - Filter by addresses and native assets
+
+Each example includes complete source code, documentation, and instructions for getting started.
+Visit the [examples directory](./examples/) for detailed tutorials and ready-to-run code.
+
 ## Example usage
 
 ### Native using remote node
