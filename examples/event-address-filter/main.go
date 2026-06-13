@@ -15,7 +15,6 @@
 package main
 
 import (
-	"fmt"
 	"log/slog"
 
 	"github.com/blinklabs-io/adder/event"
@@ -28,6 +27,9 @@ import (
 )
 
 // We parse environment variables using envconfig into this struct
+// Note: SocketPath is parsed but not used in this example since we connect
+// to a remote node using WithAddress instead. To use a local socket,
+// uncomment WithSocketPath and comment out WithAddress below.
 type Config struct {
 	SocketPath string `split_words:"true"`
 	Magic      uint32
@@ -94,7 +96,7 @@ func main() {
 
 	// Start pipeline
 	if err := p.Start(); err != nil {
-		slog.Error(fmt.Sprintf("failed to start pipeline: %s\n", err))
+		slog.Error("failed to start pipeline", "error", err)
 		return
 	}
 
@@ -102,7 +104,7 @@ func main() {
 	for {
 		err, ok := <-p.ErrorChan()
 		if ok {
-			slog.Info(fmt.Sprintf("pipeline failed: %v\n", err))
+			slog.Error("pipeline failed", "error", err)
 		} else {
 			break
 		}
@@ -110,10 +112,10 @@ func main() {
 }
 
 func handleEvent(evt event.Event) error {
-	slog.Info(fmt.Sprintf("Received event: %v\n", evt))
+	slog.Info("received event", "type", evt.Type)
 	return nil
 }
 
 func updateStatus(status input_chainsync.ChainSyncStatus) {
-	slog.Info(fmt.Sprintf("ChainSync status update: %v\n", status))
+	slog.Info("chainsync status update", "status", status)
 }
