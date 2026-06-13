@@ -102,7 +102,7 @@ go run main.go
 ## Expected Output
 
 The program will only output transaction events involving the specified address and/or assets:
-```
+```text
 ChainSync status update: {Status: syncing, Tip: 12345678}
 Received event: chainsync.transaction (involving filtered address/asset)
 ...

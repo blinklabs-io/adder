@@ -1,4 +1,4 @@
-// Copyright 2024 Blink Labs Software
+// Copyright 2026 Blink Labs Software
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -94,7 +94,8 @@ func main() {
 
 	// Start pipeline
 	if err := p.Start(); err != nil {
-		slog.Info(fmt.Sprintf("failed to start pipeline: %s\n", err))
+		slog.Error(fmt.Sprintf("failed to start pipeline: %s\n", err))
+		return
 	}
 
 	// Start error handler

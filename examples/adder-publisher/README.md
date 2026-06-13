@@ -15,7 +15,7 @@ This is the simplest example of using Adder as a library. It:
 The example uses environment variables for configuration:
 
 - `CARDANO_NODE_SOCKET_PATH`: Path to the Cardano node socket (default: `/ipc/node.socket`)
-- `CARDANO_NODE_MAGIC`: Network magic number (default: `764824073` for preview network)
+- `CARDANO_NODE_MAGIC`: Network magic number (default: `764824073` for mainnet)
 
 ### Network Magic Values
 
@@ -59,7 +59,7 @@ The program will output:
 - Events for each block, transaction, and other blockchain activities
 
 Example:
-```
+```text
 ChainSync status update: {Status: syncing, Tip: 12345678}
 Received event: chainsync.block
 Received event: chainsync.transaction

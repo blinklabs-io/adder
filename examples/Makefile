@@ -32,5 +32,4 @@ test:
 # Build our program binaries
 # Depends on GO_FILES to determine when rebuild is needed
 $(BINARIES): mod-tidy $(GO_FILES)
-	cd $(ROOT_DIR)/$(@) && go build -o $(@) .
-	cd $(ROOT_DIR) && mv $(@)/$(@) .
+	cd $(ROOT_DIR)/$(@) && go build -o $(ROOT_DIR)/$(@) .
