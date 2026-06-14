@@ -111,11 +111,11 @@ func TestApplyDoesNotTouchHostServicesWithFakeManager(t *testing.T) {
 
 	plan := SetupPlan{
 		Network: NetworkConfig{Name: "mainnet"},
-		Filter:  FilterConfig{Template: "Monitor Everything"},
+		Filter:  FilterConfig{MonitorEverything: true},
 		API:     APIConfig{Address: "127.0.0.1", Port: 8080},
 	}
 
-	err := runner.Apply(context.Background(), plan)
+	_, err := runner.Apply(context.Background(), plan)
 	require.NoError(t, err)
 
 	assert.True(t, store.saved)
@@ -146,9 +146,9 @@ func TestApplyReturnsStoreErrorsBeforeServiceWork(t *testing.T) {
 				Finder:  &mockFinder{path: "/tmp/adder"},
 			}
 
-			err := runner.Apply(context.Background(), SetupPlan{
+			_, err := runner.Apply(context.Background(), SetupPlan{
 				Network: NetworkConfig{Name: "mainnet"},
-				Filter:  FilterConfig{Template: "Monitor Everything"},
+				Filter:  FilterConfig{MonitorEverything: true},
 			})
 			require.Error(t, err)
 			assert.ErrorIs(t, err, wantErr)
@@ -167,14 +167,140 @@ func TestApplyContinuesWhenBinaryFinderFails(t *testing.T) {
 		Finder:  &mockFinder{err: errors.New("not found")},
 	}
 
-	err := runner.Apply(context.Background(), SetupPlan{
+	_, err := runner.Apply(context.Background(), SetupPlan{
 		Network: NetworkConfig{Name: "mainnet"},
-		Filter:  FilterConfig{Template: "Monitor Everything"},
+		Filter:  FilterConfig{MonitorEverything: true},
 	})
 	require.NoError(t, err)
 
 	assert.True(t, store.saved)
 	assert.True(t, conn.connected)
+}
+
+// TestApplyDoesNotAliasNotifyPrefs is the regression guard for the
+// codec-side invariant (also enforced by SetupPlanFromEngineConfig)
+// that TrayConfig.NotifyPrefs must not share its map header with
+// plan.Notify. A type conversion `map[string]bool(plan.Notify)` would
+// produce an alias, so later mutations of either map would silently
+// corrupt the other. The runner explicitly copies on save.
+func TestApplyDoesNotAliasNotifyPrefs(t *testing.T) {
+	store := &mockStore{}
+	runner := &SetupRunner{
+		Store:   store,
+		Service: &mockService{},
+		Conn:    &mockConnector{},
+		Finder:  &mockFinder{path: "/tmp/adder"},
+	}
+	plan := SetupPlan{
+		Network: NetworkConfig{Name: "mainnet"},
+		Filter:  FilterConfig{MonitorEverything: true},
+		Notify: NotificationPrefs{
+			"Blocks minted": true,
+		},
+	}
+	_, applyErr := runner.Apply(context.Background(), plan)
+	require.NoError(t, applyErr)
+
+	// Mutate the plan's map post-Apply; the saved TrayConfig's map
+	// must NOT see the change.
+	plan.Notify["Blocks minted"] = false
+	plan.Notify["Injected after Apply"] = true
+
+	assert.True(t, store.tray.NotifyPrefs["Blocks minted"],
+		"mutation of plan.Notify must not leak into the saved tray "+
+			"config (alias bug)")
+	_, leaked := store.tray.NotifyPrefs["Injected after Apply"]
+	assert.False(t, leaked,
+		"new keys added to plan.Notify post-Apply must not appear "+
+			"in the saved tray config")
+}
+
+// TestApplyDoesNotAliasFilterSlices mirrors the codec-side check: the
+// runner must CloneFilter when persisting plan.Filter into TrayConfig,
+// not pass the struct header through verbatim. A future append-grow
+// on plan.Filter.Wallets would otherwise mutate the persisted
+// TrayConfig's slice.
+func TestApplyDoesNotAliasFilterSlices(t *testing.T) {
+	store := &mockStore{}
+	runner := &SetupRunner{
+		Store:   store,
+		Service: &mockService{},
+		Conn:    &mockConnector{},
+		Finder:  &mockFinder{path: "/tmp/adder"},
+	}
+	plan := SetupPlan{
+		Network: NetworkConfig{Name: "mainnet"},
+		Filter: FilterConfig{
+			Wallets:  []string{"addr1a"},
+			DReps:    []string{"drep1a"},
+			Pools:    []string{"pool1a"},
+			Assets:   []string{"asset1a"},
+			Policies: []string{"pol1"},
+		},
+	}
+	_, err := runner.Apply(context.Background(), plan)
+	require.NoError(t, err)
+
+	plan.Filter.Wallets[0] = "MUTATED"
+	plan.Filter.DReps[0] = "MUTATED"
+	plan.Filter.Pools[0] = "MUTATED"
+	plan.Filter.Assets[0] = "MUTATED"
+	plan.Filter.Policies[0] = "MUTATED"
+
+	assert.Equal(t, "addr1a", store.tray.Filter.Wallets[0])
+	assert.Equal(t, "drep1a", store.tray.Filter.DReps[0])
+	assert.Equal(t, "pool1a", store.tray.Filter.Pools[0])
+	assert.Equal(t, "asset1a", store.tray.Filter.Assets[0])
+	assert.Equal(t, "pol1", store.tray.Filter.Policies[0])
+}
+
+// TestApplyReturnsBinaryFindAsApplyResult is the regression guard for
+// the silent-success-on-soft-failure finding: when the binary cannot
+// be located, the wizard previously claimed success and the operator
+// only learned of the problem from a later "API unreachable" error
+// stripped of context. After the fix, Apply returns a non-zero
+// ApplyResult.BinaryFindErr that the wizard surfaces to the user.
+func TestApplyReturnsBinaryFindAsApplyResult(t *testing.T) {
+	wantErr := errors.New("not on PATH")
+	runner := &SetupRunner{
+		Store:   &mockStore{},
+		Service: &mockService{},
+		Conn:    &mockConnector{},
+		Finder:  &mockFinder{err: wantErr},
+	}
+	result, err := runner.Apply(context.Background(), SetupPlan{
+		Network: NetworkConfig{Name: "mainnet"},
+		Filter:  FilterConfig{MonitorEverything: true},
+	})
+	require.NoError(t, err,
+		"Apply must still succeed — config IS saved")
+	assert.True(t, result.HasSoftErrors(),
+		"BinaryFindErr should be surfaced as a soft error")
+	assert.ErrorIs(t, result.BinaryFindErr, wantErr)
+}
+
+// TestApplyReconnectErrWrapsSoftErrors guards that a binary-find or
+// restart failure followed by an "API unreachable" error produces a
+// composite message naming the root cause, not just the downstream
+// symptom.
+func TestApplyReconnectErrWrapsSoftErrors(t *testing.T) {
+	wantBin := errors.New("not on PATH")
+	wantReconnect := errors.New("dial tcp: no route")
+	runner := &SetupRunner{
+		Store:   &mockStore{},
+		Service: &mockService{},
+		Conn:    &mockConnector{reconnectErr: wantReconnect},
+		Finder:  &mockFinder{err: wantBin},
+	}
+	_, err := runner.Apply(context.Background(), SetupPlan{
+		Network: NetworkConfig{Name: "mainnet"},
+		Filter:  FilterConfig{MonitorEverything: true},
+	})
+	require.Error(t, err)
+	assert.ErrorIs(t, err, wantBin,
+		"composite error must preserve the binary-find cause")
+	assert.ErrorIs(t, err, wantReconnect,
+		"composite error must also preserve the reconnect cause")
 }
 
 func TestApplyHonorsContextCancellationBeforeReconnect(t *testing.T) {
@@ -190,9 +316,9 @@ func TestApplyHonorsContextCancellationBeforeReconnect(t *testing.T) {
 		Finder:  &mockFinder{path: "/tmp/adder"},
 	}
 
-	err := runner.Apply(ctx, SetupPlan{
+	_, err := runner.Apply(ctx, SetupPlan{
 		Network: NetworkConfig{Name: "mainnet"},
-		Filter:  FilterConfig{Template: "Monitor Everything"},
+		Filter:  FilterConfig{MonitorEverything: true},
 	})
 	require.ErrorIs(t, err, context.Canceled)
 

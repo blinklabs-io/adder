@@ -18,18 +18,57 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/blinklabs-io/adder/internal/config"
 	"gopkg.in/yaml.v3"
 )
 
 // TrayConfig holds the configuration for the adder-tray application.
+// Filter is the authoritative source of monitoring targets — the
+// sidecar engine config carries no per-target lists, because the
+// cardano filter would AND-combine them on transaction events.
 type TrayConfig struct {
 	APIAddress  string          `yaml:"api_address"`
 	APIPort     uint            `yaml:"api_port"`
 	AdderConfig string          `yaml:"adder_config"`
 	AutoStart   bool            `yaml:"auto_start"`
 	NotifyPrefs map[string]bool `yaml:"notify_prefs"`
+	Filter      FilterConfig    `yaml:"filter,omitempty"`
+
+	// NotifyRateLimit caps emitted notifications per
+	// NotifyRateWindow. Matches beyond the cap are coalesced into a
+	// single "Multiple events occurred" batch fired at the window
+	// boundary. A non-positive value disables the limiter (every
+	// match fires immediately). Zero (the YAML default for omitted
+	// fields) is resolved to DefaultNotifyRateLimit at load time.
+	NotifyRateLimit int `yaml:"notify_rate_limit,omitempty"`
+	// NotifyRateWindow is the limiter window. Zero is resolved to
+	// DefaultNotifyRateWindow at load time.
+	NotifyRateWindow time.Duration `yaml:"notify_rate_window,omitempty"`
+}
+
+// Default values for the notification rate limiter. Used when the
+// YAML config omits the fields or leaves them at zero.
+const (
+	DefaultNotifyRateLimit  = 1
+	DefaultNotifyRateWindow = 5 * time.Second
+)
+
+// ResolvedNotifyRate returns the rate-limit + window the engine
+// should use, substituting defaults for zero values. A negative
+// NotifyRateLimit is passed through (disables the limiter) so power
+// users can opt out of coalescing entirely.
+func (c TrayConfig) ResolvedNotifyRate() (int, time.Duration) {
+	limit := c.NotifyRateLimit
+	if limit == 0 {
+		limit = DefaultNotifyRateLimit
+	}
+	window := c.NotifyRateWindow
+	if window <= 0 {
+		window = DefaultNotifyRateWindow
+	}
+	return limit, window
 }
 
 // ConfigStore defines the interface for persisting engine and tray configurations.

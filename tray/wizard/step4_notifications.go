@@ -17,7 +17,8 @@ package wizard
 import (
 	"errors"
 	"fmt"
-	"runtime"
+	"strconv"
+	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -36,6 +37,13 @@ type notificationsStep struct {
 	verified     bool
 	verifyBox    *fyne.Container
 	verifyResult *widget.Label
+
+	// Rate-limit knobs live behind an "Advanced" accordion. Empty
+	// entries are interpreted as "use default" so a user who never
+	// opens Advanced still gets sensible behaviour.
+	rateLimitEntry  *widget.Entry
+	rateWindowEntry *widget.Entry
+	rateAdvanced    *widget.Accordion
 }
 
 func (s *notificationsStep) Title() string { return "Notifications" }
@@ -93,17 +101,23 @@ func (s *notificationsStep) createLayout() fyne.CanvasObject {
 	s.verifyResult.Wrapping = fyne.TextWrapWord
 	s.verifyResult.Hide()
 
-	permBtn := widget.NewButtonWithIcon("Send Test Notification", theme.ConfirmIcon(), func() {
-		// Trigger the native permission dialog
-		fyne.CurrentApp().SendNotification(fyne.NewNotification(
-			"Adder Verification",
-			"Did this notification appear? If so, "+
-				"permissions are correctly set.",
-		))
-		s.verifyBox.Show()
-		s.verifyResult.SetText("A test notification was sent. Did you see it?")
-		s.verifyResult.Show()
-	})
+	permBtn := widget.NewButtonWithIcon(
+		"Send Test Notification",
+		theme.ConfirmIcon(),
+		func() {
+			// Trigger the native permission dialog
+			fyne.CurrentApp().SendNotification(fyne.NewNotification(
+				"Adder Verification",
+				"Did this notification appear? If so, "+
+					"permissions are correctly set.",
+			))
+			s.verifyBox.Show()
+			s.verifyResult.SetText(
+				"A test notification was sent. Did you see it?",
+			)
+			s.verifyResult.Show()
+		},
+	)
 	permBtn.Importance = widget.HighImportance
 
 	s.verifyBox = container.NewHBox(
@@ -122,11 +136,14 @@ func (s *notificationsStep) createLayout() fyne.CanvasObject {
 	s.verifyBox.Hide()
 
 	s.summaryLine = widget.NewLabel("")
-	if s.plan != nil && s.plan.Output.Type != "" && s.plan.Output.Type != "none" {
+	if s.plan != nil && s.plan.Output.Type != "" &&
+		s.plan.Output.Type != "none" {
 		s.summaryLine.SetText(
 			fmt.Sprintf("Events will also be sent to %s.", s.plan.Output.Type),
 		)
 	}
+
+	s.buildAdvancedRateLimit()
 
 	return container.NewVBox(
 		container.NewHBox(
@@ -138,57 +155,196 @@ func (s *notificationsStep) createLayout() fyne.CanvasObject {
 		widget.NewSeparator(),
 		s.connection,
 		widget.NewSeparator(),
-		widget.NewLabelWithStyle("System Verification", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
-		widget.NewLabel("macOS requires explicit permission for notifications."),
+		widget.NewLabelWithStyle(
+			"System Verification",
+			fyne.TextAlignLeading,
+			fyne.TextStyle{Bold: true},
+		),
+		widget.NewLabel(
+			"macOS requires explicit permission for notifications.",
+		),
 		permBtn,
 		s.verifyResult,
 		s.verifyBox,
 		s.summaryLine,
+		widget.NewSeparator(),
+		s.rateAdvanced,
 	)
 }
 
+// buildAdvancedRateLimit constructs the Advanced accordion that lets
+// users tune how aggressively the engine coalesces a burst of
+// notifications into a "Multiple events occurred" batch.
+func (s *notificationsStep) buildAdvancedRateLimit() {
+	s.rateLimitEntry = widget.NewEntry()
+	s.rateLimitEntry.SetPlaceHolder(
+		fmt.Sprintf("%d (default)", setup.DefaultNotifyRateLimit),
+	)
+	s.rateWindowEntry = widget.NewEntry()
+	s.rateWindowEntry.SetPlaceHolder(
+		fmt.Sprintf("%s (default)",
+			setup.DefaultNotifyRateWindow))
+
+	if s.plan != nil {
+		if s.plan.App.NotifyRateLimit != 0 {
+			s.rateLimitEntry.SetText(
+				strconv.Itoa(s.plan.App.NotifyRateLimit),
+			)
+		}
+		if s.plan.App.NotifyRateWindow > 0 {
+			s.rateWindowEntry.SetText(
+				s.plan.App.NotifyRateWindow.String(),
+			)
+		}
+	}
+
+	form := widget.NewForm(
+		widget.NewFormItem(
+			"Max notifications per window", s.rateLimitEntry),
+		widget.NewFormItem(
+			"Window duration (e.g. 5s, 30s, 1m)", s.rateWindowEntry),
+	)
+	help := widget.NewLabel(
+		"Limits how many alerts fire before they collapse into a " +
+			"single \"Multiple events occurred\" notification. " +
+			"Set the limit to a negative number to disable " +
+			"coalescing entirely. Leave blank to use the defaults.",
+	)
+	help.Wrapping = fyne.TextWrapWord
+
+	body := container.NewVBox(form, help)
+	s.rateAdvanced = widget.NewAccordion(
+		widget.NewAccordionItem("Advanced — Rate Limiting", body),
+	)
+	if s.plan != nil &&
+		(s.plan.App.NotifyRateLimit != 0 ||
+			s.plan.App.NotifyRateWindow > 0) {
+		s.rateAdvanced.Open(0)
+	}
+}
+
+// getCheckLabels returns the prefs to surface for the current plan:
+// the coarse set for MonitorEverything, otherwise the deduped union of
+// per-kind prefs whose list is non-empty.
 func (s *notificationsStep) getCheckLabels() []string {
-	switch s.plan.Filter.Template {
-	case "Monitor Everything":
+	if s.plan.Filter.MonitorEverything {
 		return []string{
 			setup.NotifyPrefBlocksMinted,
 			setup.NotifyPrefIncomingTx,
 			setup.NotifyPrefVotesCast,
 		}
-	case "Watch Wallet":
-		return []string{
-			setup.NotifyPrefIncomingTx,
+	}
+
+	// Per-kind ordering for UI stability. seen guards dedup when two
+	// kinds share a pref key.
+	var out []string
+	seen := map[string]bool{}
+	add := func(keys ...string) {
+		for _, k := range keys {
+			if !seen[k] {
+				seen[k] = true
+				out = append(out, k)
+			}
+		}
+	}
+	if len(s.plan.Filter.Wallets) > 0 {
+		add(setup.NotifyPrefIncomingTx,
 			setup.NotifyPrefOutgoingTx,
-			setup.NotifyPrefTokenTransfers,
-		}
-	case "Track DRep":
-		return []string{
-			setup.NotifyPrefGovProposals,
+			setup.NotifyPrefTokenTransfers)
+	}
+	if len(s.plan.Filter.DReps) > 0 {
+		add(setup.NotifyPrefGovProposals,
 			setup.NotifyPrefVotesCast,
-			setup.NotifyPrefRegChanges,
-		}
-	case "Monitor Pool":
-		return []string{
-			setup.NotifyPrefBlocksMinted,
-			setup.NotifyPrefPoolParams,
-		}
+			setup.NotifyPrefRegChanges)
 	}
-	return nil
+	if len(s.plan.Filter.Pools) > 0 {
+		add(setup.NotifyPrefBlocksMinted,
+			setup.NotifyPrefPoolParams)
+	}
+	if len(s.plan.Filter.Assets) > 0 {
+		add(setup.NotifyPrefAssetActivity)
+	}
+	if len(s.plan.Filter.Policies) > 0 {
+		add(setup.NotifyPrefPolicyActivity)
+	}
+	return out
 }
 
+// Validate rejects malformed Advanced rate-limit entries. "Send Test
+// Notification" is available but not required.
 func (s *notificationsStep) Validate() error {
-	if runtime.GOOS != "darwin" {
-		return nil
+	if s.rateLimitEntry != nil && s.rateLimitEntry.Text != "" {
+		if _, err := strconv.Atoi(s.rateLimitEntry.Text); err != nil {
+			return fmt.Errorf(
+				"max notifications per window must be an integer: %w",
+				err)
+		}
 	}
-	if !s.verified {
-		return errors.New("please verify that system notifications are working before finishing")
+	if s.rateWindowEntry != nil && s.rateWindowEntry.Text != "" {
+		d, err := time.ParseDuration(s.rateWindowEntry.Text)
+		if err != nil {
+			return fmt.Errorf(
+				"window duration must be a Go duration (e.g. 5s, "+
+					"30s, 1m): %w", err)
+		}
+		if d <= 0 {
+			return errors.New(
+				"window duration must be greater than zero")
+		}
 	}
 	return nil
 }
 
+// Apply writes preferences onto plan.Notify, rebuilt from s.checks so
+// stale keys don't linger. Off-display explicit FALSE values are
+// preserved (sticky opt-outs across template switches); off-display
+// TRUE values are not — a re-shown checkbox defaults to TRUE, which is
+// the desired re-introduction behavior. Connection toggle is always
+// written.
 func (s *notificationsStep) Apply(plan *setup.SetupPlan) {
+	// Capture explicit user "no" answers for off-display prefs before
+	// we replace the map.
+	preservedFalse := map[string]bool{}
+	for k, v := range plan.Notify {
+		if v {
+			continue // only preserve explicit negatives
+		}
+		if _, shown := s.checks[k]; shown {
+			continue // the current checkbox value will win
+		}
+		if k == setup.NotifyPrefConnectionIssues {
+			continue // handled below
+		}
+		preservedFalse[k] = false
+	}
+
+	plan.Notify = make(setup.NotificationPrefs,
+		len(s.checks)+len(preservedFalse)+1)
 	for label, check := range s.checks {
 		plan.Notify[label] = check.Checked
 	}
+	for k := range preservedFalse {
+		plan.Notify[k] = false
+	}
 	plan.Notify[setup.NotifyPrefConnectionIssues] = s.connection.Checked
+
+	// Advanced rate-limit knobs. Empty entries clear the override so
+	// the engine falls back to the defaults. Validate has already
+	// rejected unparseable values.
+	if s.rateLimitEntry != nil {
+		if s.rateLimitEntry.Text == "" {
+			plan.App.NotifyRateLimit = 0
+		} else if n, err := strconv.Atoi(s.rateLimitEntry.Text); err == nil {
+			plan.App.NotifyRateLimit = n
+		}
+	}
+	if s.rateWindowEntry != nil {
+		if s.rateWindowEntry.Text == "" {
+			plan.App.NotifyRateWindow = 0
+		} else if d, err := time.ParseDuration(
+			s.rateWindowEntry.Text,
+		); err == nil {
+			plan.App.NotifyRateWindow = d
+		}
+	}
 }

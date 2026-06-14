@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/blinklabs-io/adder/event"
+	"github.com/blinklabs-io/adder/internal/cardanofmt"
 	"github.com/blinklabs-io/adder/internal/logging"
 	"github.com/blinklabs-io/adder/plugin"
 	"github.com/go-telegram/bot"
@@ -464,10 +465,7 @@ func link(url, text string, mode models.ParseMode) string {
 
 // truncateHash truncates a hash for display
 func truncateHash(hash string) string {
-	if len(hash) <= 16 {
-		return hash
-	}
-	return hash[:8] + "..." + hash[len(hash)-8:]
+	return cardanofmt.TruncateMiddle(hash, 8, 8, "...")
 }
 
 // utf16Len returns the length of s in UTF-16 code units (Telegram's count).
@@ -515,13 +513,12 @@ func truncateMessage(text string, maxLen int) string {
 	return string(runes) + suffix
 }
 
-// formatLovelace formats lovelace amount to ADA using integer division so
-// large amounts are not rounded by float64.
+// formatLovelace formats lovelace amount to ADA using integer division
+// so large amounts are not rounded by float64. The shared helper lives
+// in internal/cardanofmt so the tray notifications package renders the
+// same ADA value as Telegram for the same transaction.
 func formatLovelace(lovelace uint64) string {
-	const lovelacePerADA = 1_000_000
-	ada := lovelace / lovelacePerADA
-	frac := lovelace % lovelacePerADA
-	return fmt.Sprintf("%d.%06d", ada, frac)
+	return cardanofmt.LovelaceToADA(lovelace)
 }
 
 // getBaseURL returns the block explorer URL based on network magic
