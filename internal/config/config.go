@@ -135,24 +135,75 @@ var globalConfig = &Config{
 	},
 }
 
+// Load reads configuration from the environment and, if configFile is
+// non-empty, from the YAML file at that path, then applies populate*
+// defaults. Effective precedence: YAML > env > pre-set/default field
+// values on *c.
+//
+// Load does NOT preserve CLI flag values. pflag binds flags by
+// reference into c, so yaml.Unmarshal overwrites the bound variable
+// in place — the CLI value is lost. Callers that bind CLI flags via
+// BindFlags must use LoadWithFlags instead to get the documented
+// CLI > YAML > env precedence.
+//
+// Load is not safe to call more than once on the same *Config:
+// neither envconfig nor yaml clears fields that are absent from
+// their source, so a key removed from the YAML between reloads will
+// retain whatever value the previous Load left behind. Callers that
+// need to reload must construct a fresh *Config (and re-bind flags)
+// on each call.
 func (c *Config) Load(configFile string) error {
-	// Load config file as YAML if provided
+	return c.LoadWithFlags(configFile, nil)
+}
+
+// LoadWithFlags is Load plus CLI-flag preservation. Effective
+// precedence: CLI > YAML > env > pre-set/default. Pass the same
+// *pflag.FlagSet that was previously passed to BindFlags on this
+// *Config so pflag's bound pointers map back into c.
+//
+// Mechanism: snapshot the value of every flag with Changed=true
+// BEFORE env/yaml overwrite the bound variables; re-apply each
+// snapshotted value via fs.Set AFTER yaml. Flags the user did not
+// explicitly set (Changed=false) are skipped, so defaults do not
+// clobber env/yaml values.
+//
+// Pass fs=nil for the same behavior as Load() (no CLI override).
+func (c *Config) LoadWithFlags(
+	configFile string,
+	fs *pflag.FlagSet,
+) error {
+	// Snapshot CLI-explicit values first, while pflag's bound
+	// pointers still hold the parsed CLI values.
+	var cliOverrides map[string]string
+	if fs != nil {
+		cliOverrides = make(map[string]string)
+		fs.Visit(func(f *pflag.Flag) {
+			cliOverrides[f.Name] = f.Value.String()
+		})
+	}
+	// Env first so YAML (loaded next) wins per documented order.
+	if err := envconfig.Process("dummy", c); err != nil {
+		return fmt.Errorf("error processing environment: %w", err)
+	}
 	if configFile != "" {
 		buf, err := os.ReadFile(configFile)
 		if err != nil {
 			return fmt.Errorf("error reading config file: %w", err)
 		}
-		err = yaml.Unmarshal(buf, c)
-		if err != nil {
+		if err := yaml.Unmarshal(buf, c); err != nil {
 			return fmt.Errorf("error parsing config file: %w", err)
 		}
 	}
-	// Load config values from environment variables
-	err := envconfig.Process("dummy", c)
-	if err != nil {
-		return fmt.Errorf("error processing environment: %w", err)
+	// Re-apply CLI-explicit values so CLI wins over yaml/env.
+	for name, val := range cliOverrides {
+		if err := fs.Set(name, val); err != nil {
+			return fmt.Errorf(
+				"re-applying CLI flag %q: %w",
+				name,
+				err,
+			)
+		}
 	}
-	// Populate Byron and Shelley genesis configs and transition epoch
 	c.populateByronGenesis()
 	c.populateShelleyGenesis()
 	c.populateShelleyTransEpoch()
