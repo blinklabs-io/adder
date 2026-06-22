@@ -120,7 +120,7 @@ func (w *WizardController) prevStep() {
 func (w *WizardController) finish() {
 	slog.Info("wizard input complete",
 		"network", w.plan.Network.Name,
-		"template", w.plan.Filter.Template)
+		"monitoring", setup.SummarizeFilter(w.plan.Filter))
 
 	w.nextBtn.Disable()
 	w.backBtn.Disable()

@@ -1,0 +1,696 @@
+// Copyright 2026 Blink Labs Software
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+// Package notifications implements the tray notification engine: it
+// consumes events from the tray's ConnectionManager, evaluates them
+// against a rule set derived from the user's setup plan, and emits
+// notification Requests. The actual desktop dispatch lives in the
+// parent tray package; this package only emits to the Requests channel
+// that the dispatcher consumes.
+package notifications
+
+import (
+	"fmt"
+	"strconv"
+	"strings"
+	"text/template"
+
+	"github.com/blinklabs-io/adder/event"
+	"github.com/blinklabs-io/adder/tray/setup"
+)
+
+// Event type constants. The input.* values mirror the event types
+// emitted by adder's input plugins (see the event package); the tray.*
+// values are synthesized by the engine for non-chain notifications.
+const (
+	EventTypeBlock       = "input.block"
+	EventTypeTransaction = "input.transaction"
+	EventTypeGovernance  = "input.governance"
+	EventTypeRollback    = "input.rollback"
+	// EventTypeConnection is a synthesized event type used to route
+	// connection-status notifications through the same rule pipeline as
+	// chain events. See Engine.NotifyConnection and ConnectionEvent.
+	EventTypeConnection = "tray.connection"
+)
+
+// Cardano-aware NotifyBody templates. The {{trunc}}, {{ada}},
+// {{outAddr}}, {{outAda}}, and {{field}} funcs are registered by the
+// engine at parse time (see formatFuncs in format.go); raw template
+// errors fall back to the literal string so a single bad field never
+// silently swallows the notification.
+const (
+	tmplBlockMinted = "Block #{{int .context.blockNumber}} " +
+		"({{truncHash .payload.blockHash}}) minted."
+	tmplPoolBlock = "Pool {{trunc .payload.issuerVkey}} " +
+		"minted block #{{int .context.blockNumber}} " +
+		"({{truncHash .payload.blockHash}})."
+	tmplTxGeneric = "Transaction {{trunc .context.transactionHash}}."
+	// tmplTxReceived renders the ADA sum landing on the WATCHED
+	// address (not the whole tx amount, which would include change
+	// going back to the sender).
+	tmplTxReceived = "Received {{mineAda .payload.outputs .params}} " +
+		"ADA at {{mine .payload.outputs .params}}."
+	// tmplTxSent renders the ADA leaving the wallet to the
+	// counterparty's first output, excluding change.
+	tmplTxSent = "Sent {{otherAda .payload.outputs .params}} ADA " +
+		"to {{other .payload.outputs .params}}."
+	// tmplTxToken renders the watched address that received tokens
+	// when the matching side is incoming, falling back to the
+	// counterparty when the tx is outgoing.
+	tmplTxToken = "Token transfer at " +
+		"{{or (mine .payload.outputs .params) " +
+		"(other .payload.outputs .params)}}."
+	tmplGovVote = "DRep " +
+		"{{trunc (field \"voterId\" .payload.votingProcedures)}} " +
+		"voted {{field \"vote\" .payload.votingProcedures}} " +
+		"on proposal " +
+		"#{{field \"govActionIndex\" .payload.votingProcedures}}."
+	tmplGovProposal   = "New governance proposal detected."
+	tmplGovReg        = "A registration change was detected."
+	tmplAssetActivity = "Asset activity detected in tx " +
+		"{{trunc .context.transactionHash}}."
+	tmplPolicyActivity = "Policy activity detected in tx " +
+		"{{trunc .context.transactionHash}}."
+)
+
+// Rule describes a single notification rule. Rules are derived from the
+// user's setup plan (template + parameters + notification preferences)
+// by RulesFromPlan.
+type Rule struct {
+	// ID uniquely identifies the rule within a rule set.
+	ID string
+	// Enabled gates the rule; a disabled rule never matches.
+	Enabled bool
+	// EventType is the event.Event.Type this rule applies to, e.g.
+	// "input.transaction" or "tray.connection".
+	EventType string
+	// MatchExpr is an optional simple dotted-path equality match against
+	// the event payload/context (Phase 1: no JMESPath). An empty MatchExpr
+	// matches any event of the rule's EventType. Format:
+	// "payload.blockHash=abc" or "context.networkMagic=2". A malformed
+	// expression (no '=') never matches.
+	MatchExpr string
+	// Params carries the template parameter values this rule covers
+	// (wallet addresses, DRep IDs, pool IDs). One rule per (kind,
+	// pref) — so the firing fan-out is bounded by prefs, not by
+	// param count. Empty for rules that aren't template-parameterised
+	// (Monitor Everything, connection, rollback).
+	Params []string
+	// NotifyTitle is a template string for the notification title.
+	NotifyTitle string
+	// NotifyBody is a template string for the notification body.
+	NotifyBody string
+
+	// CustomMatch is a Go-side matcher used INSTEAD of MatchExpr when
+	// the match shape exceeds dotted-path equality (e.g. asset/policy
+	// rules walking payload.outputs[*].assets). Mutually exclusive
+	// with MatchExpr.
+	CustomMatch func(event.Event) bool
+
+	// titleTmpl/bodyTmpl are pre-compiled forms of NotifyTitle/Body.
+	// nil when the source has no `{{` or failed to parse — render
+	// falls back to the raw text.
+	titleTmpl, bodyTmpl *template.Template
+}
+
+// Matches reports whether the rule applies to evt: enabled, event
+// type matches, and CustomMatch (when set) or MatchExpr evaluates
+// true. CustomMatch wins so the two paths can't combine into
+// surprising AND semantics.
+func (r Rule) Matches(evt event.Event) bool {
+	if !r.Enabled {
+		return false
+	}
+	if r.EventType != evt.Type {
+		return false
+	}
+	if r.CustomMatch != nil {
+		return r.CustomMatch(evt)
+	}
+	return evalMatchExpr(r.MatchExpr, evt)
+}
+
+// evalMatchExpr evaluates a simple "section.path...=value" expression
+// against an event. An empty expression always matches. A malformed
+// expression (missing '=') never matches. The leading section selects
+// the event field to walk: "payload" or "context". JSON-decoded numbers
+// arrive as float64, so numeric leaves are compared by their canonical
+// string form.
+func evalMatchExpr(expr string, evt event.Event) bool {
+	if expr == "" {
+		return true
+	}
+	key, want, found := strings.Cut(expr, "=")
+	if !found {
+		return false
+	}
+	section, path, hasPath := strings.Cut(key, ".")
+	if !hasPath {
+		return false
+	}
+
+	var root any
+	switch section {
+	case "payload":
+		root = evt.Payload
+	case "context":
+		root = evt.Context
+	default:
+		return false
+	}
+
+	got, ok := lookupPath(root, path)
+	if !ok {
+		return false
+	}
+	return valueToString(got) == want
+}
+
+// lookupPath walks a dotted path through nested map[string]any (the
+// shape produced by json.Unmarshal into an `any`). It returns the leaf
+// value and whether the full path was resolved.
+func lookupPath(root any, path string) (any, bool) {
+	cur := root
+	for seg := range strings.SplitSeq(path, ".") {
+		m, ok := cur.(map[string]any)
+		if !ok {
+			return nil, false
+		}
+		cur, ok = m[seg]
+		if !ok {
+			return nil, false
+		}
+	}
+	return cur, true
+}
+
+// valueToString renders a leaf value for comparison. JSON numbers decode
+// to float64; integral values are rendered without a trailing ".0" so
+// "context.networkMagic=2" matches a decoded 2.0.
+func valueToString(v any) string {
+	switch x := v.(type) {
+	case string:
+		return x
+	case bool:
+		return strconv.FormatBool(x)
+	case float64:
+		if x == float64(int64(x)) {
+			return strconv.FormatInt(int64(x), 10)
+		}
+		return strconv.FormatFloat(x, 'f', -1, 64)
+	default:
+		return fmt.Sprintf("%v", v)
+	}
+}
+
+// RulesFromPlan derives the active rule set from a setup plan. The
+// mapping mirrors the wizard's notification preferences (see
+// tray/wizard/step4_notifications.go) and the existing inline dispatch
+// logic in tray/app.go, so this engine can replace that inline path.
+//
+// The wizard lets the user populate the three per-target lists
+// (Wallets, DReps, Pools) independently — and this function fans out a
+// rule per entry in each list, giving natural OR semantics across the
+// kinds. When MonitorEverything is on the per-target lists are ignored
+// and a single coarse rule per event type is emitted instead.
+//
+// Assumption (documented): several preferences are finer-grained than
+// the event types adder emits. Incoming/Outgoing/Token-transfer all
+// collapse to "input.transaction" (the transaction event carries no
+// in/out direction flag), and Pool-parameter/Registration changes
+// collapse to their coarse event type. Those prefs therefore act as
+// independent enable toggles over the same coarse event-type rule
+// rather than distinct payload matches. The wallet/DRep/pool parameter
+// itself is preserved verbatim on each rule's Param field so a later
+// address-aware filter can refine matching without reshaping the rule
+// model.
+func RulesFromPlan(plan setup.SetupPlan) []Rule {
+	var rules []Rule
+	prefs := plan.Notify
+
+	if plan.Filter.MonitorEverything {
+		rules = append(rules, everythingRules(prefs)...)
+	} else {
+		rules = append(rules,
+			walletRules(prefs, plan.Filter.Wallets)...)
+		rules = append(rules,
+			drepRules(prefs, plan.Filter.DReps)...)
+		rules = append(rules,
+			poolRules(prefs, plan.Filter.Pools)...)
+		rules = append(rules,
+			assetRules(prefs, plan.Filter.Assets)...)
+		rules = append(rules,
+			policyRules(prefs, plan.Filter.Policies)...)
+	}
+
+	// Rollback fires for fork resolutions regardless of monitored
+	// targets, gated on the blocks-minted pref.
+	rules = append(rules, Rule{
+		ID:          "rollback",
+		Enabled:     prefs[setup.NotifyPrefBlocksMinted],
+		EventType:   EventTypeRollback,
+		NotifyTitle: "🔄 Chain Rollback",
+		NotifyBody:  "A chain rollback was detected.",
+	})
+
+	// Connection rule is target-independent and routed via
+	// Engine.NotifyConnection. Title/body come from the synthesized
+	// event so the observer can pass severity-specific labels.
+	rules = append(rules, Rule{
+		ID:          "connection",
+		Enabled:     prefs[setup.NotifyPrefConnectionIssues],
+		EventType:   EventTypeConnection,
+		NotifyTitle: "{{.payload.title}}",
+		NotifyBody:  "{{.payload.message}}",
+	})
+
+	return rules
+}
+
+// templatedRule describes one (preference, suffix, title, body) tuple
+// that is fanned out per parameter value by perParam.
+type templatedRule struct {
+	pref, suffix, title, body string
+}
+
+// coarseRule describes one of the broad event-family rules emitted in
+// MonitorEverything mode. The rule is Enabled if ANY of the listed
+// prefs is on, so toggling e.g. only "Outgoing transactions" still
+// produces a tx notification.
+type coarseRule struct {
+	id, eventType, title, body string
+	prefs                      []string
+}
+
+// everythingMode drives MonitorEverything. Bodies use the
+// Cardano-aware template helpers registered by the engine.
+var everythingMode = []coarseRule{
+	{
+		// PoolParams is NOT listed: MonitorEverything receives block
+		// events, not pool-parameter-change events, so firing this
+		// rule on PoolParams would mislabel every block as
+		// pool-parameter activity.
+		id: "everything-block", eventType: EventTypeBlock,
+		title: "🧱 New Block",
+		body:  tmplBlockMinted,
+		prefs: []string{
+			setup.NotifyPrefBlocksMinted,
+		},
+	},
+	{
+		id: "everything-tx", eventType: EventTypeTransaction,
+		title: "💸 New Transaction",
+		body:  tmplTxGeneric,
+		prefs: []string{
+			setup.NotifyPrefIncomingTx,
+			setup.NotifyPrefOutgoingTx,
+			setup.NotifyPrefTokenTransfers,
+		},
+	},
+	{
+		id: "everything-gov", eventType: EventTypeGovernance,
+		title: "🗳️ Governance Action",
+		body:  tmplGovVote,
+		prefs: []string{
+			setup.NotifyPrefGovProposals,
+			setup.NotifyPrefVotesCast,
+			setup.NotifyPrefRegChanges,
+		},
+	},
+}
+
+// everythingRules materialises the MonitorEverything coarse rule set
+// from the everythingMode table, ORing the relevant prefs to decide
+// each rule's Enabled flag.
+func everythingRules(prefs setup.NotificationPrefs) []Rule {
+	out := make([]Rule, 0, len(everythingMode))
+	for _, c := range everythingMode {
+		enabled := false
+		for _, k := range c.prefs {
+			if prefs[k] {
+				enabled = true
+				break
+			}
+		}
+		out = append(out, Rule{
+			ID:          c.id,
+			Enabled:     enabled,
+			EventType:   c.eventType,
+			NotifyTitle: c.title,
+			NotifyBody:  c.body,
+		})
+	}
+	return out
+}
+
+// perParam emits one Rule per pref-def for the supplied params. The
+// full params list is preserved verbatim on Rule.Params so a later
+// address-aware filter can refine matching without reshaping the rule
+// model, but the rule itself is single — a chain event therefore fires
+// at most one notification per pref no matter how many wallets/DReps/
+// pools the user is monitoring. Empty params returns nil so an
+// unconfigured target section never produces a catch-all rule.
+func perParam(
+	idPrefix, eventType string,
+	prefs setup.NotificationPrefs,
+	params []string,
+	defs []templatedRule,
+) []Rule {
+	if len(params) == 0 {
+		return nil
+	}
+	// Defensive copy of params so a downstream Rule consumer cannot
+	// mutate the wizard plan's slice through the rule.
+	paramsCopy := append([]string(nil), params...)
+	rules := make([]Rule, 0, len(defs))
+	for _, d := range defs {
+		rules = append(rules, Rule{
+			ID:          fmt.Sprintf("%s-%s", idPrefix, d.suffix),
+			Enabled:     prefs[d.pref],
+			EventType:   eventType,
+			Params:      paramsCopy,
+			NotifyTitle: d.title,
+			NotifyBody:  d.body,
+			// Phase 1: coarse type match. Address-aware matching
+			// (consuming Params) is a future enhancement; without it
+			// every rule with MatchExpr=="" matches every event of
+			// the right EventType, so emitting per-param rules would
+			// only multiply identical notifications.
+		})
+	}
+	return rules
+}
+
+// walletRules builds transaction rules for the followed wallets. Each
+// rule uses a CustomMatch closure so the three classes only fire on
+// genuinely-matching transactions:
+//
+//   - Incoming: any followed address appears in payload.outputs[*]
+//   - Outgoing: any followed address appears in
+//     payload.resolvedInputs[*] (the spent UTxOs)
+//   - Token transfer: any followed address is involved (either side)
+//     AND the transaction carries at least one native-token output
+//
+// Without these filters every wallet pref fired on every transaction
+// event the engine received, producing up to three identical
+// notifications per tx regardless of direction or asset content.
+func walletRules(prefs setup.NotificationPrefs, params []string) []Rule {
+	if len(params) == 0 {
+		return nil
+	}
+	addrs := append([]string(nil), params...)
+	addrSet := make(map[string]struct{}, len(addrs))
+	for _, a := range addrs {
+		addrSet[a] = struct{}{}
+	}
+	return []Rule{
+		{
+			ID:          "wallet-in",
+			Enabled:     prefs[setup.NotifyPrefIncomingTx],
+			EventType:   EventTypeTransaction,
+			Params:      addrs,
+			NotifyTitle: "💸 Incoming Transaction",
+			NotifyBody:  tmplTxReceived,
+			CustomMatch: matchAnyOutputAddress(addrSet),
+		},
+		{
+			ID:          "wallet-out",
+			Enabled:     prefs[setup.NotifyPrefOutgoingTx],
+			EventType:   EventTypeTransaction,
+			Params:      addrs,
+			NotifyTitle: "💸 Outgoing Transaction",
+			NotifyBody:  tmplTxSent,
+			CustomMatch: matchAnyResolvedInputAddress(addrSet),
+		},
+		{
+			ID:          "wallet-token",
+			Enabled:     prefs[setup.NotifyPrefTokenTransfers],
+			EventType:   EventTypeTransaction,
+			Params:      addrs,
+			NotifyTitle: "🪙 Token Transfer",
+			NotifyBody:  tmplTxToken,
+			CustomMatch: matchWalletTokenTransfer(addrSet),
+		},
+	}
+}
+
+// matchAnyOutputAddress fires when any payload.outputs[*].address is
+// in the followed wallet set.
+func matchAnyOutputAddress(addrs map[string]struct{}) func(event.Event) bool {
+	return func(evt event.Event) bool {
+		return anyOutputField(evt, func(out map[string]any) bool {
+			addr, _ := out["address"].(string)
+			_, ok := addrs[addr]
+			return ok
+		})
+	}
+}
+
+// matchAnyResolvedInputAddress fires when any
+// payload.resolvedInputs[*].address is in the followed wallet set.
+// ResolvedInputs is omitempty on the upstream event, so it may be
+// absent for transactions where the tx producer did not resolve the
+// spent UTxOs; in that case the matcher returns false rather than
+// guessing the direction.
+func matchAnyResolvedInputAddress(
+	addrs map[string]struct{},
+) func(event.Event) bool {
+	return func(evt event.Event) bool {
+		return anyResolvedInputField(evt, func(in map[string]any) bool {
+			addr, _ := in["address"].(string)
+			_, ok := addrs[addr]
+			return ok
+		})
+	}
+}
+
+// matchWalletTokenTransfer fires when any followed address is involved
+// (incoming OR outgoing) AND the transaction carries at least one
+// native-token output. Orthogonal to Incoming/Outgoing: enabling
+// Token transfers alongside one of them will produce two notifications
+// for a token-bearing tx — intentional, the second message carries the
+// extra signal "this wasn't pure ADA".
+func matchWalletTokenTransfer(
+	addrs map[string]struct{},
+) func(event.Event) bool {
+	addrMatch := func(m map[string]any) bool {
+		addr, _ := m["address"].(string)
+		_, ok := addrs[addr]
+		return ok
+	}
+	return func(evt event.Event) bool {
+		involved := anyOutputField(evt, addrMatch) ||
+			anyResolvedInputField(evt, addrMatch)
+		if !involved {
+			return false
+		}
+		return anyOutputToken(evt, func(map[string]any) bool {
+			return true
+		})
+	}
+}
+
+// anyOutputField walks payload.outputs[*] and returns true when match
+// reports true for any output. Same defensive shape as anyOutputToken.
+func anyOutputField(
+	evt event.Event,
+	match func(map[string]any) bool,
+) bool {
+	return anyMapEntry(evt, "outputs", match)
+}
+
+// anyResolvedInputField walks payload.resolvedInputs[*] and returns
+// true when match reports true for any entry.
+func anyResolvedInputField(
+	evt event.Event,
+	match func(map[string]any) bool,
+) bool {
+	return anyMapEntry(evt, "resolvedInputs", match)
+}
+
+// anyMapEntry is the generic walker the *Field helpers share — pulls
+// payload[key] as []any and feeds each map element to match.
+func anyMapEntry(
+	evt event.Event,
+	key string,
+	match func(map[string]any) bool,
+) bool {
+	payload, ok := evt.Payload.(map[string]any)
+	if !ok {
+		return false
+	}
+	entries, ok := payload[key].([]any)
+	if !ok {
+		return false
+	}
+	for _, e := range entries {
+		m, ok := e.(map[string]any)
+		if !ok {
+			continue
+		}
+		if match(m) {
+			return true
+		}
+	}
+	return false
+}
+
+// drepRules builds governance rules for the Track DRep template: one
+// rule per DRep ID per enabled governance preference, so each (DRep ID,
+// pref) pair is independently addressable by a later address-aware
+// filter.
+func drepRules(prefs setup.NotificationPrefs, params []string) []Rule {
+	return perParam("drep", EventTypeGovernance, prefs, params,
+		[]templatedRule{
+			{
+				setup.NotifyPrefGovProposals, "proposals",
+				"🗳️ Governance Proposal", tmplGovProposal,
+			},
+			{
+				setup.NotifyPrefVotesCast, "votes",
+				"🗳️ Vote Cast", tmplGovVote,
+			},
+			{
+				setup.NotifyPrefRegChanges, "reg",
+				"🗳️ Registration Change", tmplGovReg,
+			},
+		},
+	)
+}
+
+// poolRules builds block-event rules for the Monitor Pool template: one
+// rule per pool ID per enabled pool preference, so each (pool ID, pref)
+// pair is independently addressable by a later address-aware filter.
+func poolRules(prefs setup.NotificationPrefs, params []string) []Rule {
+	return perParam("pool", EventTypeBlock, prefs, params,
+		[]templatedRule{
+			{
+				setup.NotifyPrefBlocksMinted, "blocks",
+				"🧱 Block Minted", tmplPoolBlock,
+			},
+			{
+				setup.NotifyPrefPoolParams, "params",
+				"🧱 Pool Parameter Change",
+				"A pool parameter change was detected.",
+			},
+		},
+	)
+}
+
+// assetRules builds one rule that fires on any transaction touching
+// a followed asset fingerprint. Uses a CustomMatch closure because the
+// match walks payload.outputs[*].assets[*].fingerprint.
+func assetRules(prefs setup.NotificationPrefs, assets []string) []Rule {
+	if len(assets) == 0 {
+		return nil
+	}
+	snap := append([]string(nil), assets...)
+	return []Rule{{
+		ID:          "asset-activity",
+		Enabled:     prefs[setup.NotifyPrefAssetActivity],
+		EventType:   EventTypeTransaction,
+		Params:      snap,
+		NotifyTitle: "🪙 Asset Activity",
+		NotifyBody:  tmplAssetActivity,
+		CustomMatch: matchAnyAsset(snap),
+	}}
+}
+
+// policyRules builds one rule that fires on any transaction touching
+// one of the followed minting-policy IDs. Same shape as assetRules,
+// matching on payload.outputs[*].assets[*].policy.
+func policyRules(prefs setup.NotificationPrefs, policies []string) []Rule {
+	if len(policies) == 0 {
+		return nil
+	}
+	snap := append([]string(nil), policies...)
+	return []Rule{{
+		ID:          "policy-activity",
+		Enabled:     prefs[setup.NotifyPrefPolicyActivity],
+		EventType:   EventTypeTransaction,
+		Params:      snap,
+		NotifyTitle: "🪙 Policy Activity",
+		NotifyBody:  tmplPolicyActivity,
+		CustomMatch: matchAnyPolicy(snap),
+	}}
+}
+
+// matchAnyAsset returns a CustomMatch that fires when any tx output
+// carries a token whose fingerprint is in the configured set. Walks
+// payload.outputs[*].assets[*] and returns false on any malformed
+// field — schema drift must not panic the engine.
+func matchAnyAsset(assets []string) func(event.Event) bool {
+	set := make(map[string]struct{}, len(assets))
+	for _, a := range assets {
+		set[a] = struct{}{}
+	}
+	return func(evt event.Event) bool {
+		return anyOutputToken(evt, func(tok map[string]any) bool {
+			fp, _ := tok["fingerprint"].(string)
+			_, ok := set[fp]
+			return ok
+		})
+	}
+}
+
+// matchAnyPolicy is the policy-ID counterpart of matchAnyAsset.
+func matchAnyPolicy(policies []string) func(event.Event) bool {
+	set := make(map[string]struct{}, len(policies))
+	for _, p := range policies {
+		set[p] = struct{}{}
+	}
+	return func(evt event.Event) bool {
+		return anyOutputToken(evt, func(tok map[string]any) bool {
+			pol, _ := tok["policy"].(string)
+			_, ok := set[pol]
+			return ok
+		})
+	}
+}
+
+// anyOutputToken walks payload.outputs[*].assets[*] and returns true
+// when matchTok returns true for any token.
+func anyOutputToken(
+	evt event.Event,
+	matchTok func(map[string]any) bool,
+) bool {
+	payload, ok := evt.Payload.(map[string]any)
+	if !ok {
+		return false
+	}
+	outputs, ok := payload["outputs"].([]any)
+	if !ok {
+		return false
+	}
+	for _, o := range outputs {
+		out, ok := o.(map[string]any)
+		if !ok {
+			continue
+		}
+		tokens, ok := out["assets"].([]any)
+		if !ok {
+			continue
+		}
+		for _, t := range tokens {
+			tok, ok := t.(map[string]any)
+			if !ok {
+				continue
+			}
+			if matchTok(tok) {
+				return true
+			}
+		}
+	}
+	return false
+}

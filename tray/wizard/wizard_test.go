@@ -16,7 +16,6 @@ package wizard
 
 import (
 	"context"
-	"runtime"
 	"testing"
 
 	"fyne.io/fyne/v2/test"
@@ -56,12 +55,14 @@ func TestWizard_Navigation(t *testing.T) {
 	assert.Equal(t, 2, w.current)
 	assert.Equal(t, "Next Step", w.nextBtn.Text)
 
-	// Step 3 (Template) requires a parameter for validation
+	// Step 3 (Template) requires at least one target. Add a wallet
+	// via the section's entry+Add path.
 	s3 := w.steps[2].(*templateStep)
-	// Initialize step content to create entry
-	s3.Content()
-	s3.templateParam.SetText("addr1qxy648m6k96350t4tql82q0e8sqpks54uvlttclat4e" +
-		"0z6298lyp4578c7l655e09f8v7mwy5h653zls2nd335g58xvsf2y066")
+	s3.Content() // build widgets
+	s3.wallets.entry.SetText("addr1qxy648m6k96350t4tql82q0e8sqpks54" +
+		"uvlttclat4e0z6298lyp4578c7l655e09f8v7mwy5h653zls2nd335g" +
+		"58xvsf2y066")
+	s3.wallets.add(s3.wallets.entry.Text)
 
 	// Advance to Step 4 (Notifications)
 	w.nextStep()
@@ -84,7 +85,8 @@ func TestWizard_Navigation(t *testing.T) {
 	// Finish
 	w.nextStep()
 	assert.True(t, callbackCalled)
-	assert.Equal(t, "Watch Wallet", finishedPlan.Filter.Template)
+	assert.False(t, finishedPlan.Filter.MonitorEverything)
+	assert.Len(t, finishedPlan.Filter.Wallets, 1)
 }
 
 func TestWizardPlan_Initial(t *testing.T) {
@@ -95,13 +97,13 @@ func TestWizardPlan_Initial(t *testing.T) {
 	assert.Equal(t, uint(8080), w.plan.API.Port)
 }
 
-func TestNotificationsValidate_PlatformSpecific(t *testing.T) {
+// TestNotificationsValidateAlwaysOptional guards that step 4 never
+// blocks the wizard on the "Send Test Notification" button — the
+// previous macOS-only gate (s.verified must be true) was removed
+// because forcing it broke iteration during active development and
+// added no real value: users who never see a notification can grant
+// permission via System Settings without redoing setup.
+func TestNotificationsValidateAlwaysOptional(t *testing.T) {
 	step := &notificationsStep{}
-	err := step.Validate()
-
-	if runtime.GOOS == "darwin" {
-		assert.Error(t, err)
-		return
-	}
-	assert.NoError(t, err)
+	assert.NoError(t, step.Validate())
 }

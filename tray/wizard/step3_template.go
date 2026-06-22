@@ -20,39 +20,61 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/layout"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 	"github.com/blinklabs-io/adder/tray/setup"
 )
 
+// targetSection is the editable list of one kind of monitoring target
+// (wallets, DReps, or pools). It owns its entry+Add row, its entries
+// list, and its per-section validation label.
+type targetSection struct {
+	label       string // "Wallets" / "DReps" / "Pools"
+	placeholder string
+	validate    func(string) error // ValidateWalletAddr etc.
+
+	entry    *widget.Entry
+	addBtn   *widget.Button
+	errLabel *widget.Label
+	list     *fyne.Container // VBox of entry rows
+	values   []string
+
+	// onChange is called by the section whenever values change, so the
+	// parent step can re-render the summary label.
+	onChange func()
+}
+
+// templateStep is the rebuilt step 3 of the wizard: an exclusive
+// "Monitor Everything" toggle at the top, then three editable target
+// sections (Wallets / DReps / Pools) when the toggle is off, plus the
+// existing optional output destination selector and a persistent
+// "Current configuration" summary line.
 type templateStep struct {
 	plan *setup.SetupPlan
 
-	selectedTemplate string
-	templateParam    *widget.Entry
-	validationLabel  *widget.Label
+	everythingCheck *widget.Check
+	targetsBox      *fyne.Container
+	wallets         *targetSection
+	dreps           *targetSection
+	pools           *targetSection
+	assets          *targetSection
+	policies        *targetSection
+	advanced        *widget.Accordion
+	summaryLabel    *widget.Label
 
-	watchWalletCard *widget.Button
-	trackDRepCard   *widget.Button
-	monitorPoolCard *widget.Button
-	everythingCard  *widget.Button
-
+	// Output destination (unchanged from the previous wizard).
 	outputSelect    *widget.Select
 	outputContainer *fyne.Container
-
-	// Webhook fields
-	webhookURL    *widget.Entry
-	webhookFormat *widget.Select
-
-	// Telegram fields
-	telegramToken *widget.Entry
-	telegramChat  *widget.Entry
-
-	// Log file fields
-	logFilePath *widget.Entry
+	webhookURL      *widget.Entry
+	webhookFormat   *widget.Select
+	telegramToken   *widget.Entry
+	telegramChat    *widget.Entry
+	logFilePath     *widget.Entry
 }
 
 func (s *templateStep) Title() string { return "Events & Outputs" }
@@ -61,98 +83,107 @@ func (s *templateStep) Description() string {
 }
 
 func (s *templateStep) Content() fyne.CanvasObject {
-	if s.watchWalletCard != nil {
-		templateCards := container.NewGridWithColumns(2,
-			s.watchWalletCard,
-			s.trackDRepCard,
-			s.monitorPoolCard,
-			s.everythingCard,
+	// Sections are constructed on first Content() call; subsequent
+	// calls (e.g. when navigating back) reuse the same widgets so the
+	// user's in-progress entries survive.
+	if s.wallets == nil {
+		s.wallets = s.newSection(
+			"Wallets",
+			"Cardano address (addr1... or stake1...)",
+			setup.ValidateWalletAddr,
 		)
-
-		templateBox := container.NewVBox(
-			widget.NewLabelWithStyle(
-				"Monitoring Template",
-				fyne.TextAlignLeading,
-				fyne.TextStyle{Bold: true},
-			),
-			templateCards,
-			s.templateParam,
-			s.validationLabel,
+		s.dreps = s.newSection(
+			"DReps",
+			"DRep ID (drep1... or hex)",
+			setup.ValidateDRepID,
 		)
+		s.pools = s.newSection(
+			"Pools",
+			"Pool ID (pool1... or hex)",
+			setup.ValidatePoolID,
+		)
+		s.assets = s.newSection(
+			"Assets",
+			"Asset fingerprint (asset1... — CIP-14)",
+			setup.ValidateAssetFingerprint,
+		)
+		s.policies = s.newSection(
+			"Policies",
+			"Policy ID (56-character hex)",
+			setup.ValidatePolicyID,
+		)
+		s.summaryLabel = widget.NewLabel("")
+		s.summaryLabel.TextStyle = fyne.TextStyle{Italic: true}
 
-		outputBox := container.NewVBox(
+		// Assets + policies are the power-user fields; keep them
+		// behind an accordion so the default view stays simple.
+		advancedBody := container.NewVBox(
+			s.assets.canvasObject(),
 			widget.NewSeparator(),
-			widget.NewLabelWithStyle(
-				"External Output Destination (Optional)",
-				fyne.TextAlignLeading,
-				fyne.TextStyle{Bold: true},
+			s.policies.canvasObject(),
+		)
+		s.advanced = widget.NewAccordion(
+			widget.NewAccordionItem(
+				"Advanced — Assets & Policies",
+				advancedBody,
 			),
-			widget.NewLabel("How should events be delivered externally? (optional; desktop notifications always work via the tray)"),
-			s.outputSelect,
-			s.outputContainer,
 		)
 
-		return container.NewVBox(
-			templateBox,
-			layout.NewSpacer(),
-			outputBox,
+		s.targetsBox = container.NewVBox(
+			s.wallets.canvasObject(),
+			widget.NewSeparator(),
+			s.dreps.canvasObject(),
+			widget.NewSeparator(),
+			s.pools.canvasObject(),
+			widget.NewSeparator(),
+			s.advanced,
 		)
+
+		s.everythingCheck = widget.NewCheck(
+			"Monitor Everything (ignore per-target lists)",
+			func(checked bool) {
+				if checked {
+					s.targetsBox.Hide()
+				} else {
+					s.targetsBox.Show()
+				}
+				s.refreshSummary()
+			},
+		)
+
+		// Hydrate from the plan.
+		if s.plan != nil {
+			s.wallets.setValues(s.plan.Filter.Wallets)
+			s.dreps.setValues(s.plan.Filter.DReps)
+			s.pools.setValues(s.plan.Filter.Pools)
+			s.assets.setValues(s.plan.Filter.Assets)
+			s.policies.setValues(s.plan.Filter.Policies)
+			s.everythingCheck.SetChecked(
+				s.plan.Filter.MonitorEverything,
+			)
+			// Auto-open Advanced when assets/policies are configured.
+			if len(s.plan.Filter.Assets) > 0 ||
+				len(s.plan.Filter.Policies) > 0 {
+				s.advanced.Open(0)
+			}
+		}
+		s.refreshSummary()
 	}
 
-	// Template Selection
-	s.watchWalletCard = widget.NewButton(
-		"Watch Wallet",
-		func() { s.selectTemplate("Watch Wallet") },
-	)
-	s.trackDRepCard = widget.NewButton(
-		"Track DRep",
-		func() { s.selectTemplate("Track DRep") },
-	)
-	s.monitorPoolCard = widget.NewButton(
-		"Monitor Pool",
-		func() { s.selectTemplate("Monitor Pool") },
-	)
-	s.everythingCard = widget.NewButton(
-		"Monitor Everything",
-		func() { s.selectTemplate("Monitor Everything") },
-	)
+	if s.outputSelect == nil {
+		s.buildOutputSelector()
+	}
 
-	s.templateParam = widget.NewMultiLineEntry()
-	s.templateParam.SetMinRowsVisible(3)
-	s.templateParam.OnChanged = func(t string) { s.validateParam(t) }
-	s.templateParam.Hide()
-
-	s.validationLabel = widget.NewLabel("")
-	s.validationLabel.Hide()
-
-	templateCards := container.NewGridWithColumns(2,
-		s.watchWalletCard,
-		s.trackDRepCard,
-		s.monitorPoolCard,
-		s.everythingCard,
-	)
-
-	templateBox := container.NewVBox(
+	monitorBox := container.NewVBox(
 		widget.NewLabelWithStyle(
-			"Monitoring Template",
+			"Monitoring Targets",
 			fyne.TextAlignLeading,
 			fyne.TextStyle{Bold: true},
 		),
-		templateCards,
-		s.templateParam,
-		s.validationLabel,
+		s.everythingCheck,
+		s.targetsBox,
+		s.summaryLabel,
 	)
-
-	// Output Selection
-	outputs := []string{
-		"None (desktop notifications only)",
-		"Webhook",
-		"Telegram",
-		"Log to File",
-	}
-	s.outputSelect = widget.NewSelect(outputs, s.onOutputChange)
-
-	s.outputContainer = container.NewVBox()
 
 	outputBox := container.NewVBox(
 		widget.NewSeparator(),
@@ -161,22 +192,183 @@ func (s *templateStep) Content() fyne.CanvasObject {
 			fyne.TextAlignLeading,
 			fyne.TextStyle{Bold: true},
 		),
-		widget.NewLabel("How should events be delivered externally? (optional; desktop notifications always work via the tray)"),
+		widget.NewLabel(
+			"How should events be delivered externally? "+
+				"(optional; desktop notifications always work "+
+				"via the tray)",
+		),
 		s.outputSelect,
 		s.outputContainer,
 	)
 
-	// Initial values from plan
-	initialTemplate := "Watch Wallet"
-	if s.plan != nil && s.plan.Filter.Template != "" {
-		initialTemplate = s.plan.Filter.Template
-	}
-	s.selectTemplate(initialTemplate)
-	if s.plan != nil {
-		s.templateParam.SetText(s.plan.Filter.Param)
-	}
+	return container.NewVBox(
+		monitorBox,
+		layout.NewSpacer(),
+		outputBox,
+	)
+}
 
-	initialOutput := outputs[0] // None
+// newSection wires up one editable target list. The Add button validates
+// the input via `validate`, surfaces the error inline on failure, and
+// appends a labelled row with a trash-icon remove button on success.
+func (s *templateStep) newSection(
+	label, placeholder string,
+	validate func(string) error,
+) *targetSection {
+	sec := &targetSection{
+		label:       label,
+		placeholder: placeholder,
+		validate:    validate,
+		onChange:    s.refreshSummary,
+	}
+	sec.entry = widget.NewEntry()
+	sec.entry.SetPlaceHolder(placeholder)
+	sec.errLabel = widget.NewLabel("")
+	sec.errLabel.Wrapping = fyne.TextWrapWord
+	sec.errLabel.Hide()
+	sec.list = container.NewVBox()
+	sec.addBtn = widget.NewButtonWithIcon(
+		"Add",
+		theme.ContentAddIcon(),
+		func() { sec.add(sec.entry.Text) },
+	)
+	sec.entry.OnSubmitted = func(string) { sec.add(sec.entry.Text) }
+	return sec
+}
+
+// add validates v (splitting on commas first so pasted CSV produces
+// multiple rows) and appends each piece. All-or-nothing: if any piece
+// fails validation, nothing is added and the input is preserved.
+func (sec *targetSection) add(v string) {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		sec.errLabel.SetText("Please enter a value before adding.")
+		sec.errLabel.Show()
+		return
+	}
+	parts := splitAndTrim(v)
+	if len(parts) == 0 {
+		sec.errLabel.SetText("Please enter a value before adding.")
+		sec.errLabel.Show()
+		return
+	}
+	for _, p := range parts {
+		if err := sec.validate(p); err != nil {
+			sec.errLabel.SetText(err.Error())
+			sec.errLabel.Show()
+			return
+		}
+	}
+	sec.errLabel.Hide()
+	for _, p := range parts {
+		sec.values = append(sec.values, p)
+		sec.list.Add(sec.row(p))
+	}
+	sec.entry.SetText("")
+	if sec.onChange != nil {
+		sec.onChange()
+	}
+}
+
+// splitAndTrim splits s on commas, trims whitespace from each piece, and
+// drops empties. A trailing comma or accidental "addr1a, ,addr1b" never
+// produces an empty entry that would fail validation with a confusing
+// "must not be empty" error.
+func splitAndTrim(s string) []string {
+	var out []string
+	for p := range strings.SplitSeq(s, ",") {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// row builds a single entry row: a label with the value plus a trash
+// icon that removes it from sec.values and from the visible list.
+func (sec *targetSection) row(v string) fyne.CanvasObject {
+	lbl := widget.NewLabel(v)
+	lbl.Wrapping = fyne.TextWrapBreak
+	var rowObj *fyne.Container
+	removeBtn := widget.NewButtonWithIcon(
+		"",
+		theme.DeleteIcon(),
+		func() {
+			sec.removeValue(v, rowObj)
+		},
+	)
+	rowObj = container.NewBorder(
+		nil, nil, nil, removeBtn, lbl,
+	)
+	return rowObj
+}
+
+func (sec *targetSection) removeValue(v string, row fyne.CanvasObject) {
+	for i, x := range sec.values {
+		if x == v {
+			sec.values = append(sec.values[:i], sec.values[i+1:]...)
+			break
+		}
+	}
+	sec.list.Remove(row)
+	if sec.onChange != nil {
+		sec.onChange()
+	}
+}
+
+// setValues replaces the section's contents with vs. Used to hydrate
+// from a saved plan when the wizard is reopened.
+func (sec *targetSection) setValues(vs []string) {
+	sec.values = sec.values[:0]
+	sec.list.RemoveAll()
+	for _, v := range vs {
+		sec.values = append(sec.values, v)
+		sec.list.Add(sec.row(v))
+	}
+}
+
+func (sec *targetSection) canvasObject() fyne.CanvasObject {
+	return container.NewVBox(
+		widget.NewLabelWithStyle(
+			sec.label, fyne.TextAlignLeading,
+			fyne.TextStyle{Bold: true},
+		),
+		container.NewBorder(
+			nil, nil, nil, sec.addBtn, sec.entry,
+		),
+		sec.errLabel,
+		sec.list,
+	)
+}
+
+func (s *templateStep) refreshSummary() {
+	if s.everythingCheck != nil && s.everythingCheck.Checked {
+		s.summaryLabel.SetText("Current configuration: everything")
+		return
+	}
+	f := setup.FilterConfig{
+		Wallets:  s.wallets.values,
+		DReps:    s.dreps.values,
+		Pools:    s.pools.values,
+		Assets:   s.assets.values,
+		Policies: s.policies.values,
+	}
+	s.summaryLabel.SetText(
+		"Current configuration: " + setup.SummarizeFilter(f),
+	)
+}
+
+func (s *templateStep) buildOutputSelector() {
+	outputs := []string{
+		"None (desktop notifications only)",
+		"Webhook",
+		"Telegram",
+		"Log to File",
+	}
+	s.outputSelect = widget.NewSelect(outputs, s.onOutputChange)
+	s.outputContainer = container.NewVBox()
+
+	initialOutput := outputs[0]
 	if s.plan != nil {
 		switch s.plan.Output.Type {
 		case "webhook":
@@ -188,68 +380,6 @@ func (s *templateStep) Content() fyne.CanvasObject {
 		}
 	}
 	s.outputSelect.SetSelected(initialOutput)
-
-	return container.NewVBox(
-		templateBox,
-		layout.NewSpacer(),
-		outputBox,
-	)
-}
-
-func (s *templateStep) selectTemplate(name string) {
-	s.selectedTemplate = name
-	s.watchWalletCard.Importance = widget.LowImportance
-	s.trackDRepCard.Importance = widget.LowImportance
-	s.monitorPoolCard.Importance = widget.LowImportance
-	s.everythingCard.Importance = widget.LowImportance
-
-	placeholder := ""
-	showParam := true
-
-	switch name {
-	case "Watch Wallet":
-		s.watchWalletCard.Importance = widget.HighImportance
-		placeholder = "Cardano address(es) (addr1..., stake...)\n" +
-			"Separate multiple with commas"
-	case "Track DRep":
-		s.trackDRepCard.Importance = widget.HighImportance
-		placeholder = "DRep ID(s) (bech32 or hex)\n" +
-			"Separate multiple with commas"
-	case "Monitor Pool":
-		s.monitorPoolCard.Importance = widget.HighImportance
-		placeholder = "Pool ID(s) (pool1... or hex)\n" +
-			"Separate multiple with commas"
-	case "Monitor Everything":
-		s.everythingCard.Importance = widget.HighImportance
-		showParam = false
-	}
-
-	s.templateParam.SetPlaceHolder(placeholder)
-	if showParam {
-		s.templateParam.Show()
-	} else {
-		s.templateParam.Hide()
-	}
-	s.validateParam(s.templateParam.Text)
-
-	s.watchWalletCard.Refresh()
-	s.trackDRepCard.Refresh()
-	s.monitorPoolCard.Refresh()
-	s.everythingCard.Refresh()
-}
-
-func (s *templateStep) validateParam(text string) {
-	if text == "" {
-		s.validationLabel.Hide()
-		return
-	}
-
-	if err := setup.ValidateTemplateParam(s.selectedTemplate, text); err != nil {
-		s.validationLabel.SetText(err.Error())
-		s.validationLabel.Show()
-	} else {
-		s.validationLabel.Hide()
-	}
 }
 
 func (s *templateStep) onOutputChange(selected string) {
@@ -312,14 +442,23 @@ func (s *templateStep) onOutputChange(selected string) {
 	s.outputContainer.Refresh()
 }
 
+// Validate gates the wizard's Next button. When MonitorEverything is
+// off the user must have configured at least one target (otherwise the
+// wizard would produce a plan that matches nothing). The output
+// sub-validations are unchanged from the previous step3.
 func (s *templateStep) Validate() error {
-	if s.selectedTemplate != "Monitor Everything" && s.templateParam.Text == "" {
-		return errors.New("template parameter is required")
-	}
-	// Re-run validation logic
-	s.validateParam(s.templateParam.Text)
-	if s.validationLabel.Visible() {
-		return errors.New("invalid template parameter format")
+	if !s.everythingCheck.Checked {
+		if len(s.wallets.values) == 0 &&
+			len(s.dreps.values) == 0 &&
+			len(s.pools.values) == 0 &&
+			len(s.assets.values) == 0 &&
+			len(s.policies.values) == 0 {
+			return errors.New(
+				"add at least one wallet, DRep, pool, " +
+					"asset, or policy — or enable " +
+					"Monitor Everything",
+			)
+		}
 	}
 
 	switch s.outputSelect.Selected {
@@ -329,7 +468,9 @@ func (s *templateStep) Validate() error {
 		}
 	case "Telegram":
 		if s.telegramToken.Text == "" || s.telegramChat.Text == "" {
-			return errors.New("telegram token and chat ID are required")
+			return errors.New(
+				"telegram token and chat ID are required",
+			)
 		}
 	case "Log to File":
 		if s.logFilePath.Text == "" {
@@ -341,11 +482,15 @@ func (s *templateStep) Validate() error {
 		}
 		dir := filepath.Dir(path)
 		if st, err := os.Stat(path); err == nil && st.IsDir() {
-			return errors.New("log path must be a file, not a directory")
+			return errors.New(
+				"log path must be a file, not a directory",
+			)
 		}
 		if st, err := os.Stat(dir); err != nil {
 			if os.IsNotExist(err) {
-				return fmt.Errorf("directory does not exist: %s", dir)
+				return fmt.Errorf(
+					"directory does not exist: %s", dir,
+				)
 			}
 			return fmt.Errorf("failed to access directory %s: %w",
 				dir, err)
@@ -358,8 +503,25 @@ func (s *templateStep) Validate() error {
 }
 
 func (s *templateStep) Apply(plan *setup.SetupPlan) {
-	plan.Filter.Template = s.selectedTemplate
-	plan.Filter.Param = s.templateParam.Text
+	plan.Filter.MonitorEverything = s.everythingCheck.Checked
+	if s.everythingCheck.Checked {
+		plan.Filter.Wallets = nil
+		plan.Filter.DReps = nil
+		plan.Filter.Pools = nil
+		plan.Filter.Assets = nil
+		plan.Filter.Policies = nil
+	} else {
+		plan.Filter.Wallets = append(
+			[]string(nil), s.wallets.values...)
+		plan.Filter.DReps = append(
+			[]string(nil), s.dreps.values...)
+		plan.Filter.Pools = append(
+			[]string(nil), s.pools.values...)
+		plan.Filter.Assets = append(
+			[]string(nil), s.assets.values...)
+		plan.Filter.Policies = append(
+			[]string(nil), s.policies.values...)
+	}
 
 	plan.Output.Config = make(map[string]string)
 	switch s.outputSelect.Selected {
@@ -374,7 +536,6 @@ func (s *templateStep) Apply(plan *setup.SetupPlan) {
 	case "Log to File":
 		plan.Output.Type = "log"
 		path := s.logFilePath.Text
-		// Robust home directory expansion
 		if expanded, err := setup.ExpandTildePath(path); err == nil {
 			path = expanded
 		} else {

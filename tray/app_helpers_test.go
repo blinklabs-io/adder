@@ -20,6 +20,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -123,61 +124,18 @@ func TestEmojiAndExplorerURLHelpers(t *testing.T) {
 	}
 }
 
-func TestDispatchNotificationUpdatesHistoryAndHonorsPreferences(t *testing.T) {
-	app := test.NewApp()
-	trayApp := &App{
-		config: TrayConfig{
-			NotifyPrefs: map[string]bool{
-				setup.NotifyPrefBlocksMinted: true,
-				setup.NotifyPrefIncomingTx:   true,
-				setup.NotifyPrefVotesCast:    true,
-			},
-		},
-		fyneApp: app,
-		mRecent: fyne.NewMenuItem("Recent Events", nil),
-		mMenu:   fyne.NewMenu("Adder"),
-	}
-
-	blockEvt := event.Event{
-		Type:      "input.block",
-		Timestamp: time.Date(2026, 5, 28, 12, 0, 0, 0, time.UTC),
-		Payload:   map[string]any{"blockHash": "blockhash"},
-	}
-	test.AssertNotificationSent(
-		t,
-		fyne.NewNotification("🧱 New Block", "Block Hash: blockhash"),
-		func() { trayApp.dispatchNotification(blockEvt) },
-	)
-
-	txEvt := event.Event{
-		Type:    "input.transaction",
-		Payload: map[string]any{"transactionHash": "txhash"},
-	}
-	test.AssertNotificationSent(
-		t,
-		fyne.NewNotification("💸 New Transaction", "Hash: txhash"),
-		func() { trayApp.dispatchNotification(txEvt) },
-	)
-
-	govEvt := event.Event{Type: "input.governance"}
-	test.AssertNotificationSent(
-		t,
-		fyne.NewNotification("🗳️ Governance Action", "A new governance action was detected."),
-		func() { trayApp.dispatchNotification(govEvt) },
-	)
-
-	unknownEvt := event.Event{Type: "input.unknown"}
-	test.AssertNotificationSent(t, nil, func() {
-		trayApp.dispatchNotification(unknownEvt)
-	})
-
-	require.Eventually(t, func() bool {
-		return len(trayApp.recentEvents) == 4 &&
-			trayApp.mRecent.ChildMenu != nil &&
-			len(trayApp.mRecent.ChildMenu.Items) == 4
-	}, time.Second, 10*time.Millisecond)
-	assert.Contains(t, trayApp.mRecent.ChildMenu.Items[0].Label, "unknown")
-}
+// TestDispatchNotificationUpdatesHistoryAndHonorsPreferences was
+// removed when the inline dispatchNotification function was replaced
+// with the notifications.Engine + notifications.Dispatch pipeline. The
+// equivalent coverage now lives in:
+//   - tray/notifications/notify_test.go     (Dispatch ⇒ SendNotification)
+//   - tray/notifications/engine_test.go     (rule matching, dedup,
+//                                            rate limiting, connection
+//                                            bypass)
+//   - tray/notifications/rules_test.go      (per-template rule fan-out)
+//   - tray/notifications/render_test.go     (Cardano-aware template
+//                                            rendering)
+//   - TestAddRecentEventKeepsNewestTen below (recent-events history)
 
 func TestAddRecentEventKeepsNewestTen(t *testing.T) {
 	test.NewApp()
@@ -217,7 +175,7 @@ func TestSetupTrayBuildsDesktopMenu(t *testing.T) {
 	deskApp := &desktopTestApp{App: baseApp}
 	reconfigurePlan := setup.SetupPlan{
 		Network: setup.NetworkConfig{Name: "preview"},
-		Filter:  setup.FilterConfig{Template: "Monitor Everything"},
+		Filter:  setup.FilterConfig{MonitorEverything: true},
 		API:     setup.APIConfig{Address: "127.0.0.1", Port: 8080},
 		Output: setup.OutputConfig{
 			Type:   "none",
@@ -238,7 +196,7 @@ func TestSetupTrayBuildsDesktopMenu(t *testing.T) {
 	}
 	t.Cleanup(func() {
 		trayApp.conn.Disconnect()
-		close(trayApp.quitChan)
+		trayApp.Shutdown()
 	})
 
 	trayApp.setupTray()
@@ -299,6 +257,60 @@ func TestShutdownClosesQuitChannel(t *testing.T) {
 	}
 }
 
+// TestShutdownIsIdempotent guards the sync.Once wrap: multiple callers
+// (the tray Quit menu, the OS signal handler, test cleanup) must be
+// able to invoke Shutdown without a double-close panic on quitChan.
+func TestShutdownIsIdempotent(t *testing.T) {
+	app := test.NewApp()
+	trayApp := &App{
+		fyneApp:  app,
+		quitChan: make(chan struct{}),
+	}
+
+	assert.NotPanics(t, func() {
+		trayApp.Shutdown()
+		trayApp.Shutdown()
+		trayApp.Shutdown()
+	})
+}
+
+// TestShutdownWaitsForProducer is the regression guard for the
+// shutdown-ordering finding: Shutdown must wait for the producer
+// goroutine to exit before stopping the engine, otherwise shutdown-
+// time RecordDrop calls conflate with backpressure drops and producer
+// fyne.Do work can race against a torn-down driver. We synthesise the
+// race with a slow producer that increments a counter after quitChan
+// closes, then assert Shutdown sees the counter at its final value.
+func TestShutdownWaitsForProducer(t *testing.T) {
+	app := test.NewApp()
+	trayApp := &App{
+		fyneApp:  app,
+		quitChan: make(chan struct{}),
+		producerDone: func() chan struct{} {
+			c := make(chan struct{})
+			// Stand-in producer: closes producerDone 50ms after
+			// quitChan closes. If Shutdown does NOT wait, it
+			// returns immediately and the test races on `done`.
+			go func() {
+				<-c // never fires; we close producerDone manually
+			}()
+			return c
+		}(),
+	}
+
+	var producerExited atomic.Bool
+	go func() {
+		<-trayApp.quitChan
+		time.Sleep(50 * time.Millisecond)
+		producerExited.Store(true)
+		close(trayApp.producerDone)
+	}()
+
+	trayApp.Shutdown()
+	assert.True(t, producerExited.Load(),
+		"Shutdown must wait for producerDone before returning")
+}
+
 func TestOpenFolderIgnoresEmptyPath(t *testing.T) {
 	openFolder("")
 }
@@ -312,7 +324,7 @@ func TestRunConfiguresTrayAndRunsApp(t *testing.T) {
 		conn:     NewConnectionManager(),
 		quitChan: make(chan struct{}),
 	}
-	t.Cleanup(func() { close(trayApp.quitChan) })
+	t.Cleanup(func() { trayApp.Shutdown() })
 
 	trayApp.Run()
 
@@ -342,7 +354,7 @@ func TestOnWizardFinishReloadsTrayConfigOnSuccess(t *testing.T) {
 
 	trayApp.onWizardFinish(context.Background(), setup.SetupPlan{
 		Network: setup.NetworkConfig{Name: "mainnet"},
-		Filter:  setup.FilterConfig{Template: "Monitor Everything"},
+		Filter:  setup.FilterConfig{MonitorEverything: true},
 		API:     setup.APIConfig{Address: "127.0.0.1", Port: 9090},
 		Output:  setup.OutputConfig{Type: "none", Config: make(map[string]string)},
 		Notify:  make(setup.NotificationPrefs),
@@ -421,4 +433,66 @@ func installFakeTrayCommands(t *testing.T) {
 		))
 	}
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+}
+
+// TestSuppressInitialFire is the regression guard for the review
+// finding that the OnChange initial-fire suppression was unconditional
+// (it would silently swallow a real first-event StatusError or
+// StatusConnected if the tracker had transitioned before OnChange was
+// registered, e.g. an auto-connect in NewApp). After the fix, only
+// the default StatusStopped first-fire is swallowed; every other
+// initial status flows through to the user.
+func TestSuppressInitialFire(t *testing.T) {
+	cases := []struct {
+		name        string
+		first       bool
+		status      Status
+		wantSuppress bool
+		wantFirst    bool // value of `first` after the call
+	}{
+		{
+			name: "first fire with default Stopped is suppressed",
+			first: true, status: StatusStopped,
+			wantSuppress: true, wantFirst: false,
+		},
+		{
+			name: "first fire with Error is NOT suppressed",
+			first: true, status: StatusError,
+			wantSuppress: false, wantFirst: false,
+		},
+		{
+			name: "first fire with Connected is NOT suppressed",
+			first: true, status: StatusConnected,
+			wantSuppress: false, wantFirst: false,
+		},
+		{
+			name: "subsequent Stopped fire is NOT suppressed",
+			first: false, status: StatusStopped,
+			wantSuppress: false, wantFirst: false,
+		},
+		{
+			name: "subsequent Error fire is NOT suppressed",
+			first: false, status: StatusError,
+			wantSuppress: false, wantFirst: false,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var first atomic.Bool
+			first.Store(tc.first)
+			got := suppressInitialFire(&first, tc.status)
+			if got != tc.wantSuppress {
+				t.Fatalf(
+					"suppressInitialFire(%v, %v) = %v; want %v",
+					tc.first, tc.status, got, tc.wantSuppress,
+				)
+			}
+			if first.Load() != tc.wantFirst {
+				t.Fatalf(
+					"first after call = %v; want %v",
+					first.Load(), tc.wantFirst,
+				)
+			}
+		})
+	}
 }

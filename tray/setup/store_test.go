@@ -18,6 +18,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/blinklabs-io/adder/internal/config"
 	"github.com/stretchr/testify/assert"
@@ -74,8 +75,9 @@ func TestLocalStoreEngineRoundTrip(t *testing.T) {
 	plan := SetupPlan{
 		Network: NetworkConfig{Name: "preview"},
 		Filter: FilterConfig{
-			Template: "Watch Wallet",
-			Param:    "addr1qxy648m6k96350t4tql82q0e8sqpks54uvlttclat4e0z6298lyp4578c7l655e09f8v7mwy5h653zls2nd335g58xvsf2y066",
+			Wallets: []string{
+				"addr1qxy648m6k96350t4tql82q0e8sqpks54uvlttclat4e0z6298lyp4578c7l655e09f8v7mwy5h653zls2nd335g58xvsf2y066",
+			},
 		},
 		Output: OutputConfig{
 			Type: "webhook",
@@ -94,10 +96,19 @@ func TestLocalStoreEngineRoundTrip(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, want.Api.ListenAddress, got.Api.ListenAddress)
 	assert.Equal(t, want.Api.ListenPort, got.Api.ListenPort)
-	assert.Equal(t, "preview", got.Plugin["input"]["chainsync"]["network"])
-	assert.Equal(t, plan.Filter.Param, got.Plugin["filter"]["cardano"]["address"])
+	assert.Equal(t,
+		"preview", got.Plugin["input"]["chainsync"]["network"])
+	// The engine config no longer carries per-target filter knobs —
+	// they live on TrayConfig.Filter instead so a multi-target plan
+	// cannot be ANDed together by the sidecar's cardano filter.
+	if cardano, ok := got.Plugin["filter"]["cardano"]; ok {
+		assert.NotContains(t, cardano, "address")
+		assert.NotContains(t, cardano, "drep")
+		assert.NotContains(t, cardano, "pool")
+	}
 	assert.Equal(t, "webhook", got.Output)
-	assert.Equal(t, "https://example.com/webhook", got.Plugin["output"]["webhook"]["url"])
+	assert.Equal(t, "https://example.com/webhook",
+		got.Plugin["output"]["webhook"]["url"])
 }
 
 func TestLocalStoreLoadEngineMissingUsesDefaults(t *testing.T) {
@@ -128,4 +139,57 @@ func TestLocalStoreSaveTrayCreateDirError(t *testing.T) {
 	err := store.SaveTrayAtomic(TrayConfig{})
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "creating config directory")
+}
+
+// TestResolvedNotifyRate locks in the zero-value-resolves-to-default
+// behaviour plus the negative-disables and explicit-override paths so
+// a user's YAML knob actually takes effect without surprising
+// override-by-zero edge cases.
+func TestResolvedNotifyRate(t *testing.T) {
+	cases := []struct {
+		name       string
+		cfg        TrayConfig
+		wantLimit  int
+		wantWindow time.Duration
+	}{
+		{
+			name:       "zero values use defaults",
+			cfg:        TrayConfig{},
+			wantLimit:  DefaultNotifyRateLimit,
+			wantWindow: DefaultNotifyRateWindow,
+		},
+		{
+			name: "explicit values pass through",
+			cfg: TrayConfig{
+				NotifyRateLimit:  10,
+				NotifyRateWindow: 30 * time.Second,
+			},
+			wantLimit:  10,
+			wantWindow: 30 * time.Second,
+		},
+		{
+			name: "negative limit disables coalescing",
+			cfg: TrayConfig{
+				NotifyRateLimit:  -1,
+				NotifyRateWindow: 2 * time.Second,
+			},
+			wantLimit:  -1,
+			wantWindow: 2 * time.Second,
+		},
+		{
+			name: "zero window uses default with custom limit",
+			cfg: TrayConfig{
+				NotifyRateLimit: 5,
+			},
+			wantLimit:  5,
+			wantWindow: DefaultNotifyRateWindow,
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			limit, window := c.cfg.ResolvedNotifyRate()
+			assert.Equal(t, c.wantLimit, limit)
+			assert.Equal(t, c.wantWindow, window)
+		})
+	}
 }

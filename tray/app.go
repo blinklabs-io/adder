@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -33,9 +34,17 @@ import (
 	"fyne.io/fyne/v2/driver/desktop"
 	"github.com/blinklabs-io/adder/event"
 	"github.com/blinklabs-io/adder/internal/ui/assets"
+	"github.com/blinklabs-io/adder/tray/notifications"
 	"github.com/blinklabs-io/adder/tray/setup"
 	"github.com/blinklabs-io/adder/tray/wizard"
 )
+
+// Notification rate-limit defaults live in tray/setup
+// (DefaultNotifyRateLimit / DefaultNotifyRateWindow) and are
+// overridable per-user via TrayConfig.NotifyRateLimit /
+// NotifyRateWindow in adder-tray.yaml. Connection alerts bypass the
+// limiter so a chain-event burst can never swallow a "lost
+// connection" alert.
 
 // App holds references to all major components of the tray
 // application.
@@ -71,6 +80,23 @@ type App struct {
 	// goroutine, hence atomic.
 	intentionalStop atomic.Bool
 	quitChan        chan struct{}
+	// shutdownOnce guards Shutdown so multiple call sites (Quit menu,
+	// signal handler, test cleanup) cannot double-close quitChan.
+	shutdownOnce sync.Once
+	// producerDone is closed by the event-forwarder goroutine on exit
+	// so Shutdown can join the producer before stopping the engine —
+	// keeps shutdown drops out of Stats() backpressure counters and
+	// prevents producer fyne.Do calls against a torn-down driver. nil
+	// before setupTray runs.
+	producerDone chan struct{}
+
+	// notifyEngine is the single notification dispatch path: chain
+	// events + synthesized connection events in, rendered rate-limited
+	// Requests out to the Dispatch goroutine. atomic.Pointer because
+	// setupTray (main goroutine) writes it and several goroutines read
+	// it (wizard-finish, status observer, producer, Stats ticker,
+	// Shutdown).
+	notifyEngine atomic.Pointer[notifications.Engine]
 }
 
 // NewApp creates and initialises the tray application.
@@ -154,9 +180,18 @@ func (a *App) onWizardFinish(
 	slog.Info("wizard finished, running setup tasks")
 
 	go func() {
-		if err := a.runner.Apply(ctx, plan); err != nil {
+		result, err := a.runner.Apply(ctx, plan)
+		if err != nil {
 			a.failTask("Failed to apply configuration", err, ctrl)
 			return
+		}
+		// Surface soft errors to the user — the config is saved, but
+		// the service may not be running because the binary was not
+		// found or the restart failed. Without this the wizard reports
+		// "Setup Complete" and the user is left to discover the silent
+		// failure via a later "API unreachable" error with no context.
+		if result.HasSoftErrors() {
+			a.surfaceSoftApplyErrors(result, ctrl)
 		}
 		if cfg, err := a.runner.Store.LoadTray(); err != nil {
 			slog.Warn("failed to reload tray config after setup", "error", err)
@@ -164,6 +199,18 @@ func (a *App) onWizardFinish(
 			a.configMu.Lock()
 			a.config = cfg
 			a.configMu.Unlock()
+		}
+
+		// Rebuild rules + push new rate-limit knobs so changes take
+		// effect without a tray restart. On first run the engine
+		// isn't yet constructed (setupTray runs later) — it picks up
+		// both at construction time.
+		if eng := a.notifyEngine.Load(); eng != nil {
+			eng.SetRules(
+				notifications.RulesFromPlan(a.notifyPlan()),
+			)
+			limit, window := a.Config().ResolvedNotifyRate()
+			eng.SetRateLimit(limit, window)
 		}
 
 		// Success!
@@ -174,11 +221,12 @@ func (a *App) onWizardFinish(
 			if ctrl != nil {
 				ctrl.Close()
 			}
+			summary := setup.SummarizeFilter(plan.Filter)
 			successMsg := fmt.Sprintf(
 				"Successfully connected to Adder API at %s:%d.\n\nMonitoring: %s",
 				plan.API.Address,
 				plan.API.Port,
-				plan.Filter.Template,
+				summary,
 			)
 
 			// Show completion dialog if we have a window available
@@ -187,7 +235,7 @@ func (a *App) onWizardFinish(
 			}
 
 			a.fyneApp.SendNotification(fyne.NewNotification("Adder Started",
-				"Now monitoring "+plan.Filter.Template))
+				"Now monitoring "+summary))
 		})
 	}()
 }
@@ -198,6 +246,45 @@ func (a *App) Config() TrayConfig {
 	a.configMu.RLock()
 	defer a.configMu.RUnlock()
 	return a.config
+}
+
+// surfaceSoftApplyErrors shows a warning dialog summarising the
+// non-fatal errors Apply returned. The config IS saved at this point —
+// we just need the user to know the running service may not reflect
+// it so they can act (install adder, restart the service, etc.). The
+// wizard is not failed; the user can still close it and proceed.
+func (a *App) surfaceSoftApplyErrors(
+	result setup.ApplyResult, ctrl *wizard.WizardController,
+) {
+	var msg string
+	if result.BinaryFindErr != nil {
+		msg += "Could not find the adder binary: " +
+			result.BinaryFindErr.Error() +
+			"\nThe service was not (re)started; install adder " +
+			"or start it manually."
+	}
+	if result.ServiceRestartErr != nil {
+		if msg != "" {
+			msg += "\n\n"
+		}
+		msg += "Failed to (re)start the adder service: " +
+			result.ServiceRestartErr.Error() +
+			"\nThe running process may not reflect your new " +
+			"configuration; restart adder manually."
+	}
+	slog.Warn("setup completed with soft errors", "summary", msg)
+	fyne.Do(func() {
+		if ctrl != nil {
+			ctrl.EnableButtons()
+		}
+		if len(a.fyneApp.Driver().AllWindows()) > 0 {
+			dialog.ShowInformation(
+				"Setup Complete (with warnings)",
+				msg,
+				a.fyneApp.Driver().AllWindows()[0],
+			)
+		}
+	})
 }
 
 func (a *App) failTask(msg string, err error, ctrl *wizard.WizardController) {
@@ -292,7 +379,10 @@ func (a *App) setupTray() {
 		openURL("https://github.com/blinklabs-io/adder")
 	})
 	mQuit := fyne.NewMenuItem("Quit", func() {
-		a.fyneApp.Quit()
+		// Shutdown orchestrates the right teardown order before
+		// fyneApp.Quit; calling fyneApp.Quit directly would leak the
+		// producer goroutine and the engine.
+		a.Shutdown()
 	})
 
 	menu := fyne.NewMenu("Adder",
@@ -316,20 +406,53 @@ func (a *App) setupTray() {
 
 	desk.SetSystemTrayMenu(menu)
 
-	// Update status menu item when connection status changes.
+	// Notification dispatch path: engine renders + rate-limits, the
+	// Dispatch goroutine sends native notifications. Constructed and
+	// stored on a.notifyEngine BEFORE OnChange is registered, because
+	// OnChange fires synchronously once with the current status and
+	// may call NotifyConnection immediately.
+	engineEvents := make(chan event.Event, 64)
+	rules := notifications.RulesFromPlan(a.notifyPlan())
+	rateLimit, rateWindow := a.Config().ResolvedNotifyRate()
+	slog.Info("notification rate limiter configured",
+		"limit", rateLimit, "window", rateWindow)
+	eng := notifications.NewEngine(
+		engineEvents,
+		rules,
+		notifications.WithRateLimit(rateLimit, rateWindow),
+	)
+	a.notifyEngine.Store(eng)
+	eng.Start()
+	go notifications.Dispatch(
+		eng.Requests(),
+		a.fyneApp,
+		eng.CurrentEpoch,
+		eng.RecordDrop,
+	)
+
+	// Log non-zero drop deltas every 30s so suppressed notifications
+	// are visible to operators. Terminates on quitChan close.
+	go a.surfaceNotificationStats(eng)
+
+	// Status observer: updates the status menu item and routes
+	// connection alerts through the engine. initialFire suppresses
+	// the synchronous first OnChange call (a fresh ConnectionManager
+	// fires StatusStopped, which would otherwise read as "Lost
+	// connection" before any connection attempt).
 	//
-	// NOTE: StatusTracker.Set spawns one goroutine per state transition, so
-	// rapid back-to-back transitions can still deliver observer calls
-	// out-of-order (last-write-wins). Fixing delivery ordering would require
-	// a serialising channel in StatusTracker — out of scope here.
+	// NOTE: StatusTracker.Set spawns one goroutine per transition,
+	// so rapid transitions can still deliver out-of-order.
+	var initialFire atomic.Bool
+	initialFire.Store(true)
 	a.conn.status.OnChange(func(s Status) {
 		icon := GetStatusIcon(s)
 		slog.Info("tray status changed",
 			"status", s.String(),
 			"icon_name", icon.Name())
 
-		// Sleep outside fyne.Do so the UI thread is never blocked while waiting
-		// for the OS to settle between rapid icon transitions.
+		// Sleep outside fyne.Do so the UI thread is never blocked
+		// while waiting for the OS to settle between rapid icon
+		// transitions.
 		time.Sleep(250 * time.Millisecond)
 		fyne.Do(func() {
 			a.uiMu.Lock()
@@ -338,31 +461,36 @@ func (a *App) setupTray() {
 			menu.Refresh()
 
 			desk.SetSystemTrayIcon(icon)
-
-			// Notify on connection issues if enabled
-			cfg := a.Config()
-			if cfg.NotifyPrefs[setup.NotifyPrefConnectionIssues] {
-				if s == StatusError {
-					a.fyneApp.SendNotification(fyne.NewNotification(
-						"Adder Error",
-						"A critical connection error occurred.",
-					))
-				} else if s == StatusStopped && !a.intentionalStop.Load() {
-					a.fyneApp.SendNotification(fyne.NewNotification(
-						"Adder Connection",
-						"Lost connection to sidecar API. Reconnecting...",
-					))
-				}
-			}
 		})
+
+		if suppressInitialFire(&initialFire, s) {
+			return
+		}
+
+		// Connection-status notifications go through the engine: the
+		// dispatcher is the single SendNotification path, the
+		// "connection issues" pref gates them, and they bypass the
+		// rate limiter. Severity-specific titles let the OS group
+		// errors and reconnects separately in notification history.
+		switch {
+		case s == StatusError:
+			eng.NotifyConnection(
+				"Adder Error",
+				"A critical connection error occurred.")
+		case s == StatusStopped && !a.intentionalStop.Load():
+			eng.NotifyConnection(
+				"Adder Connection",
+				"Lost connection to sidecar API. Reconnecting...")
+		case s == StatusConnected:
+			eng.NotifyConnection(
+				"Adder Connection",
+				"Reconnected to node.")
+		}
 	})
 
-	// Bulletproof Startup Watchdog:
-	// This goroutine periodically re-asserts the tray icon for the first 10
-	// seconds of application life. It addresses macOS-specific rendering
-	// quirks where rapid status transitions (e.g., Starting -> Connected)
-	// can cause the OS to 'miss' an icon update, leaving it stuck in a gray
-	// state. This ensures a consistent, high-quality first-user experience.
+	// Startup watchdog: re-asserts the tray icon every 500ms for the
+	// first 10s to work around macOS dropping icon updates during
+	// rapid status transitions.
 	go func() {
 		ticker := time.NewTicker(500 * time.Millisecond)
 		defer ticker.Stop()
@@ -386,8 +514,16 @@ func (a *App) setupTray() {
 		}
 	}()
 
-	// Event processing and notification dispatcher
+	// Event processing. conn.Events() has a single consumer (this
+	// goroutine), so it both updates the recent-events menu and
+	// forwards to the notification engine. engineEvents is closed on
+	// exit so the engine and dispatcher terminate cleanly.
+	// producerDone lets Shutdown join this goroutine before stopping
+	// the engine.
+	a.producerDone = make(chan struct{})
 	go func() {
+		defer close(a.producerDone)
+		defer close(engineEvents)
 		var eventCount int
 		for {
 			select {
@@ -399,13 +535,30 @@ func (a *App) setupTray() {
 				}
 				eventCount++
 
-				// 1. Log the event arrival for debugging
 				slog.Debug("received event from sidecar",
 					"type", evt.Type,
 					"count", eventCount)
 
-				// 2. Dispatch notification if enabled in preferences
-				a.dispatchNotification(evt)
+				// Recent-events menu update (UI state, separate from
+				// notification dispatch).
+				a.addRecentEvent(evt)
+
+				// Drop-rather-than-block on the engine queue so a slow
+				// engine cannot stall event processing. Warn-level
+				// because the drop is unrecoverable: the event never
+				// reaches the rules engine and every rule that would
+				// have matched is lost.
+				select {
+				case engineEvents <- evt:
+				default:
+					eng.RecordDrop()
+					hash := chainIDFromPayload(evt.Payload)
+					slog.Warn(
+						"notification engine busy, event dropped",
+						"type", evt.Type,
+						"count", eventCount,
+						"hash", hash)
+				}
 			}
 		}
 	}()
@@ -428,10 +581,102 @@ func (a *App) setupTray() {
 	}
 }
 
-// Shutdown requests a graceful shutdown of the tray application.
+// Shutdown gracefully tears down the tray. Ordering: close quitChan,
+// join the producer, stop the engine, then quit fyne. Idempotent via
+// sync.Once.
 func (a *App) Shutdown() {
-	close(a.quitChan)
-	a.fyneApp.Quit()
+	a.shutdownOnce.Do(func() {
+		close(a.quitChan)
+		if a.producerDone != nil {
+			<-a.producerDone
+		}
+		if eng := a.notifyEngine.Load(); eng != nil {
+			eng.Stop()
+		}
+		a.fyneApp.Quit()
+	})
+}
+
+// surfaceNotificationStats periodically logs non-zero deltas in the
+// engine's drop counter so operators have a single line to grep for
+// "notifications suppressed" in production. Without this the
+// Stats().Dropped counter is populated by emit, NotifyConnection,
+// SetRules drain, dispatch stale-epoch, and producer-side
+// backpressure paths, but never read by anything in the live tray.
+// Exits when quitChan closes.
+func (a *App) surfaceNotificationStats(eng *notifications.Engine) {
+	const interval = 30 * time.Second
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	var lastReported int64
+	for {
+		select {
+		case <-a.quitChan:
+			return
+		case <-ticker.C:
+			total := eng.Stats().Dropped
+			delta := total - lastReported
+			if delta <= 0 {
+				continue
+			}
+			lastReported = total
+			slog.Info(
+				"notifications suppressed in last interval",
+				"delta", delta,
+				"total", total,
+				"interval", interval)
+		}
+	}
+}
+
+// chainIDFromPayload returns the block or transaction hash from an
+// event payload, or "" when the payload shape is unfamiliar.
+func chainIDFromPayload(p any) string {
+	m, ok := p.(map[string]any)
+	if !ok {
+		return ""
+	}
+	if h, ok := m["blockHash"].(string); ok && h != "" {
+		return h
+	}
+	if h, ok := m["transactionHash"].(string); ok && h != "" {
+		return h
+	}
+	return ""
+}
+
+// notifyPlan returns the SetupPlan used to build notification rules.
+// On load failure it falls back to MonitorEverything so chain-event
+// notifications still fire instead of being silently muted.
+func (a *App) notifyPlan() setup.SetupPlan {
+	fallback := a.fallbackPlan()
+	if a.runner == nil || a.runner.Store == nil {
+		return fallback
+	}
+	plan, err := a.reconfigurePlan()
+	if err != nil {
+		slog.Warn(
+			"failed to load plan for notification rules; "+
+				"using MonitorEverything fallback so chain "+
+				"notifications still fire",
+			"error", err,
+		)
+		return fallback
+	}
+	return plan
+}
+
+// fallbackPlan returns a MonitorEverything plan with a copy of the
+// current tray notify prefs (copy so plan mutations don't leak into
+// the persisted TrayConfig).
+func (a *App) fallbackPlan() setup.SetupPlan {
+	prefs := a.Config().NotifyPrefs
+	notify := make(setup.NotificationPrefs, len(prefs))
+	maps.Copy(notify, prefs)
+	return setup.SetupPlan{
+		Filter: setup.FilterConfig{MonitorEverything: true},
+		Notify: notify,
+	}
 }
 
 func (a *App) reconfigurePlan() (setup.SetupPlan, error) {
@@ -580,57 +825,15 @@ func openURL(url string) {
 	_ = p.Process.Release()
 }
 
-func (a *App) dispatchNotification(evt event.Event) {
-	// Always update history
-	a.addRecentEvent(evt)
-
-	var title, msg string
-	var prefKey string
-
-	emoji := getEmojiForType(evt.Type)
-
-	// TODO(future): Replace this hardcoded logic with a proper Template Engine
-	// to support more informative notifications (e.g., amount, addresses).
-	switch evt.Type {
-	case "input.block":
-		prefKey = setup.NotifyPrefBlocksMinted
-		title = emoji + " New Block"
-		msg = "A new block has been minted."
-		if payload, ok := evt.Payload.(map[string]any); ok {
-			if hash, ok := payload["blockHash"].(string); ok {
-				msg = "Block Hash: " + hash
-			}
-		}
-
-	case "input.transaction":
-		prefKey = setup.NotifyPrefIncomingTx
-		title = emoji + " New Transaction"
-		msg = "A new transaction was detected."
-		if payload, ok := evt.Payload.(map[string]any); ok {
-			if hash, ok := payload["transactionHash"].(string); ok {
-				msg = "Hash: " + hash
-			}
-		}
-
-	case "input.governance":
-		prefKey = setup.NotifyPrefVotesCast
-		title = emoji + " Governance Action"
-		msg = "A new governance action was detected."
-
-	case "input.rollback":
-		// Rollbacks don't have a specific pref toggle, usually always notify
-		title = emoji + " Chain Rollback"
-		msg = "A chain rollback was detected."
-		prefKey = setup.NotifyPrefBlocksMinted // Group with block alerts
-	}
-
-	if title != "" && a.Config().NotifyPrefs[prefKey] {
-		// Log the exact dispatch for debugging
-		slog.Info("dispatching native notification",
-			"title", title,
-			"msg", msg)
-
-		// Use Fyne native notification (fixes Script Editor bug)
-		a.fyneApp.SendNotification(fyne.NewNotification(title, msg))
-	}
+// suppressInitialFire decides whether to swallow an OnChange
+// invocation as the synchronous "initial fire" that
+// StatusTracker.OnChange always emits on registration. It swallows the
+// first call ONLY when the observed status is the default
+// StatusStopped — the tracker has never actually transitioned. A first
+// fire with any other status (e.g. StatusError because an upstream
+// auto-connect failed before OnChange was registered) is a real event
+// the user must see; blanket-suppressing the first fire would silently
+// hide it.
+func suppressInitialFire(first *atomic.Bool, s Status) bool {
+	return first.Swap(false) && s == StatusStopped
 }
