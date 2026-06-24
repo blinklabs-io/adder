@@ -16,6 +16,7 @@ package setup
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"maps"
@@ -49,6 +50,12 @@ type BinaryFinder interface {
 // callers can surface them to the user. Apply still succeeds (config
 // is saved) but the running service may not reflect the change.
 type ApplyResult struct {
+	// TrayConfig is the snapshot just persisted by Apply, returned to
+	// callers so they can refresh in-memory caches without re-reading
+	// from disk. Populated as soon as SaveTrayAtomic succeeds, before
+	// any service / reconnect step runs. NotifyPrefs map and Filter
+	// slices alias the persisted snapshot — treat as read-only.
+	TrayConfig TrayConfig
 	// BinaryFindErr is non-nil when Finder.Find failed; the service
 	// was NOT (re)started.
 	BinaryFindErr error
@@ -56,12 +63,20 @@ type ApplyResult struct {
 	// to (re)start adder; the running process may not reflect the
 	// new config.
 	ServiceRestartErr error
+	// ReconnectErr is non-nil when the post-restart Reconnect to the
+	// running adder API failed. The config IS persisted and the
+	// service WAS asked to (re)start; the API just is not reachable
+	// yet (slow startup, port collision, firewall). Soft so the
+	// caller can surface it without rolling back the apply.
+	ReconnectErr error
 }
 
 // HasSoftErrors reports whether the result carries any non-fatal
 // error worth surfacing to the user.
 func (r ApplyResult) HasSoftErrors() bool {
-	return r.BinaryFindErr != nil || r.ServiceRestartErr != nil
+	return r.BinaryFindErr != nil ||
+		r.ServiceRestartErr != nil ||
+		r.ReconnectErr != nil
 }
 
 func (r *SetupRunner) Apply(
@@ -102,6 +117,9 @@ func (r *SetupRunner) Apply(
 	if err := r.Store.SaveTrayAtomic(trayCfg); err != nil {
 		return result, fmt.Errorf("saving tray config: %w", err)
 	}
+	// Expose the persisted snapshot so callers refresh in-memory
+	// caches without a disk round-trip.
+	result.TrayConfig = trayCfg
 
 	// 4. Service Management — Finder/Restart failures are soft and
 	// surfaced via ApplyResult; the config is already persisted.
@@ -124,30 +142,35 @@ func (r *SetupRunner) Apply(
 	r.Conn.SetAddress(trayCfg.APIAddress)
 	r.Conn.SetPort(trayCfg.APIPort)
 
-	// Give the service a moment to start
+	// Give the service a moment to start. A deadline-exceeded ctx
+	// is a real "we never got to verify" signal (caller imposed a
+	// hard cap that we hit), so it surfaces as ReconnectErr. A
+	// user-driven cancel (Canceled) means the caller walked away and
+	// no longer wants UI feedback — config IS persisted and the
+	// caller's own reconcile already ran, so we exit silently.
 	select {
 	case <-ctx.Done():
-		return result, ctx.Err()
+		if cause := ctx.Err(); errors.Is(cause, context.DeadlineExceeded) {
+			result.ReconnectErr = fmt.Errorf(
+				"timed out before adder API was reachable: %w",
+				cause)
+			slog.Warn("apply post-save wait timed out",
+				"error", result.ReconnectErr)
+		}
+		return result, nil
 	case <-time.After(1 * time.Second):
 	}
 
 	if err := r.Conn.Reconnect(); err != nil {
-		// Wrap with the soft-error context so the message names the
-		// root cause, not just the downstream symptom.
-		if result.BinaryFindErr != nil {
-			return result, fmt.Errorf(
-				"service registered but API is unreachable "+
-					"(binary not found: %w): %w",
-				result.BinaryFindErr, err)
-		}
-		if result.ServiceRestartErr != nil {
-			return result, fmt.Errorf(
-				"service registered but API is unreachable "+
-					"(restart failed: %w): %w",
-				result.ServiceRestartErr, err)
-		}
-		return result, fmt.Errorf(
-			"service registered but API is unreachable: %w", err)
+		// Reconnect failure is soft: persistence already ran. Keep
+		// the error standalone — Binary/Restart causes are already
+		// surfaced as their own soft fields, so wrapping them here
+		// would make the caller's dialog repeat the same root-cause
+		// text twice. Also avoid claiming "service registered" when
+		// BinaryFindErr fired (RestartIfConfigChanged was skipped).
+		result.ReconnectErr = fmt.Errorf(
+			"adder API is unreachable: %w", err)
+		slog.Warn("api unreachable after apply", "error", result.ReconnectErr)
 	}
 
 	return result, nil

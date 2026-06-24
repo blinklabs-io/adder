@@ -136,6 +136,12 @@ func (w *WizardController) Close() {
 	w.window.Close()
 }
 
+// Window returns the wizard's top-level window so external callers
+// can parent dialogs on the surface that initiated the work.
+func (w *WizardController) Window() fyne.Window {
+	return w.window
+}
+
 // EnableButtons re-enables navigation buttons if a background task fails.
 func (w *WizardController) EnableButtons() {
 	w.nextBtn.Enable()

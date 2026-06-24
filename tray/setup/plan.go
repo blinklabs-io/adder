@@ -18,6 +18,8 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 	"time"
 )
@@ -49,6 +51,34 @@ const (
 	// alerts.
 	NotifyPrefConnectionIssues = "Connection issues"
 )
+
+// allNotifyPrefs is the canonical ordering of every NotifyPref* used
+// across the rules editor, the wizard's notifications step, and rule
+// derivation. Order groups chain activity first, then governance,
+// then asset/policy, then connection. Unexported so importers cannot
+// reassign or mutate in place — use AllNotifyPrefs() to read.
+var allNotifyPrefs = []string{
+	NotifyPrefIncomingTx,
+	NotifyPrefOutgoingTx,
+	NotifyPrefTokenTransfers,
+	NotifyPrefBlocksMinted,
+	NotifyPrefPoolParams,
+	NotifyPrefGovProposals,
+	NotifyPrefVotesCast,
+	NotifyPrefRegChanges,
+	NotifyPrefAssetActivity,
+	NotifyPrefPolicyActivity,
+	NotifyPrefConnectionIssues,
+}
+
+// AllNotifyPrefs returns the canonical ordering of every NotifyPref*
+// as a fresh slice; the backing array is private so callers cannot
+// corrupt the order. New prefs must be added to allNotifyPrefs so
+// every surface enumerates the same set; TestAllNotifyPrefsExhaustive
+// guards against drift between this list and the NotifyPref* consts.
+func AllNotifyPrefs() []string {
+	return slices.Clone(allNotifyPrefs)
+}
 
 // SetupPlan represents the desired configuration state of the Adder ecosystem,
 // decoupled from UI display strings and engine-specific map structures.
@@ -92,6 +122,25 @@ func CloneFilter(f FilterConfig) FilterConfig {
 	out.Pools = append([]string(nil), f.Pools...)
 	out.Assets = append([]string(nil), f.Assets...)
 	out.Policies = append([]string(nil), f.Policies...)
+	return out
+}
+
+// ClonePlan returns a deep copy of p whose reference-typed fields
+// (Filter slices, Notify map, Output.Config map) are independent, so a
+// caller can mutate its copy without touching the source. Centralised
+// here next to CloneFilter so adding a new reference-typed field to
+// SetupPlan updates exactly one place.
+func ClonePlan(p SetupPlan) SetupPlan {
+	out := p
+	out.Filter = CloneFilter(p.Filter)
+	if p.Notify != nil {
+		out.Notify = make(NotificationPrefs, len(p.Notify))
+		maps.Copy(out.Notify, p.Notify)
+	}
+	if p.Output.Config != nil {
+		out.Output.Config = make(map[string]string, len(p.Output.Config))
+		maps.Copy(out.Output.Config, p.Output.Config)
+	}
 	return out
 }
 

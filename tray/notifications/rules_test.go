@@ -754,3 +754,41 @@ func TestRulesFromPlan_MultiKindORSemantics(t *testing.T) {
 		anyRuleMatches(rules, txWithTokens([2]string{"polA", "asset1abc"})),
 		"asset rule fires independent of other kinds")
 }
+
+// TestAllNotifyPrefsHaveEngineRule pins setup.AllNotifyPrefs to the
+// rules.go enumeration: for each pref, enabling it (plus a target so
+// per-target rules fire) must produce at least one Enabled=true rule.
+// If a new pref is added to AllNotifyPrefs without a matching case
+// here in rules.go, this test fails — preventing the editor toggle
+// from being a silent no-op.
+func TestAllNotifyPrefsHaveEngineRule(t *testing.T) {
+	// Use one target of every kind so per-target rule families
+	// (walletRules, drepRules, poolRules, assetRules, policyRules)
+	// have something to fan out over.
+	baseFilter := setup.FilterConfig{
+		Wallets:  []string{"addr1qxy"},
+		DReps:    []string{"drep1abc"},
+		Pools:    []string{"pool1xyz"},
+		Assets:   []string{"asset1abc"},
+		Policies: []string{"polA"},
+	}
+	for _, pref := range setup.AllNotifyPrefs() {
+		t.Run(pref, func(t *testing.T) {
+			plan := setup.SetupPlan{
+				Filter: baseFilter,
+				Notify: setup.NotificationPrefs{pref: true},
+			}
+			rules := RulesFromPlan(plan)
+			var enabled int
+			for _, r := range rules {
+				if r.Enabled {
+					enabled++
+				}
+			}
+			require.Greaterf(t, enabled, 0,
+				"pref %q produced no enabled rules — add coverage in "+
+					"rules.go or remove from setup.AllNotifyPrefs",
+				pref)
+		})
+	}
+}

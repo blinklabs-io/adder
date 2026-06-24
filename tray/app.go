@@ -179,41 +179,28 @@ func (a *App) onWizardFinish(
 ) {
 	slog.Info("wizard finished, running setup tasks")
 
+	enable := func() {
+		if ctrl != nil {
+			ctrl.EnableButtons()
+		}
+	}
+	var parent fyne.Window
+	if ctrl != nil {
+		parent = ctrl.Window()
+	}
+
 	go func() {
-		result, err := a.runner.Apply(ctx, plan)
+		result, err := a.applyPlan(ctx, plan)
 		if err != nil {
-			a.failTask("Failed to apply configuration", err, ctrl)
+			a.failTask("Failed to apply configuration", err, parent, enable)
 			return
 		}
-		// Surface soft errors to the user — the config is saved, but
-		// the service may not be running because the binary was not
-		// found or the restart failed. Without this the wizard reports
-		// "Setup Complete" and the user is left to discover the silent
-		// failure via a later "API unreachable" error with no context.
-		if result.HasSoftErrors() {
-			a.surfaceSoftApplyErrors(result, ctrl)
-		}
-		if cfg, err := a.runner.Store.LoadTray(); err != nil {
-			slog.Warn("failed to reload tray config after setup", "error", err)
-		} else {
-			a.configMu.Lock()
-			a.config = cfg
-			a.configMu.Unlock()
+		// Keep the wizard open with re-enabled inputs so the warning
+		// dialog (a modal child of the wizard) has a stable parent.
+		if a.handleSoftErrors(result, parent, enable) {
+			return
 		}
 
-		// Rebuild rules + push new rate-limit knobs so changes take
-		// effect without a tray restart. On first run the engine
-		// isn't yet constructed (setupTray runs later) — it picks up
-		// both at construction time.
-		if eng := a.notifyEngine.Load(); eng != nil {
-			eng.SetRules(
-				notifications.RulesFromPlan(a.notifyPlan()),
-			)
-			limit, window := a.Config().ResolvedNotifyRate()
-			eng.SetRateLimit(limit, window)
-		}
-
-		// Success!
 		fyne.Do(func() {
 			if ctx.Err() != nil {
 				return
@@ -240,6 +227,37 @@ func (a *App) onWizardFinish(
 	}()
 }
 
+// applyPlan persists a SetupPlan and hot-reloads the running tray:
+// runs SetupRunner.Apply, refreshes the cached tray config from the
+// returned snapshot, and swaps the engine's rule set + rate-limit.
+// err != nil signals a pre-save failure (load + save steps); post-save
+// problems are non-fatal soft errors on ApplyResult, so when err != nil
+// nothing was persisted and there is nothing to reconcile.
+func (a *App) applyPlan(
+	ctx context.Context, plan setup.SetupPlan,
+) (setup.ApplyResult, error) {
+	result, err := a.runner.Apply(ctx, plan)
+	if err != nil {
+		return result, err
+	}
+	a.configMu.Lock()
+	a.config = result.TrayConfig
+	a.configMu.Unlock()
+	// Rate limit comes from the persisted snapshot; rules come from
+	// the input plan (the runner deep-copies plan.Filter+plan.Notify
+	// into trayCfg, so they describe the same state — adding
+	// canonicalization to SaveTrayAtomic would require deriving a
+	// SetupPlan from the snapshot here for RulesFromPlan to keep up).
+	// notifyEngine is nil on first run (setupTray runs after
+	// onWizardFinish) and picks up rules + limits at construction.
+	if eng := a.notifyEngine.Load(); eng != nil {
+		eng.SetRules(notifications.RulesFromPlan(plan))
+		limit, window := result.TrayConfig.ResolvedNotifyRate()
+		eng.SetRateLimit(limit, window)
+	}
+	return result, nil
+}
+
 // Config returns a consistent snapshot of the current tray configuration.
 // It is safe to call from any goroutine.
 func (a *App) Config() TrayConfig {
@@ -249,54 +267,183 @@ func (a *App) Config() TrayConfig {
 }
 
 // surfaceSoftApplyErrors shows a warning dialog summarising the
-// non-fatal errors Apply returned. The config IS saved at this point —
-// we just need the user to know the running service may not reflect
-// it so they can act (install adder, restart the service, etc.). The
-// wizard is not failed; the user can still close it and proceed.
+// non-fatal errors Apply returned. The config IS saved; the source
+// surface stays open so the user can read the warning and decide
+// whether to retry or close.
 func (a *App) surfaceSoftApplyErrors(
-	result setup.ApplyResult, ctrl *wizard.WizardController,
+	result setup.ApplyResult, parent fyne.Window,
 ) {
-	var msg string
-	if result.BinaryFindErr != nil {
-		msg += "Could not find the adder binary: " +
-			result.BinaryFindErr.Error() +
-			"\nThe service was not (re)started; install adder " +
-			"or start it manually."
+	// Each paragraph is gated on a per-error predicate so the
+	// composition stays data-driven: adding a fourth soft category
+	// is one entry, not another open-coded if + msg-glue block. The
+	// ReconnectErr predicate suppresses it when Binary/Restart fired
+	// — those root causes are already explained above and they
+	// directly imply Reconnect will fail; repeating "service may be
+	// starting up, try again" would mislead the user (nothing was
+	// asked to start).
+	paragraphs := []struct {
+		when bool
+		body string
+	}{
+		{
+			when: result.BinaryFindErr != nil,
+			body: "Could not find the adder binary: " +
+				errString(result.BinaryFindErr) +
+				"\nThe service was not (re)started; install " +
+				"adder or start it manually.",
+		},
+		{
+			when: result.ServiceRestartErr != nil,
+			body: "Failed to (re)start the adder service: " +
+				errString(result.ServiceRestartErr) +
+				"\nThe running process may not reflect your new " +
+				"configuration; restart adder manually.",
+		},
+		{
+			when: result.ReconnectErr != nil &&
+				result.BinaryFindErr == nil &&
+				result.ServiceRestartErr == nil,
+			body: "Adder API not reachable yet: " +
+				errString(result.ReconnectErr) +
+				"\nThe config is saved; the service may still be " +
+				"starting up. Try again in a moment if status " +
+				"does not recover.",
+		},
 	}
-	if result.ServiceRestartErr != nil {
-		if msg != "" {
-			msg += "\n\n"
+	var parts []string
+	for _, p := range paragraphs {
+		if p.when {
+			parts = append(parts, p.body)
 		}
-		msg += "Failed to (re)start the adder service: " +
-			result.ServiceRestartErr.Error() +
-			"\nThe running process may not reflect your new " +
-			"configuration; restart adder manually."
 	}
+	if len(parts) == 0 {
+		return
+	}
+	msg := strings.Join(parts, "\n\n")
 	slog.Warn("setup completed with soft errors", "summary", msg)
 	fyne.Do(func() {
-		if ctrl != nil {
-			ctrl.EnableButtons()
+		win := a.resolveDialogParent(parent)
+		if win == nil {
+			return
 		}
-		if len(a.fyneApp.Driver().AllWindows()) > 0 {
-			dialog.ShowInformation(
-				"Setup Complete (with warnings)",
-				msg,
-				a.fyneApp.Driver().AllWindows()[0],
-			)
-		}
+		dialog.ShowInformation(
+			"Setup Complete (with warnings)", msg, win)
 	})
 }
 
-func (a *App) failTask(msg string, err error, ctrl *wizard.WizardController) {
+// resolveDialogParent returns the explicit parent window when given,
+// else falls back to the first window the Fyne driver still tracks.
+// Returns nil when no window is available (dialog drops silently —
+// slog.* already records the underlying event).
+func (a *App) resolveDialogParent(parent fyne.Window) fyne.Window {
+	if parent != nil {
+		return parent
+	}
+	if wins := a.fyneApp.Driver().AllWindows(); len(wins) > 0 {
+		return wins[0]
+	}
+	return nil
+}
+
+// handleSoftErrors surfaces the warning dialog and re-enables the
+// caller's frozen inputs when result has soft errors; the source
+// surface stays open so the dialog has a stable parent and the user
+// can retry. Returns true when soft errors fired (caller skips its
+// success path), false otherwise.
+func (a *App) handleSoftErrors(
+	result setup.ApplyResult, parent fyne.Window, enable func(),
+) bool {
+	if !result.HasSoftErrors() {
+		return false
+	}
+	a.surfaceSoftApplyErrors(result, parent)
+	if enable != nil {
+		fyne.Do(enable)
+	}
+	return true
+}
+
+// errString returns err.Error() or "" for nil — keeps surfaceSoft's
+// data table free of per-row nil checks.
+func errString(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
+}
+
+// failTask logs the error, re-enables the caller's frozen inputs via
+// onFail, and shows an error dialog on the first available window.
+// AllWindows()[0] is best-effort: a concurrently-closing source
+// surface lands the dialog on whichever window Fyne still tracks;
+// when none remains the dialog drops silently (slog.Error already
+// records the failure).
+func (a *App) failTask(
+	msg string, err error, parent fyne.Window, onFail func(),
+) {
 	slog.Error(msg, "error", err)
 	fyne.Do(func() {
-		if ctrl != nil {
-			ctrl.EnableButtons()
+		if onFail != nil {
+			onFail()
 		}
-		if len(a.fyneApp.Driver().AllWindows()) > 0 {
-			dialog.ShowError(errors.New(msg+"\n\nError: "+err.Error()), a.fyneApp.Driver().AllWindows()[0])
+		win := a.resolveDialogParent(parent)
+		if win == nil {
+			return
 		}
+		dialog.ShowError(
+			errors.New(msg+"\n\nError: "+err.Error()), win)
 	})
+}
+
+// onRulesApply is the apply callback for the rule editor: persists
+// via applyPlan, surfaces hard errors via failTask and soft errors
+// via handleSoftErrors; on full success closes the editor and emits a
+// tray notification.
+func (a *App) onRulesApply(
+	ctx context.Context,
+	plan setup.SetupPlan,
+	ed *wizard.RulesEditor,
+) {
+	slog.Info("notification rules edited, applying changes")
+
+	enable := func() {
+		if ed != nil {
+			ed.EnableButtons()
+		}
+	}
+	var parent fyne.Window
+	if ed != nil {
+		parent = ed.Window()
+	}
+
+	go func() {
+		result, err := a.applyPlan(ctx, plan)
+		if err != nil {
+			a.failTask("Failed to apply notification rules",
+				err, parent, enable)
+			return
+		}
+		// Soft errors: shared with onWizardFinish via handleSoftErrors
+		// — keeps the editor open with re-enabled inputs so the
+		// warning dialog (a modal child of the editor) has a stable
+		// parent.
+		if a.handleSoftErrors(result, parent, enable) {
+			return
+		}
+
+		fyne.Do(func() {
+			if ctx.Err() != nil {
+				return
+			}
+			if ed != nil {
+				ed.Close()
+			}
+			a.fyneApp.SendNotification(fyne.NewNotification(
+				"Adder Rules Updated",
+				"Notification rules applied.",
+			))
+		})
+	}()
 }
 
 // Run configures the system tray and starts the application loop.
@@ -368,6 +515,17 @@ func (a *App) setupTray() {
 		wizard.ShowWizard(&plan, a.onWizardFinish)
 	})
 
+	mRules := fyne.NewMenuItem("Notification Rules...", func() {
+		plan, err := a.reconfigurePlan()
+		if err != nil {
+			slog.Error("failed to load engine config for rules editor",
+				"error", err)
+			return
+		}
+
+		wizard.ShowRulesEditor(plan, a.onRulesApply)
+	})
+
 	mShowConfig := fyne.NewMenuItem("Show Config Folder", func() {
 		openFolder(ConfigDir())
 	})
@@ -395,6 +553,7 @@ func (a *App) setupTray() {
 		mStop,
 		mRestart,
 		mReconfigure,
+		mRules,
 		fyne.NewMenuItemSeparator(),
 		mShowConfig,
 		mShowLogs,
