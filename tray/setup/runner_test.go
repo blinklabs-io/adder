@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/blinklabs-io/adder/internal/config"
 	"github.com/stretchr/testify/assert"
@@ -279,11 +280,13 @@ func TestApplyReturnsBinaryFindAsApplyResult(t *testing.T) {
 	assert.ErrorIs(t, result.BinaryFindErr, wantErr)
 }
 
-// TestApplyReconnectErrWrapsSoftErrors guards that a binary-find or
-// restart failure followed by an "API unreachable" error produces a
-// composite message naming the root cause, not just the downstream
-// symptom.
-func TestApplyReconnectErrWrapsSoftErrors(t *testing.T) {
+// TestApplyReconnectErrIsStandaloneSoft guards that Reconnect failure
+// surfaces as a standalone soft error: it must NOT wrap BinaryFindErr
+// or ServiceRestartErr (those are already separate soft fields, so
+// embedding them here would make the caller's dialog repeat the same
+// root cause twice and falsely claim the service was registered).
+// Apply still returns nil because the config IS persisted.
+func TestApplyReconnectErrIsStandaloneSoft(t *testing.T) {
 	wantBin := errors.New("not on PATH")
 	wantReconnect := errors.New("dial tcp: no route")
 	runner := &SetupRunner{
@@ -292,18 +295,33 @@ func TestApplyReconnectErrWrapsSoftErrors(t *testing.T) {
 		Conn:    &mockConnector{reconnectErr: wantReconnect},
 		Finder:  &mockFinder{err: wantBin},
 	}
-	_, err := runner.Apply(context.Background(), SetupPlan{
+	result, err := runner.Apply(context.Background(), SetupPlan{
 		Network: NetworkConfig{Name: "mainnet"},
 		Filter:  FilterConfig{MonitorEverything: true},
 	})
-	require.Error(t, err)
-	assert.ErrorIs(t, err, wantBin,
-		"composite error must preserve the binary-find cause")
-	assert.ErrorIs(t, err, wantReconnect,
-		"composite error must also preserve the reconnect cause")
+	require.NoError(t, err,
+		"Reconnect failure must not abort Apply — config IS saved")
+	require.Error(t, result.BinaryFindErr,
+		"BinaryFindErr must be surfaced separately")
+	require.Error(t, result.ReconnectErr,
+		"Reconnect failure must surface as its own soft error")
+	assert.ErrorIs(t, result.ReconnectErr, wantReconnect,
+		"ReconnectErr must preserve the underlying dial cause")
+	assert.NotErrorIs(t, result.ReconnectErr, wantBin,
+		"ReconnectErr must NOT wrap BinaryFindErr — would duplicate "+
+			"context and falsely claim service was registered")
+	assert.NotContains(t, result.ReconnectErr.Error(), "service registered",
+		"Reconnect message must not claim registration when "+
+			"BinaryFindErr skipped RestartIfConfigChanged")
+	assert.True(t, result.HasSoftErrors())
 }
 
-func TestApplyHonorsContextCancellationBeforeReconnect(t *testing.T) {
+// TestApplyContextCancellationSkipsReconnect verifies ctx cancellation
+// during the post-save wait skips Reconnect without aborting Apply —
+// the config IS persisted on disk, so the caller can still reconcile
+// in-memory state and the user-initiated cancel does not surface as a
+// failure.
+func TestApplyContextCancellationSkipsReconnect(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
@@ -316,12 +334,43 @@ func TestApplyHonorsContextCancellationBeforeReconnect(t *testing.T) {
 		Finder:  &mockFinder{path: "/tmp/adder"},
 	}
 
-	_, err := runner.Apply(ctx, SetupPlan{
+	result, err := runner.Apply(ctx, SetupPlan{
 		Network: NetworkConfig{Name: "mainnet"},
 		Filter:  FilterConfig{MonitorEverything: true},
 	})
-	require.ErrorIs(t, err, context.Canceled)
-
+	require.NoError(t, err,
+		"ctx cancel post-save must not surface as a failure")
 	assert.True(t, store.saved)
-	assert.False(t, conn.connected)
+	assert.False(t, conn.connected,
+		"Reconnect must be skipped on ctx cancellation")
+	assert.Nil(t, result.ReconnectErr,
+		"user-driven Canceled must stay silent")
+}
+
+// TestApplyContextDeadlineSurfacesAsSoftReconnect guards that a hard
+// deadline hit during the post-save wait surfaces as a soft
+// ReconnectErr — the caller imposed a cap and we never got to verify
+// the API, so the user needs the signal (unlike user-driven Canceled
+// which is silent).
+func TestApplyContextDeadlineSurfacesAsSoftReconnect(t *testing.T) {
+	ctx, cancel := context.WithDeadline(context.Background(),
+		time.Now().Add(-time.Second))
+	defer cancel()
+
+	store := &mockStore{}
+	runner := &SetupRunner{
+		Store:   store,
+		Service: &mockService{},
+		Conn:    &mockConnector{},
+		Finder:  &mockFinder{path: "/tmp/adder"},
+	}
+	result, err := runner.Apply(ctx, SetupPlan{
+		Network: NetworkConfig{Name: "mainnet"},
+		Filter:  FilterConfig{MonitorEverything: true},
+	})
+	require.NoError(t, err,
+		"deadline post-save must not abort Apply — config IS saved")
+	require.Error(t, result.ReconnectErr)
+	assert.ErrorIs(t, result.ReconnectErr, context.DeadlineExceeded)
+	assert.True(t, result.HasSoftErrors())
 }

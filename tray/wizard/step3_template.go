@@ -20,34 +20,13 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/layout"
-	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 	"github.com/blinklabs-io/adder/tray/setup"
 )
-
-// targetSection is the editable list of one kind of monitoring target
-// (wallets, DReps, or pools). It owns its entry+Add row, its entries
-// list, and its per-section validation label.
-type targetSection struct {
-	label       string // "Wallets" / "DReps" / "Pools"
-	placeholder string
-	validate    func(string) error // ValidateWalletAddr etc.
-
-	entry    *widget.Entry
-	addBtn   *widget.Button
-	errLabel *widget.Label
-	list     *fyne.Container // VBox of entry rows
-	values   []string
-
-	// onChange is called by the section whenever values change, so the
-	// parent step can re-render the summary label.
-	onChange func()
-}
 
 // templateStep is the rebuilt step 3 of the wizard: an exclusive
 // "Monitor Everything" toggle at the top, then three editable target
@@ -208,136 +187,14 @@ func (s *templateStep) Content() fyne.CanvasObject {
 	)
 }
 
-// newSection wires up one editable target list. The Add button validates
-// the input via `validate`, surfaces the error inline on failure, and
-// appends a labelled row with a trash-icon remove button on success.
+// newSection wires up one editable target list for the templateStep,
+// delegating to the shared newTargetSection (see target_section.go).
 func (s *templateStep) newSection(
 	label, placeholder string,
 	validate func(string) error,
 ) *targetSection {
-	sec := &targetSection{
-		label:       label,
-		placeholder: placeholder,
-		validate:    validate,
-		onChange:    s.refreshSummary,
-	}
-	sec.entry = widget.NewEntry()
-	sec.entry.SetPlaceHolder(placeholder)
-	sec.errLabel = widget.NewLabel("")
-	sec.errLabel.Wrapping = fyne.TextWrapWord
-	sec.errLabel.Hide()
-	sec.list = container.NewVBox()
-	sec.addBtn = widget.NewButtonWithIcon(
-		"Add",
-		theme.ContentAddIcon(),
-		func() { sec.add(sec.entry.Text) },
-	)
-	sec.entry.OnSubmitted = func(string) { sec.add(sec.entry.Text) }
-	return sec
-}
-
-// add validates v (splitting on commas first so pasted CSV produces
-// multiple rows) and appends each piece. All-or-nothing: if any piece
-// fails validation, nothing is added and the input is preserved.
-func (sec *targetSection) add(v string) {
-	v = strings.TrimSpace(v)
-	if v == "" {
-		sec.errLabel.SetText("Please enter a value before adding.")
-		sec.errLabel.Show()
-		return
-	}
-	parts := splitAndTrim(v)
-	if len(parts) == 0 {
-		sec.errLabel.SetText("Please enter a value before adding.")
-		sec.errLabel.Show()
-		return
-	}
-	for _, p := range parts {
-		if err := sec.validate(p); err != nil {
-			sec.errLabel.SetText(err.Error())
-			sec.errLabel.Show()
-			return
-		}
-	}
-	sec.errLabel.Hide()
-	for _, p := range parts {
-		sec.values = append(sec.values, p)
-		sec.list.Add(sec.row(p))
-	}
-	sec.entry.SetText("")
-	if sec.onChange != nil {
-		sec.onChange()
-	}
-}
-
-// splitAndTrim splits s on commas, trims whitespace from each piece, and
-// drops empties. A trailing comma or accidental "addr1a, ,addr1b" never
-// produces an empty entry that would fail validation with a confusing
-// "must not be empty" error.
-func splitAndTrim(s string) []string {
-	var out []string
-	for p := range strings.SplitSeq(s, ",") {
-		if p = strings.TrimSpace(p); p != "" {
-			out = append(out, p)
-		}
-	}
-	return out
-}
-
-// row builds a single entry row: a label with the value plus a trash
-// icon that removes it from sec.values and from the visible list.
-func (sec *targetSection) row(v string) fyne.CanvasObject {
-	lbl := widget.NewLabel(v)
-	lbl.Wrapping = fyne.TextWrapBreak
-	var rowObj *fyne.Container
-	removeBtn := widget.NewButtonWithIcon(
-		"",
-		theme.DeleteIcon(),
-		func() {
-			sec.removeValue(v, rowObj)
-		},
-	)
-	rowObj = container.NewBorder(
-		nil, nil, nil, removeBtn, lbl,
-	)
-	return rowObj
-}
-
-func (sec *targetSection) removeValue(v string, row fyne.CanvasObject) {
-	for i, x := range sec.values {
-		if x == v {
-			sec.values = append(sec.values[:i], sec.values[i+1:]...)
-			break
-		}
-	}
-	sec.list.Remove(row)
-	if sec.onChange != nil {
-		sec.onChange()
-	}
-}
-
-// setValues replaces the section's contents with vs. Used to hydrate
-// from a saved plan when the wizard is reopened.
-func (sec *targetSection) setValues(vs []string) {
-	sec.values = sec.values[:0]
-	sec.list.RemoveAll()
-	for _, v := range vs {
-		sec.values = append(sec.values, v)
-		sec.list.Add(sec.row(v))
-	}
-}
-
-func (sec *targetSection) canvasObject() fyne.CanvasObject {
-	return container.NewVBox(
-		widget.NewLabelWithStyle(
-			sec.label, fyne.TextAlignLeading,
-			fyne.TextStyle{Bold: true},
-		),
-		container.NewBorder(
-			nil, nil, nil, sec.addBtn, sec.entry,
-		),
-		sec.errLabel,
-		sec.list,
+	return newTargetSection(
+		label, placeholder, validate, s.refreshSummary,
 	)
 }
 
