@@ -1,0 +1,63 @@
+#!/bin/bash
+# Copyright 2026 Blink Labs Software
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# postinstall - runs after the Adder.app payload is laid down.
+#
+# Intentionally generic: this script does NOT register a LaunchAgent. Service
+# registration is owned by the first-run wizard inside adder-tray, which knows
+# the user's chosen configuration. The installer only makes the app available.
+
+# -u catches typos; no -e because the CLI symlink below is a best-effort
+# convenience and must never fail the install (the primary payload is the
+# GUI app in /Applications). We exit 0 regardless of symlink outcome.
+set -u
+
+APP_PATH="/Applications/Adder.app"
+CLI_SRC="${APP_PATH}/Contents/MacOS/adder"
+CLI_LINK="/usr/local/bin/adder"
+
+# Refresh Launch Services so Finder/Spotlight/notifications immediately pick up
+# the freshly installed bundle (icon, display name, URL handlers). Safe no-op if
+# lsregister is unavailable. Failure here must not fail the install.
+LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+if [ -x "${LSREGISTER}" ] && [ -d "${APP_PATH}" ]; then
+    "${LSREGISTER}" -f "${APP_PATH}" >/dev/null 2>&1 || true
+fi
+
+# Best-effort: expose the adder CLI on $PATH via /usr/local/bin. This is a
+# convenience only - if it fails (read-only /usr/local on locked-down/MDM
+# Macs), the CLI is still runnable at ${CLI_SRC}, so we warn and continue
+# rather than fail the whole install.
+#
+# We also refuse to clobber a foreign /usr/local/bin/adder (another tool, a
+# Homebrew formula, a user symlink): only create the link when it's absent or
+# already points at our in-bundle binary.
+if [ -x "${CLI_SRC}" ]; then
+    /bin/mkdir -p /usr/local/bin 2>/dev/null || true
+    if [ ! -e "${CLI_LINK}" ] || \
+       [ "$(readlink "${CLI_LINK}" 2>/dev/null)" = "${CLI_SRC}" ]; then
+        /bin/ln -sf "${CLI_SRC}" "${CLI_LINK}" 2>/dev/null \
+            || echo "postinstall: could not create ${CLI_LINK}; CLI is at ${CLI_SRC}" >&2
+    else
+        echo "postinstall: ${CLI_LINK} exists and is not ours; leaving it untouched" >&2
+    fi
+else
+    echo "postinstall: CLI binary not found at ${CLI_SRC}; skipping symlink" >&2
+fi
+
+# Note: start-at-login is intentionally NOT handled here. The tray's first-run
+# wizard asks the user and manages the Login Item, keeping the installer generic.
+
+exit 0

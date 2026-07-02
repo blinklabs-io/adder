@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    productbuild distribution definition for the Adder macOS installer.
+
+    Tokens substituted by build-pkg.sh at build time:
+      __VERSION__       installer/app version (e.g. 0.42.0)
+      __HOST_ARCH__     Apple arch of the payload (arm64 or x86_64)
+      __COMPONENT_PKG__ filename of the component pkg produced by pkgbuild
+                        (e.g. adder-component.pkg)
+-->
+<installer-gui-script minSpecVersion="2">
+    <title>Adder</title>
+    <organization>io.blinklabs</organization>
+
+    <!-- Adder.app is installed to /Applications (a domain the user can write).
+         hostArchitectures is a single arch (__HOST_ARCH__, substituted by
+         build-pkg.sh) because each pkg carries a single-arch payload; this lets
+         Installer block a wrong-arch install. -->
+    <options customize="never" require-scripts="false" rootVolumeOnly="true" hostArchitectures="__HOST_ARCH__"/>
+
+    <!-- Require macOS 11 (Big Sur) or later. -->
+    <volume-check>
+        <allowed-os-versions>
+            <os-version min="11.0"/>
+        </allowed-os-versions>
+    </volume-check>
+
+    <choices-outline>
+        <line choice="default">
+            <line choice="io.blinklabs.adder"/>
+        </line>
+    </choices-outline>
+
+    <choice id="default"/>
+    <choice id="io.blinklabs.adder" visible="false" title="Adder" description="Adder CLI and tray application">
+        <pkg-ref id="io.blinklabs.adder"/>
+    </choice>
+
+    <pkg-ref id="io.blinklabs.adder" version="__VERSION__" onConclusion="none">__COMPONENT_PKG__</pkg-ref>
+</installer-gui-script>

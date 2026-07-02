@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!--
+        CFBundleExecutable points at the tray GUI: opening Adder.app launches
+        the adder-tray wizard/menu-bar app. The adder CLI rides along in the
+        same MacOS/ directory and is invoked directly by the tray or by users.
+        The __VERSION__ token is substituted by build-pkg.sh at build time.
+    -->
+    <key>CFBundleExecutable</key>
+    <string>adder-tray</string>
+    <key>CFBundleIconFile</key>
+    <string>adder</string>
+    <key>CFBundleIdentifier</key>
+    <string>io.blinklabs.adder</string>
+    <key>CFBundleName</key>
+    <string>Adder</string>
+    <key>CFBundleDisplayName</key>
+    <string>Adder</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>__VERSION__</string>
+    <key>CFBundleVersion</key>
+    <string>__VERSION__</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>11.0</string>
+    <key>LSUIElement</key>
+    <false/>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+    <key>NSUserNotificationAlertStyle</key>
+    <string>alert</string>
+</dict>
+</plist>
