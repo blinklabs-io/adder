@@ -1,0 +1,138 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Copyright 2026 Blink Labs Software
+
+    Licensed under the Apache License, Version 2.0 (the "License");
+    you may not use this file except in compliance with the License.
+    You may obtain a copy of the License at
+
+        http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing, software
+    distributed under the License is distributed on an "AS IS" BASIS,
+    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    See the License for the specific language governing permissions and
+    limitations under the License.
+
+    WiX v4 source for the Adder Windows installer (.msi).
+
+    Builds a 64-bit installer (x64 or arm64, selected by build-msi.ps1 via
+    `wix build -arch`) that places BOTH binaries under %ProgramFiles%\Adder\
+    and creates a Start Menu shortcut for the tray GUI.
+
+    Variables supplied on the command line by build-msi.ps1:
+      -d Version=<x.y.z>   product version (<=3 dot-separated integers)
+      -d AdderExe=<path>   path to the built adder.exe
+      -d AdderTrayExe=<path> path to the built adder-tray.exe
+
+    Notes for maintainers:
+      * UpgradeCode is a FIXED GUID and must never change across releases;
+        it is what ties successive versions together for major upgrades.
+        ProductCode is auto-generated per build ("*").
+      * The product is 64-bit: StandardDirectory "ProgramFiles6432Folder"
+        resolves to %ProgramFiles% (the real 64-bit Program Files) and the
+        components are marked Bitness="always64" (a 64-bit flag orthogonal to
+        the -arch platform, so it is correct for both x64 and arm64). Using the
+        plain 32-bit Program Files folder would silently install to
+        "Program Files (x86)".
+      * The Start Menu shortcut points at a non-advertised .exe, so its
+        component carries a registry value to act as the component keypath
+        (required by Windows Installer / ICE rules). The shortcut lives in its
+        own component with Root="HKMU" so that, under Scope="perMachine", both
+        the shortcut and its keypath resolve per-machine (HKMU -> HKLM) and
+        the component does not mix per-user and per-machine resources (ICE57).
+      * Command-line variables: Version, AdderExe, AdderTrayExe, AdderIco.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package
+      Name="Adder"
+      Manufacturer="Blink Labs Software"
+      Version="$(var.Version)"
+      UpgradeCode="26739ED8-F36D-47AC-A092-4CFECD59CF69"
+      Scope="perMachine"
+      Compressed="yes">
+
+    <!-- Embed the compressed payload directly in the .msi (single-file). -->
+    <MediaTemplate EmbedCab="yes" />
+
+    <!-- Block downgrades and clean up older versions on reinstall. -->
+    <MajorUpgrade
+        AllowSameVersionUpgrades="yes"
+        DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
+
+    <!-- Add/Remove Programs (ARP) metadata. Manufacturer above maps to the
+         "Publisher" field. The properties below populate Contact and the
+         support / about URLs shown in Apps & Features. -->
+    <Property Id="ARPCONTACT" Value="Blink Labs Software" />
+    <Property Id="ARPHELPLINK" Value="https://github.com/blinklabs-io/adder" />
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/blinklabs-io/adder" />
+    <Property Id="ARPURLUPDATEINFO" Value="https://github.com/blinklabs-io/adder/releases" />
+    <!-- Optional: prevent "Modify"/"Repair" buttons from offering surprises. -->
+    <Property Id="ARPNOMODIFY" Value="1" />
+
+    <!-- Application icon used by ARP. -->
+    <Icon Id="AdderIcon" SourceFile="$(var.AdderIco)" />
+    <Property Id="ARPPRODUCTICON" Value="AdderIcon" />
+
+    <!-- %ProgramFiles%\Adder\ (64-bit) -->
+    <StandardDirectory Id="ProgramFiles6432Folder">
+      <Directory Id="INSTALLFOLDER" Name="Adder" />
+    </StandardDirectory>
+
+    <!-- Start Menu\Programs (advertised shortcut target dir) -->
+    <StandardDirectory Id="ProgramMenuFolder" />
+
+    <!-- ==== Components ==== -->
+
+    <ComponentGroup Id="AdderComponents" Directory="INSTALLFOLDER">
+      <!-- adder.exe (CLI) -->
+      <Component Id="cmp_adder_exe" Bitness="always64" Guid="*">
+        <File Id="fil_adder_exe"
+              Source="$(var.AdderExe)"
+              Name="adder.exe"
+              KeyPath="yes" />
+      </Component>
+
+      <!-- adder-tray.exe (GUI) -->
+      <Component Id="cmp_adder_tray_exe" Bitness="always64" Guid="*">
+        <File Id="fil_adder_tray_exe"
+              Source="$(var.AdderTrayExe)"
+              Name="adder-tray.exe"
+              KeyPath="yes" />
+      </Component>
+
+      <!-- Start Menu shortcut for the tray, in its own per-machine component.
+           Placed directly in ProgramMenuFolder (overriding the group dir). The
+           registry value under HKMU (-> HKLM for perMachine) is the keypath a
+           non-advertised shortcut requires; no RemoveFolder is needed because
+           the shortcut is removed with the component. -->
+      <Component Id="cmp_adder_tray_shortcut"
+                 Directory="ProgramMenuFolder"
+                 Bitness="always64"
+                 Guid="*">
+        <Shortcut Id="sc_adder_tray"
+                  Name="Adder"
+                  Description="Adder Cardano blockchain event tray"
+                  Target="[INSTALLFOLDER]adder-tray.exe"
+                  WorkingDirectory="INSTALLFOLDER"
+                  Icon="AdderIcon" />
+
+        <RegistryValue Root="HKMU"
+                       Key="Software\Blink Labs Software\Adder"
+                       Name="installed"
+                       Type="integer"
+                       Value="1"
+                       KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
+    <!-- The single feature that installs everything. We deliberately do NOT
+         register a Scheduled Task here: service registration is owned by the
+         adder-tray first-run wizard (mirrors the macOS installer, which does
+         not install a LaunchAgent). -->
+    <Feature Id="Main" Title="Adder" Level="1">
+      <ComponentGroupRef Id="AdderComponents" />
+    </Feature>
+
+  </Package>
+</Wix>

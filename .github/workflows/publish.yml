@@ -19,7 +19,7 @@ jobs:
     outputs:
       RELEASE_ID: ${{ steps.create-release.outputs.result }}
     steps:
-      - run: "echo \"RELEASE_TAG=${GITHUB_REF#refs/tags/}\" >> $GITHUB_ENV"
+      - run: "echo \"RELEASE_TAG=${GITHUB_REF#refs/tags/}\" >> \"$GITHUB_ENV\""
       - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0 https://github.com/actions/github-script/releases/tag/v9.0.0
         id: create-release
         if: startsWith(github.ref, 'refs/tags/')
@@ -105,7 +105,7 @@ jobs:
           echo "RELEASE_TAG=$tagName" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
       - name: Set RELEASE_TAG
         if: matrix.os != 'windows'
-        run: "echo \"RELEASE_TAG=${GITHUB_REF#refs/tags/}\" >> $GITHUB_ENV"
+        run: "echo \"RELEASE_TAG=${GITHUB_REF#refs/tags/}\" >> \"$GITHUB_ENV\""
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0 https://github.com/actions/checkout/releases/tag/v7.0.0
         with:
           fetch-depth: '0'
@@ -200,7 +200,7 @@ jobs:
       - name: Set up Cloud SDK
         if: ${{ startsWith(github.ref, 'refs/tags/') && matrix.os == 'windows' }}
         uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1 https://github.com/google-github-actions/setup-gcloud/releases/tag/v3.0.1
-      - name: Sign binary (Windows)
+      - name: Sign Windows binaries (adder.exe + adder-tray.exe)
         if: ${{ startsWith(github.ref, 'refs/tags/') && matrix.os == 'windows' }}
         shell: pwsh
         run: |
@@ -220,25 +220,142 @@ jobs:
 
           [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String("${{ secrets.CERTIFICATE_CHAIN }}")) | Out-File -FilePath "codesign-chain.pem" -Encoding utf8
 
-          $filename = "${{ env.APPLICATION_NAME }}.exe"
           $ACCESS_TOKEN = & gcloud auth print-access-token
           Write-Host "::add-mask::$ACCESS_TOKEN"
 
-          java -jar jsign.jar `
-            --storetype ${{ secrets.CERTIFICATE_STORE_TYPE }} `
-            --storepass "$ACCESS_TOKEN" `
-            --keystore ${{ secrets.CERTIFICATE_KEYSTORE }} `
-            --alias ${{ secrets.CERTIFICATE_KEY_NAME }} `
-            --certfile "codesign-chain.pem" `
-            --tsmode RFC3161 `
-            --tsaurl "http://timestamp.globalsign.com/tsa/r6advanced1" `
-            $filename
+          # Sign every PE that will end up in the MSI. The outer MSI signature
+          # only covers the OLE compound, not the embedded binaries — so each
+          # .exe must be signed individually BEFORE wix bundles them.
+          $binariesToSign = @("${{ env.APPLICATION_NAME }}.exe")
+          if ("${{ matrix.tray }}" -eq "true") {
+            $binariesToSign += "${{ env.APPLICATION_NAME }}-tray.exe"
+          }
+
+          foreach ($filename in $binariesToSign) {
+            if (-not (Test-Path $filename)) {
+              Write-Error "Expected binary not found: $filename"
+              exit 1
+            }
+            Write-Host "Signing $filename"
+            # --tsretries/--tsretrywait are jsign's native timestamp retry
+            # (the TSA is the part that flakes).
+            java -jar jsign.jar `
+              --storetype ${{ secrets.CERTIFICATE_STORE_TYPE }} `
+              --storepass "$ACCESS_TOKEN" `
+              --keystore ${{ secrets.CERTIFICATE_KEYSTORE }} `
+              --alias ${{ secrets.CERTIFICATE_KEY_NAME }} `
+              --certfile "codesign-chain.pem" `
+              --alg SHA-256 `
+              --tsmode RFC3161 `
+              --tsaurl "http://timestamp.globalsign.com/tsa/r6advanced1" `
+              --tsretries 3 `
+              --tsretrywait 10 `
+              --name "Adder" `
+              --url "https://github.com/blinklabs-io/adder" `
+              $filename
+            if ($LASTEXITCODE -ne 0) { Write-Error "jsign failed on $filename"; exit 1 }
+
+            # Independently confirm the PE is signed, chain-trusted AND
+            # timestamped before it gets embedded in the MSI. jsign can exit 0
+            # while the timestamp step silently failed, which this catches.
+            $sig = Get-AuthenticodeSignature $filename
+            if ($sig.Status -ne 'Valid') {
+              Write-Error "signature not valid for ${filename}: $($sig.Status)"; exit 1
+            }
+            if ($null -eq $sig.TimeStamperCertificate) {
+              Write-Error "signature for ${filename} is not timestamped"; exit 1
+            }
+            Write-Host "Signed + verified: $filename ($($sig.SignerCertificate.Subject))"
+          }
 
           $ACCESS_TOKEN = $null
+          # NOTE: jsign.jar and codesign-chain.pem are intentionally kept on
+          # disk for the subsequent "Build MSI" step to reuse.
 
-          Write-Host "Signed Windows binary: $filename"
-          Write-Host "Cleaning up certificate chain"
-          Remove-Item -Path "codesign-chain.pem" -Force
+      - name: Install WiX toolset (Windows)
+        if: ${{ startsWith(github.ref, 'refs/tags/') && matrix.os == 'windows' && matrix.tray }}
+        shell: pwsh
+        run: |
+          dotnet tool install --global wix --version 4.0.5
+          # Make the new global tools dir discoverable in subsequent steps.
+          "$env:USERPROFILE\.dotnet\tools" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          & "$env:USERPROFILE\.dotnet\tools\wix.exe" --version
+
+      - name: Build and sign MSI (Windows)
+        if: ${{ startsWith(github.ref, 'refs/tags/') && matrix.os == 'windows' && matrix.tray }}
+        shell: pwsh
+        env:
+          # Reuse the binaries the previous "Sign Windows binaries" step
+          # already signed; build-msi.ps1 skips its internal `go build` when
+          # both ADDER_EXE and ADDER_TRAY_EXE point at existing files.
+          ADDER_EXE: ${{ github.workspace }}\${{ env.APPLICATION_NAME }}.exe
+          ADDER_TRAY_EXE: ${{ github.workspace }}\${{ env.APPLICATION_NAME }}-tray.exe
+          # MSI ProductVersion: strip leading "v" from the git tag (e.g. v0.39.1 -> 0.39.1).
+          VERSION: ${{ env.RELEASE_TAG }}
+          ARCH: ${{ matrix.arch }}
+          # jsign: reuse the artefacts already on disk from the binary-sign step.
+          JSIGN_JAR: ${{ github.workspace }}\jsign.jar
+          JSIGN_KEYSTORE: ${{ secrets.CERTIFICATE_KEYSTORE }}
+          JSIGN_STORETYPE: ${{ secrets.CERTIFICATE_STORE_TYPE }}
+          JSIGN_ALIAS: ${{ secrets.CERTIFICATE_KEY_NAME }}
+          JSIGN_CERTFILE: ${{ github.workspace }}\codesign-chain.pem
+          JSIGN_TSAURL: 'http://timestamp.globalsign.com/tsa/r6advanced1'
+        run: |
+          # Fresh, masked Google Cloud KMS access token for jsign --storepass.
+          $ACCESS_TOKEN = & gcloud auth print-access-token
+          Write-Host "::add-mask::$ACCESS_TOKEN"
+          $env:JSIGN_STOREPASS = $ACCESS_TOKEN
+
+          pwsh ./packaging/windows/build-msi.ps1
+          if ($LASTEXITCODE -ne 0) { Write-Error "build-msi.ps1 failed"; exit 1 }
+
+          $env:JSIGN_STOREPASS = $null
+          $ACCESS_TOKEN = $null
+
+          Write-Host "Cleaning up code-signing artefacts"
+          Remove-Item -Path "codesign-chain.pem" -Force -ErrorAction SilentlyContinue
+          Remove-Item -Path "jsign.jar"          -Force -ErrorAction SilentlyContinue
+
+      - name: Verify MSI signature (Windows)
+        if: ${{ startsWith(github.ref, 'refs/tags/') && matrix.os == 'windows' && matrix.tray }}
+        shell: pwsh
+        run: |
+          # Locate signtool.exe in the Windows 10/11 SDK install (preinstalled
+          # on windows-latest / windows-11-arm runners).
+          $sdkRoot = "${env:ProgramFiles(x86)}\Windows Kits\10\bin"
+          if (-not (Test-Path $sdkRoot)) {
+            Write-Error "Windows SDK not found at $sdkRoot"
+            exit 1
+          }
+          $archDir = if ("${{ matrix.arch }}" -eq "arm64") { "arm64" } else { "x64" }
+          $signtool = Get-ChildItem -Path $sdkRoot -Recurse -Filter signtool.exe `
+            | Where-Object { $_.FullName -match "\\$archDir\\signtool\.exe$" } `
+            | Sort-Object FullName -Descending `
+            | Select-Object -First 1
+          if (-not $signtool) {
+            # Fall back to any signtool.exe under the SDK.
+            $signtool = Get-ChildItem -Path $sdkRoot -Recurse -Filter signtool.exe `
+              | Sort-Object FullName -Descending | Select-Object -First 1
+          }
+          if (-not $signtool) {
+            Write-Error "signtool.exe not found under $sdkRoot"
+            exit 1
+          }
+          Write-Host "Using signtool at: $($signtool.FullName)"
+
+          $cleanVersion = "${{ env.RELEASE_TAG }}" -replace '^v', ''
+          $msi = "dist\${{ env.APPLICATION_NAME }}-$cleanVersion-windows-${{ matrix.arch }}.msi"
+          if (-not (Test-Path $msi)) {
+            Write-Error "MSI not found at $msi"
+            exit 1
+          }
+
+          & $signtool.FullName verify /pa /v $msi
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "signtool verify failed for $msi"
+            exit 1
+          }
+          Write-Host "MSI signature verified: $msi"
 
       # Build macOS .pkg installer
       #
@@ -306,20 +423,26 @@ jobs:
             echo "::endgroup::"
           fi
 
-      - name: Upload release asset (Windows)
-        if: startsWith(github.ref, 'refs/tags/') && matrix.os == 'windows'
+      - name: Upload MSI release asset (Windows)
+        if: startsWith(github.ref, 'refs/tags/') && matrix.os == 'windows' && matrix.tray
         shell: pwsh
         run: |
-          $filename = "${{ env.APPLICATION_NAME }}-${{ env.RELEASE_TAG }}-${{ matrix.os }}-${{ matrix.arch }}.zip"
-          Compress-Archive "${{ env.APPLICATION_NAME }}.exe" "$filename"
-          Write-Host "Uploading file: $filename"
-          # Upload file using PowerShell
+          $cleanVersion = "${{ env.RELEASE_TAG }}" -replace '^v', ''
+          $msiPath  = "dist\${{ env.APPLICATION_NAME }}-$cleanVersion-windows-${{ matrix.arch }}.msi"
+          # Asset name follows the existing convention:
+          # adder-<RELEASE_TAG>-<os>-<arch>.<ext> (RELEASE_TAG keeps the leading "v").
+          $assetName = "${{ env.APPLICATION_NAME }}-${{ env.RELEASE_TAG }}-${{ matrix.os }}-${{ matrix.arch }}.msi"
+          if (-not (Test-Path $msiPath)) {
+            Write-Error "MSI not found at $msiPath"
+            exit 1
+          }
+          Write-Host "Uploading $msiPath as $assetName"
           $headers = @{
             "Authorization" = "token ${{ secrets.GITHUB_TOKEN }}"
             "Content-Type" = "application/octet-stream"
           }
-          $uploadUrl = "https://uploads.github.com/repos/${{ github.repository }}/releases/${{ needs.create-draft-release.outputs.RELEASE_ID }}/assets?name=$filename"
-          Invoke-RestMethod -Uri $uploadUrl -Method Post -Headers $headers -InFile $filename
+          $uploadUrl = "https://uploads.github.com/repos/${{ github.repository }}/releases/${{ needs.create-draft-release.outputs.RELEASE_ID }}/assets?name=$assetName"
+          Invoke-RestMethod -Uri $uploadUrl -Method Post -Headers $headers -InFile $msiPath
 
       - name: Upload release asset (macOS pkg)
         if: startsWith(github.ref, 'refs/tags/') && matrix.os == 'darwin'
@@ -354,6 +477,20 @@ jobs:
         with:
           subject-path: '${{ env.APPLICATION_NAME }}.exe'
 
+      - name: Compute MSI path (Windows)
+        if: startsWith(github.ref, 'refs/tags/') && matrix.os == 'windows' && matrix.tray
+        shell: pwsh
+        run: |
+          $cleanVersion = "${{ env.RELEASE_TAG }}" -replace '^v', ''
+          $msiPath = "dist\${{ env.APPLICATION_NAME }}-$cleanVersion-windows-${{ matrix.arch }}.msi"
+          "MSI_PATH=$msiPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Attest MSI (Windows)
+        if: startsWith(github.ref, 'refs/tags/') && matrix.os == 'windows' && matrix.tray
+        uses: actions/attest@a1948c3f048ba23858d222213b7c278aabede763 # v4.1.1 https://github.com/actions/attest/releases/tag/v4.1.1
+        with:
+          subject-path: ${{ env.MSI_PATH }}
+
       - name: Attest pkg (macOS)
         if: startsWith(github.ref, 'refs/tags/') && matrix.os == 'darwin'
         uses: actions/attest@a1948c3f048ba23858d222213b7c278aabede763 # v4.1.1 https://github.com/actions/attest/releases/tag/v4.1.1
@@ -386,7 +523,7 @@ jobs:
             arch: arm64
     runs-on: ${{ matrix.os }}
     steps:
-      - run: "echo \"RELEASE_TAG=${GITHUB_REF#refs/tags/}\" >> $GITHUB_ENV"
+      - run: "echo \"RELEASE_TAG=${GITHUB_REF#refs/tags/}\" >> \"$GITHUB_ENV\""
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0 https://github.com/actions/checkout/releases/tag/v7.0.0
         with:
           fetch-depth: '0'
@@ -476,12 +613,15 @@ jobs:
       - name: manifest-create
         shell: bash
         run: |
-          for t in `echo '${{ steps.meta.outputs.tags }}'`; do
-            # Extract the underlying manifests from each manifests list and create a new single manifest list
-            docker manifest create ${t} \
-              $(docker manifest inspect ${t}-amd64 | jq -r '.manifests[] | .digest' | sed -e "s|^|${t%:*}@|") \
-              $(docker manifest inspect ${t}-arm64 | jq -r '.manifests[] | .digest' | sed -e "s|^|${t%:*}@|")
-            docker manifest push ${t}
+          for t in ${{ steps.meta.outputs.tags }}; do
+            # Extract the underlying manifests from each manifests list and create a new single manifest list.
+            # Word-splitting of the two command substitutions below is intentional:
+            # each digest line becomes a separate argument to `docker manifest create`.
+            # shellcheck disable=SC2046
+            docker manifest create "${t}" \
+              $(docker manifest inspect "${t}-amd64" | jq -r '.manifests[] | .digest' | sed -e "s|^|${t%:*}@|") \
+              $(docker manifest inspect "${t}-arm64" | jq -r '.manifests[] | .digest' | sed -e "s|^|${t%:*}@|")
+            docker manifest push "${t}"
           done
       # Checkout repo so README.md is available for next step
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0 https://github.com/actions/checkout/releases/tag/v7.0.0
