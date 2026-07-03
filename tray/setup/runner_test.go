@@ -58,13 +58,20 @@ func (m *mockStore) SaveTrayAtomic(cfg TrayConfig) error {
 }
 
 type mockService struct {
-	registered bool
-	running    bool
-	restarts   int
+	registered          bool
+	running             bool
+	restarts            int
+	ensureRegisteredErr error
 }
 
-func (m *mockService) EnsureRegistered(bin, cfg string) error { m.registered = true; return nil }
-func (m *mockService) EnsureRunning() error                   { m.running = true; return nil }
+func (m *mockService) EnsureRegistered(bin, cfg string) error {
+	if m.ensureRegisteredErr != nil {
+		return m.ensureRegisteredErr
+	}
+	m.registered = true
+	return nil
+}
+func (m *mockService) EnsureRunning() error { m.running = true; return nil }
 func (m *mockService) RestartIfConfigChanged(bin, cfg string) error {
 	m.restarts++
 	return nil
@@ -120,10 +127,38 @@ func TestApplyDoesNotTouchHostServicesWithFakeManager(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.True(t, store.saved)
+	assert.True(t, svc.registered, "service must be registered before restart")
 	assert.Equal(t, 1, svc.restarts)
 	assert.True(t, conn.connected)
 	assert.Equal(t, "127.0.0.1", conn.address)
 	assert.Equal(t, uint(8080), conn.port)
+}
+
+// TestApplySurfacesRegisterErrorAndSkipsRestart guards the wizard flow
+// that previously failed on Windows: EnsureRegistered must run before
+// RestartIfConfigChanged, and a registration failure is a soft error
+// (config still persisted) that skips the restart attempt.
+func TestApplySurfacesRegisterErrorAndSkipsRestart(t *testing.T) {
+	store := &mockStore{}
+	svc := &mockService{ensureRegisteredErr: errors.New("schtasks create failed")}
+	conn := &mockConnector{}
+	runner := &SetupRunner{
+		Store:   store,
+		Service: svc,
+		Conn:    conn,
+		Finder:  &mockFinder{path: "/tmp/adder"},
+	}
+
+	result, err := runner.Apply(context.Background(), SetupPlan{
+		Network: NetworkConfig{Name: "mainnet"},
+		Filter:  FilterConfig{MonitorEverything: true},
+	})
+	require.NoError(t, err)
+
+	assert.True(t, store.saved)
+	require.Error(t, result.ServiceRestartErr)
+	assert.ErrorIs(t, result.ServiceRestartErr, svc.ensureRegisteredErr)
+	assert.Equal(t, 0, svc.restarts, "restart must be skipped when register fails")
 }
 
 func TestApplyReturnsStoreErrorsBeforeServiceWork(t *testing.T) {

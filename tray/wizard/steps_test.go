@@ -689,7 +689,7 @@ func TestNotificationsStepVerificationButtons(t *testing.T) {
 	noButton := step.verifyBox.Objects[1].(*widget.Button)
 	noButton.OnTapped()
 	assert.False(t, step.verified)
-	assert.Contains(t, step.verifyResult.Text, "Please check")
+	assert.Contains(t, step.verifyResult.Text, "notification settings")
 
 	yesButton := step.verifyBox.Objects[0].(*widget.Button)
 	yesButton.OnTapped()
