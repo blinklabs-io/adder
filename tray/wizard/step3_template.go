@@ -23,7 +23,6 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
 	"github.com/blinklabs-io/adder/tray/setup"
 )
@@ -180,9 +179,12 @@ func (s *templateStep) Content() fyne.CanvasObject {
 		s.outputContainer,
 	)
 
+	// No Spacer between the boxes: the outer content scrolls (see
+	// wizard.updateStep), and in a squeezed box layout a Spacer takes
+	// negative height, overlapping outputBox onto monitorBox. outputBox
+	// already opens with a separator for visual division.
 	return container.NewVBox(
 		monitorBox,
-		layout.NewSpacer(),
 		outputBox,
 	)
 }

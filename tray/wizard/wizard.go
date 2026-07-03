@@ -28,6 +28,17 @@ import (
 	"github.com/blinklabs-io/adder/tray/setup"
 )
 
+const (
+	// surfaceWidth/surfaceHeight are the default window size for the
+	// setup surfaces (wizard + RulesEditor, which share the same target
+	// sections). Wide enough for the entry+Add rows and word-wrapped
+	// help text without hugging the edge; tall enough to show early
+	// steps without scrolling. Content scrolls beyond this — the window
+	// is deliberately not fixed-size (see NewWizard).
+	surfaceWidth  = 1024
+	surfaceHeight = 800
+)
+
 // Step defines the interface that each wizard step must implement.
 type Step interface {
 	// Title returns the title of the step shown in the header.
@@ -68,9 +79,11 @@ func (w *WizardController) updateStep() {
 	w.titleLabel.SetText(step.Title())
 	w.descLabel.SetText(step.Description())
 
-	// Update content
+	// Update content. Wrap in a vertical scroll so tall steps (e.g.
+	// "Events & Outputs") scroll instead of forcing the window to grow
+	// or clipping the Back/Next footer. Matches RulesEditor.
 	w.stepContent.Objects = []fyne.CanvasObject{
-		container.NewPadded(step.Content()),
+		container.NewVScroll(container.NewPadded(step.Content())),
 	}
 	w.stepContent.Refresh()
 
@@ -187,8 +200,10 @@ func NewWizard(
 	}
 
 	w.window = w.app.NewWindow("Adder Setup")
-	w.window.Resize(fyne.NewSize(500, 560))
-	w.window.SetFixedSize(true)
+	// Constant, resizable window; step content scrolls (see updateStep).
+	// Not SetFixedSize: a fixed window is content-min-driven, so it
+	// balloons for tall steps and jumps size when target chips are added.
+	w.window.Resize(fyne.NewSize(surfaceWidth, surfaceHeight))
 	w.window.SetOnClosed(w.cancel)
 
 	w.steps = []Step{

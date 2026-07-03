@@ -16,7 +16,7 @@ GO_LDFLAGS=-ldflags "-s -w -X '$(GOMODULE)/internal/version.Version=$(shell git 
 GO_CGO_CFLAGS=$(shell go env CGO_CFLAGS)
 TRAY_CGO_CFLAGS=$(strip $(GO_CGO_CFLAGS) $(if $(filter windows/arm64,$(GOOS)/$(GOARCH)),-DWINBOOL=BOOL,))
 
-.PHONY: build build-tray mod-tidy clean test bundle-macos pkg-macos pkg-macos-adhoc
+.PHONY: build build-tray mod-tidy clean test wizard-screenshots bundle-macos pkg-macos pkg-macos-adhoc
 
 # Alias for building program binary
 build: $(BINARIES)
@@ -57,6 +57,12 @@ swagger:
 
 test: mod-tidy
 	go test -v -race ./...
+
+# Render each setup-wizard step to /tmp/wizard_step{N}.png for visual
+# review (override dir with WIZARD_CAPTURE_DIR). Dev-only; the underlying
+# test is skipped in normal runs unless WIZARD_CAPTURE=1.
+wizard-screenshots:
+	WIZARD_CAPTURE=1 go test ./tray/wizard/ -run TestCaptureSteps -count=1 -v
 
 # Build adder-tray binary
 # CGO is required on all platforms for Fyne UI support.

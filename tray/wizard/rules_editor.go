@@ -89,7 +89,7 @@ func NewRulesEditor(
 	}
 
 	e.window = a.NewWindow("Adder Notification Rules")
-	e.window.Resize(fyne.NewSize(560, 640))
+	e.window.Resize(fyne.NewSize(surfaceWidth, surfaceHeight))
 	e.window.SetOnClosed(cancel)
 	// Block the native window-close affordance while apply is in
 	// flight so the warning dialog's parent cannot vanish under it.

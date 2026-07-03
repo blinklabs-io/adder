@@ -18,9 +18,11 @@ import (
 	"context"
 	"testing"
 
+	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/test"
 	"github.com/blinklabs-io/adder/tray/setup"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestWizard_Navigation(t *testing.T) {
@@ -87,6 +89,27 @@ func TestWizard_Navigation(t *testing.T) {
 	assert.True(t, callbackCalled)
 	assert.False(t, finishedPlan.Filter.MonitorEverything)
 	assert.Len(t, finishedPlan.Filter.Wallets, 1)
+}
+
+// TestWizard_StepContentScrolls guards the window-sizing regression: a
+// fixed-size window is content-min-driven, so it balloons for the tall
+// "Events & Outputs" step and jumps size every time a target chip is
+// added, and without a scroll container the Back/Next footer becomes
+// unreachable. The sibling RulesEditor (rules_editor.go) is the
+// reference: resizable window + VScroll body. The wizard must match.
+func TestWizard_StepContentScrolls(t *testing.T) {
+	test.NewApp()
+
+	w := NewWizard(nil, nil)
+
+	assert.False(t, w.window.FixedSize(),
+		"wizard window must not be fixed-size (balloons/jumps on tall steps)")
+
+	require.Len(t, w.stepContent.Objects, 1)
+	_, ok := w.stepContent.Objects[0].(*container.Scroll)
+	assert.Truef(t, ok,
+		"step content must be wrapped in *container.Scroll, got %T",
+		w.stepContent.Objects[0])
 }
 
 func TestWizardPlan_Initial(t *testing.T) {
