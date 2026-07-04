@@ -724,20 +724,59 @@ func (a *App) setupTray() {
 
 	slog.Info("starting adder-tray")
 
-	if a.Config().AutoStart {
-		// Ensure engine is running if configured
-		status, _ := setup.ServiceStatusCheck()
-		if status == setup.ServiceRegistered {
-			_ = setup.StartService()
+	// Bring the engine to a monitorable state, then connect
+	// unconditionally so the tray always reflects the real engine state
+	// (the EventClient retries with backoff, so a down engine shows
+	// "reconnecting" rather than a permanent gray "stopped").
+	//
+	// AutoStart controls whether the tray (re)starts an
+	// already-registered engine. Independently, if a config exists but
+	// the service is not registered (never installed, or removed),
+	// self-heal by registering it now — otherwise the tray would sit
+	// disconnected forever with no path back except a manual
+	// Reconfigure. If registration fails, tell the user to run it.
+	status, _ := setup.ServiceStatusCheck()
+	switch {
+	case status == setup.ServiceNotRegistered && ConfigExists():
+		if err := a.autoRegisterService(); err != nil {
+			slog.Error("failed to auto-register adder service", "error", err)
+			a.fyneApp.SendNotification(fyne.NewNotification(
+				"Adder setup incomplete",
+				"Could not register the adder service. Open the tray "+
+					"menu and choose Reconfigure… to finish setup.",
+			))
+		} else if err := setup.StartService(); err != nil {
+			slog.Error("failed to start adder service", "error", err)
 		}
-
-		if err := a.conn.Connect(); err != nil {
-			slog.Error(
-				"failed to auto-connect to adder",
-				"error", err,
-			)
+	case a.Config().AutoStart && status == setup.ServiceRegistered:
+		if err := setup.StartService(); err != nil {
+			slog.Error("failed to start adder service", "error", err)
 		}
 	}
+
+	if err := a.conn.Connect(); err != nil {
+		slog.Error("failed to connect to adder", "error", err)
+	}
+}
+
+// autoRegisterService installs the adder engine as a system service
+// using the trusted binary located next to the tray executable and the
+// configured engine config path. It self-heals a startup where a
+// config exists but the service is not registered.
+func (a *App) autoRegisterService() error {
+	binPath, err := a.runner.Finder.Find()
+	if err != nil {
+		return fmt.Errorf("finding adder binary: %w", err)
+	}
+	cfgPath := a.Config().AdderConfig
+	if cfgPath == "" {
+		cfgPath = filepath.Join(setup.ConfigDir(), "config.yaml")
+	}
+	return setup.RegisterService(setup.ServiceConfig{
+		BinaryPath: binPath,
+		ConfigPath: cfgPath,
+		LogDir:     setup.LogDir(),
+	})
 }
 
 // Shutdown gracefully tears down the tray. Ordering: close quitChan,

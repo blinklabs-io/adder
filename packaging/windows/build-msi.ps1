@@ -160,9 +160,12 @@ function Build-Binaries {
     # NOTE: Fyne pulls in go-gl/OpenGL, which REQUIRES cgo and a C compiler
     # (mingw-w64 gcc). This cannot be cross-compiled from macOS/Linux; build
     # on a native Windows runner with gcc on PATH.
-    Write-Log "Building adder-tray.exe (CGO_ENABLED=1)"
+    # -H=windowsgui links against the GUI subsystem so the tray does not
+    # spawn a console window on launch (the CLI keeps its console).
+    Write-Log "Building adder-tray.exe (CGO_ENABLED=1, -H=windowsgui)"
     $env:CGO_ENABLED = '1'
-    & go build -ldflags $ldflags `
+    $trayLdflags = "$ldflags -H=windowsgui"
+    & go build -ldflags $trayLdflags `
         -o (Join-Path $BinDir 'adder-tray.exe') (Join-Path $RepoRoot 'cmd\adder-tray')
     if ($LASTEXITCODE -ne 0) { Die 'adder-tray.exe build failed (need cgo + a C toolchain such as mingw-w64 gcc)' }
 }
