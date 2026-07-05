@@ -101,6 +101,38 @@
               KeyPath="yes" />
       </Component>
 
+      <!-- Bundled Mesa3D software OpenGL (llvmpipe). opengl32.dll is only a
+           loader; libgallium_wgl.dll is the megadriver that actually contains
+           llvmpipe (split out of opengl32.dll since Mesa 21.3.0). Both live
+           next to adder-tray.exe so the Fyne GUI renders on VM / headless /
+           RDP hosts that lack a hardware OpenGL driver (e.g. VirtualBox). The
+           tray pins GALLIUM_DRIVER=llvmpipe at startup. amd64 only (no upstream
+           arm64 build); Mesa is MIT-licensed and the license ships alongside.
+           These components are conditional so a build without Mesa still works
+           (build-msi.ps1 passes empty -d values when BUNDLE_MESA=0 or arm64). -->
+      <?if $(var.MesaOpenGl) != "NONE" ?>
+      <Component Id="cmp_mesa_opengl32" Bitness="always64" Guid="*">
+        <File Id="fil_mesa_opengl32"
+              Source="$(var.MesaOpenGl)"
+              Name="opengl32.dll"
+              KeyPath="yes" />
+      </Component>
+      <Component Id="cmp_mesa_gallium" Bitness="always64" Guid="*">
+        <File Id="fil_mesa_gallium"
+              Source="$(var.MesaGallium)"
+              Name="libgallium_wgl.dll"
+              KeyPath="yes" />
+      </Component>
+      <?endif?>
+      <?if $(var.MesaLicense) != "NONE" ?>
+      <Component Id="cmp_mesa_license" Bitness="always64" Guid="*">
+        <File Id="fil_mesa_license"
+              Source="$(var.MesaLicense)"
+              Name="OpenGL-Mesa-LICENSE.txt"
+              KeyPath="yes" />
+      </Component>
+      <?endif?>
+
       <!-- Start Menu shortcut for the tray, in its own per-machine component.
            Placed directly in ProgramMenuFolder (overriding the group dir). The
            registry value under HKMU (-> HKLM for perMachine) is the keypath a

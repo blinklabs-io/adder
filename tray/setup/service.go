@@ -19,7 +19,6 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"strings"
 )
 
 // ServiceManager defines the interface for idempotent service lifecycle
@@ -51,10 +50,7 @@ func (m *OSManager) EnsureRegistered(binPath, cfgPath string) error {
 
 	// 2. Check existing state
 	path := serviceUnitFilePath()
-	var existing []byte
-	if !strings.HasPrefix(path, "schtasks://") {
-		existing, _ = os.ReadFile(path)
-	}
+	existing, _ := os.ReadFile(path)
 
 	if existing != nil && bytes.Equal(existing, desired) {
 		slog.Debug("service already registered with identical configuration",
@@ -91,10 +87,7 @@ func (m *OSManager) RestartIfConfigChanged(binPath, cfgPath string) error {
 	}
 
 	path := serviceUnitFilePath()
-	var existing []byte
-	if !strings.HasPrefix(path, "schtasks://") {
-		existing, _ = os.ReadFile(path)
-	}
+	existing, _ := os.ReadFile(path)
 
 	if len(existing) > 0 && !bytes.Equal(existing, desired) {
 		slog.Info("service configuration changed, restarting", "path", path)

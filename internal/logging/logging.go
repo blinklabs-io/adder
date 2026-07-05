@@ -15,6 +15,7 @@
 package logging
 
 import (
+	"io"
 	"log/slog"
 	"os"
 	"time"
@@ -31,7 +32,16 @@ func defaultLogger() *slog.Logger {
 
 var globalLogger = defaultLogger()
 
+// Configure initializes the global logger writing to os.Stderr.
 func Configure() {
+	ConfigureWithWriter(os.Stderr)
+}
+
+// ConfigureWithWriter initializes the global logger writing to w. The GUI tray
+// uses this to log to a file: when linked with -H=windowsgui there is no
+// console, so os.Stderr is discarded and logs (and panics) would otherwise be
+// lost.
+func ConfigureWithWriter(w io.Writer) {
 	cfg := config.GetConfig()
 	var level slog.Level
 	switch cfg.Logging.Level {
@@ -47,7 +57,7 @@ func Configure() {
 		level = slog.LevelInfo
 	}
 
-	handler := slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{
+	handler := slog.NewJSONHandler(w, &slog.HandlerOptions{
 		ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
 			if a.Key == slog.TimeKey {
 				// Format the time attribute to use RFC3339 or your custom format

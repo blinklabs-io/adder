@@ -14,9 +14,12 @@ packaging/windows/
 ## Installed layout
 
 ```
-%ProgramFiles%\Adder\adder.exe          # CLI binary
-%ProgramFiles%\Adder\adder-tray.exe     # tray GUI binary
-Start Menu\Programs\Adder               # shortcut → adder-tray.exe
+%ProgramFiles%\Adder\adder.exe                 # CLI binary
+%ProgramFiles%\Adder\adder-tray.exe            # tray GUI binary
+%ProgramFiles%\Adder\opengl32.dll              # Mesa software OpenGL (loader)  [amd64]
+%ProgramFiles%\Adder\libgallium_wgl.dll        # Mesa llvmpipe megadriver       [amd64]
+%ProgramFiles%\Adder\OpenGL-Mesa-LICENSE.txt   # Mesa MIT license               [amd64]
+Start Menu\Programs\Adder                      # shortcut → adder-tray.exe
 ```
 
 Double-clicking the Start Menu shortcut launches the tray/wizard GUI. The CLI
@@ -24,12 +27,45 @@ ships alongside it in the same `Adder` directory. An Add/Remove Programs (ARP)
 entry is created with publisher **Blink Labs Software**, contact, and the
 support / about URL pointing at <https://github.com/blinklabs-io/adder>.
 
+## Software OpenGL (Mesa / llvmpipe)
+
+The tray GUI is built with Fyne, which needs OpenGL 2.1+. VM / headless / RDP
+hosts (e.g. **VirtualBox** without 3D acceleration) frequently have no hardware
+OpenGL driver, so the tray would render a black window and exit. To make it work
+everywhere, the installer bundles **Mesa3D's `llvmpipe` software renderer** next
+to `adder-tray.exe`:
+
+- `opengl32.dll` is only a loader; `libgallium_wgl.dll` is the megadriver that
+  actually contains `llvmpipe` (split out of `opengl32.dll` since Mesa 21.3.0),
+  so **both** are required. Windows resolves `opengl32.dll` from the application
+  directory before System32, so the tray uses Mesa instead of any host driver.
+- The tray pins `GALLIUM_DRIVER=llvmpipe` at startup (in `cmd/adder-tray`) so
+  Mesa does not attempt the D3D12 (`dozen`) path, which needs `dxil.dll` we do
+  not ship. Set `GALLIUM_DRIVER` yourself to override.
+- The DLLs come from [`pal1000/mesa-dist-win`](https://github.com/pal1000/mesa-dist-win),
+  pinned via `MESA_VERSION`. We use the **`release-mingw`** build, which
+  statically links its C runtime, so **only these two DLLs are shipped** — no
+  extra runtime DLLs are needed. Verified: their only imports are Windows
+  in-box system libraries (`api-ms-win-crt-*` UCRT, `KERNEL32`, `GDI32`,
+  `ADVAPI32`), present on every Windows 10/11. `release-mingw` requires SSSE3,
+  which every x64 CPU since ~2006 has. Mesa is **MIT-licensed**; the license
+  text ships as `OpenGL-Mesa-LICENSE.txt`.
+- If OpenGL still fails to initialize, the tray's log file
+  (`%LOCALAPPDATA%\Adder\Logs\adder-tray.log`) records the error.
+- **amd64 only** — there is no upstream arm64 Mesa build, so arm64 MSIs do not
+  bundle it (the arm64 GUI needs a host OpenGL driver). Bundling is skipped with
+  a warning rather than failing the build.
+
 ## What the installer does NOT do
 
-- It does **not** register a Scheduled Task. Service registration is owned by
-  the `adder-tray` first-run wizard (which knows the user's chosen config and
-  uses `schtasks.exe` at `tray/setup/service_windows.go`). This keeps the
-  installer generic and mirrors the macOS installer's "no LaunchAgent" stance.
+- It does **not** register a Scheduled Task or any autostart. Autostart is
+  owned by the `adder-tray` first-run wizard (`tray/setup/service_windows.go`),
+  which on Windows writes a per-user `HKCU\...\Run` value that launches the
+  **tray** at logon (GUI subsystem → silent). The tray in turn launches the
+  **engine** (`adder.exe`) as a detached, windowless child and manages its
+  lifecycle. The engine is never put in the Run key directly, because Explorer
+  would open a visible console window for it. No elevation is required; this
+  mirrors the macOS installer's "no LaunchAgent" stance.
 
 ## WiX version
 
@@ -76,6 +112,9 @@ The artifact is written to `dist\adder-<version>-windows-<arch>.msi`
 | `BUILD_DIR`       | optional     | `<repo>\build\windows`                    | Scratch build/staging directory. |
 | `ADDER_EXE`       | optional     | _(unset → script runs `go build`)_        | Path to a prebuilt `adder.exe` (typically already code-signed). When both this and `ADDER_TRAY_EXE` resolve to existing files, the script's internal `go build` step is skipped and these files are packaged directly. CI uses this to feed in individually-signed binaries — the MSI signature only covers the OLE compound, not the embedded PEs. |
 | `ADDER_TRAY_EXE`  | optional     | _(unset → script runs `go build`)_        | Path to a prebuilt `adder-tray.exe`. See `ADDER_EXE`. |
+| `BUNDLE_MESA`     | optional     | `1`                                       | Set to `0` to skip bundling Mesa software OpenGL (the GUI then needs a host OpenGL driver). Always skipped for `arm64` (no upstream build). |
+| `MESA_VERSION`    | optional     | `26.1.3`                                  | Pinned [`pal1000/mesa-dist-win`](https://github.com/pal1000/mesa-dist-win) release tag to download (`release-mingw`). |
+| `MESA_OPENGL_DIR` | optional     | _(unset → download)_                      | Use Mesa DLLs from an already-extracted directory instead of downloading (offline / air-gapped builds). |
 | `JSIGN_KEYSTORE`  | signing      | _(unset → skip)_                          | Keystore reference: cloud HSM/KMS name (e.g. Key Vault URL), PKCS#11 config, or `.p12` path holding the EV certificate. |
 | `JSIGN_STOREPASS` | signing      | _(unset → skip)_                          | Keystore / token password or cloud credential. |
 | `JSIGN_STORETYPE` | signing      | _(unset)_                                 | jsign storetype: `AZUREKEYVAULT`, `GOOGLECLOUD`, `AWS`, `DIGICERTONE`, `PKCS11`, `PKCS12`, … |

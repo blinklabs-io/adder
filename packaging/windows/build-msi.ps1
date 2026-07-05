@@ -106,6 +106,25 @@ $AdderTrayExeIn = $env:ADDER_TRAY_EXE
 # Icon source (already present in the repo).
 $IconSrc = if ($env:ICON_SRC) { $env:ICON_SRC } else { Join-Path $RepoRoot '.github\assets\adder.ico' }
 
+# Mesa3D software OpenGL bundling. The Fyne tray needs OpenGL 2.1+; VM /
+# headless / RDP hosts (e.g. VirtualBox) often have no hardware OpenGL driver,
+# so we bundle Mesa's llvmpipe software renderer (opengl32.dll loader +
+# libgallium_wgl.dll megadriver) next to adder-tray.exe.
+#   BUNDLE_MESA=0    disable bundling (GUI then needs a host OpenGL driver)
+#   MESA_VERSION     pinned mesa-dist-win release tag (default below)
+#   MESA_OPENGL_DIR  use DLLs from an already-extracted dir instead of download
+# amd64 only: upstream (pal1000/mesa-dist-win) ships no arm64 build, so bundling
+# is skipped for arm64 with a warning.
+$BundleMesa   = if ($null -ne $env:BUNDLE_MESA) { $env:BUNDLE_MESA } else { '1' }
+$MesaVersion  = if ($env:MESA_VERSION)  { $env:MESA_VERSION }  else { '26.1.3' }
+$MesaOpenGlDir = $env:MESA_OPENGL_DIR
+
+# Resolved, staged Mesa file paths (empty => not bundled; the .wxs guards on
+# these being non-empty). Populated by Resolve-Mesa.
+$script:MesaOpenGl  = ''
+$script:MesaGallium = ''
+$script:MesaLicense = ''
+
 # Signing (jsign) parameters - empty => skip signing with a warning.
 #   JSIGN_JAR        path to jsign.jar (or rely on a `jsign` launcher on PATH)
 #   JSIGN_KEYSTORE   keystore: a cloud HSM/KMS name, PKCS#11 config, or .p12 path
@@ -171,6 +190,101 @@ function Build-Binaries {
 }
 
 # ---------------------------------------------------------------------------
+# 1b. Fetch + stage Mesa3D software OpenGL (llvmpipe) next to the tray
+# ---------------------------------------------------------------------------
+
+function Resolve-Mesa {
+    if ($BundleMesa -in @('0', 'false', 'no', 'off')) {
+        Write-Warn "BUNDLE_MESA=$BundleMesa - NOT bundling Mesa software OpenGL. The GUI will require a host OpenGL driver."
+        return
+    }
+    if ($GoArch -ne 'amd64') {
+        Write-Warn "No upstream arm64 Mesa build available - skipping Mesa bundling for $MsiArch. The GUI will require a host OpenGL driver."
+        return
+    }
+
+    # $BinDir is the staging area; it may not exist yet when prebuilt binaries
+    # were supplied (Build-Binaries was skipped).
+    New-Item -ItemType Directory -Force -Path $BinDir | Out-Null
+
+    # Source of the extracted Mesa tree: an override dir, else download+extract.
+    $mesaRoot = $MesaOpenGlDir
+    if ([string]::IsNullOrEmpty($mesaRoot)) {
+        # Prefer the mingw build: it statically links its C runtime, so it does
+        # NOT depend on the MSVC redistributable that a bare VM may lack (the
+        # msvc build does). It requires SSSE3, which every x64 CPU since ~2006
+        # has, so it is safe for VirtualBox and other VMs.
+        $asset   = "mesa3d-$MesaVersion-release-mingw.7z"
+        $url     = "https://github.com/pal1000/mesa-dist-win/releases/download/$MesaVersion/$asset"
+        $mesaDir = Join-Path $BuildDir 'mesa'
+        $archive = Join-Path $mesaDir $asset
+        $mesaRoot = Join-Path $mesaDir 'extracted'
+
+        New-Item -ItemType Directory -Force -Path $mesaDir | Out-Null
+        Write-Log "Downloading Mesa $MesaVersion ($asset)"
+        # Windows PowerShell 5.1 defaults to TLS 1.0/1.1, which GitHub rejects;
+        # force TLS 1.2. Suppressing the progress bar speeds large downloads.
+        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+        $prevProgress = $ProgressPreference
+        $ProgressPreference = 'SilentlyContinue'
+        try {
+            Invoke-WebRequest -Uri $url -OutFile $archive -UseBasicParsing
+        } finally {
+            $ProgressPreference = $prevProgress
+        }
+
+        # GitHub Windows runners ship 7-Zip; accept either launcher name.
+        $sevenZip = Get-Command 7z -ErrorAction SilentlyContinue
+        if (-not $sevenZip) { $sevenZip = Get-Command 7za -ErrorAction SilentlyContinue }
+        if (-not $sevenZip) { Die "7-Zip (7z/7za) not found on PATH; required to extract $asset" }
+        if (Test-Path $mesaRoot) { Remove-Item -Recurse -Force $mesaRoot }
+        New-Item -ItemType Directory -Force -Path $mesaRoot | Out-Null
+        Write-Log "Extracting $asset"
+        & $sevenZip.Source x $archive "-o$mesaRoot" -y | Out-Null
+        if ($LASTEXITCODE -ne 0) { Die "extracting $asset failed" }
+    } else {
+        Write-Log "Using MESA_OPENGL_DIR=$mesaRoot"
+    }
+
+    # Locate the 64-bit DLLs. Prefer files under an 'x64' path segment (the
+    # archive separates x64/x86), falling back to the first match anywhere.
+    $opengl  = Find-MesaFile $mesaRoot 'opengl32.dll'
+    $gallium = Find-MesaFile $mesaRoot 'libgallium_wgl.dll'
+    if (-not $opengl)  { Die "opengl32.dll not found under $mesaRoot" }
+    if (-not $gallium) { Die "libgallium_wgl.dll not found under $mesaRoot (needed since Mesa 21.3.0)" }
+
+    # Stage next to adder-tray.exe so the .wxs File sources resolve there.
+    Copy-Item $opengl  (Join-Path $BinDir 'opengl32.dll')        -Force
+    Copy-Item $gallium (Join-Path $BinDir 'libgallium_wgl.dll')  -Force
+    $script:MesaOpenGl  = Join-Path $BinDir 'opengl32.dll'
+    $script:MesaGallium = Join-Path $BinDir 'libgallium_wgl.dll'
+
+    # MIT license text (best-effort; components in the .wxs are optional).
+    $license = Get-ChildItem -Path $mesaRoot -Recurse -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -match '(?i)licen[cs]e|copying' } |
+        Select-Object -First 1
+    if ($license) {
+        Copy-Item $license.FullName (Join-Path $BinDir 'OpenGL-Mesa-LICENSE.txt') -Force
+        $script:MesaLicense = Join-Path $BinDir 'OpenGL-Mesa-LICENSE.txt'
+    } else {
+        Write-Warn "Mesa license file not found under $mesaRoot; not bundling a license file."
+    }
+
+    Write-Log "Staged Mesa software OpenGL (opengl32.dll + libgallium_wgl.dll)"
+}
+
+# Find-MesaFile returns the best matching path for $name under $root, preferring
+# a match whose path contains an 'x64' segment (64-bit binaries).
+function Find-MesaFile {
+    param([string]$root, [string]$name)
+    $found = Get-ChildItem -Path $root -Recurse -File -Filter $name -ErrorAction SilentlyContinue
+    if (-not $found) { return $null }
+    $x64 = $found | Where-Object { $_.FullName -match '(?i)[\\/]x64[\\/]' } | Select-Object -First 1
+    if ($x64) { return $x64.FullName }
+    return ($found | Select-Object -First 1).FullName
+}
+
+# ---------------------------------------------------------------------------
 # 2. Build the MSI with the WiX toolchain
 # ---------------------------------------------------------------------------
 
@@ -189,13 +303,25 @@ function Build-Msi {
     if (-not (Test-Path $AdderExeSrc))     { Die "adder.exe not found at $AdderExeSrc" }
     if (-not (Test-Path $AdderTrayExeSrc)) { Die "adder-tray.exe not found at $AdderTrayExeSrc" }
 
-    & wix build (Join-Path $ScriptDir 'adder.wxs') `
-        -arch $WixArch `
-        -d "Version=$MsiVersion" `
-        -d "AdderExe=$AdderExeSrc" `
-        -d "AdderTrayExe=$AdderTrayExeSrc" `
-        -d "AdderIco=$IconSrc" `
-        -o $FinalMsi
+    # The Mesa vars are ALWAYS passed; adder.wxs guards its Mesa components on
+    # them != "NONE". A sentinel (not an empty string) is used to avoid relying
+    # on `wix -d Name=` empty-value parsing and undefined-variable handling.
+    $mesaOpenGl  = if ($script:MesaOpenGl)  { $script:MesaOpenGl }  else { 'NONE' }
+    $mesaGallium = if ($script:MesaGallium) { $script:MesaGallium } else { 'NONE' }
+    $mesaLicense = if ($script:MesaLicense) { $script:MesaLicense } else { 'NONE' }
+    $wixArgs = @(
+        'build', (Join-Path $ScriptDir 'adder.wxs'),
+        '-arch', $WixArch,
+        '-d', "Version=$MsiVersion",
+        '-d', "AdderExe=$AdderExeSrc",
+        '-d', "AdderTrayExe=$AdderTrayExeSrc",
+        '-d', "AdderIco=$IconSrc",
+        '-d', "MesaOpenGl=$mesaOpenGl",
+        '-d', "MesaGallium=$mesaGallium",
+        '-d', "MesaLicense=$mesaLicense",
+        '-o', $FinalMsi
+    )
+    & wix @wixArgs
     if ($LASTEXITCODE -ne 0) { Die 'wix build failed' }
 
     Write-Log "Built: $FinalMsi"
@@ -272,6 +398,7 @@ if ($AdderExeIn -and $AdderTrayExeIn -and (Test-Path $AdderExeIn) -and (Test-Pat
 } else {
     Build-Binaries
 }
+Resolve-Mesa
 Build-Msi
 Sign-Msi
 
