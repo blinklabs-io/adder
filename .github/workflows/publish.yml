@@ -350,19 +350,19 @@ jobs:
 
       - name: Attest binary (Windows)
         if: startsWith(github.ref, 'refs/tags/') && matrix.os == 'windows'
-        uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0 https://github.com/actions/attest/releases/tag/v4.1.0
+        uses: actions/attest@a1948c3f048ba23858d222213b7c278aabede763 # v4.1.1 https://github.com/actions/attest/releases/tag/v4.1.1
         with:
           subject-path: '${{ env.APPLICATION_NAME }}.exe'
 
       - name: Attest pkg (macOS)
         if: startsWith(github.ref, 'refs/tags/') && matrix.os == 'darwin'
-        uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0 https://github.com/actions/attest/releases/tag/v4.1.0
+        uses: actions/attest@a1948c3f048ba23858d222213b7c278aabede763 # v4.1.1 https://github.com/actions/attest/releases/tag/v4.1.1
         with:
           subject-path: 'dist/*.pkg'
 
       - name: Attest binary
         if: startsWith(github.ref, 'refs/tags/') && matrix.os != 'windows' && matrix.os != 'darwin'
-        uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0 https://github.com/actions/attest/releases/tag/v4.1.0
+        uses: actions/attest@a1948c3f048ba23858d222213b7c278aabede763 # v4.1.1 https://github.com/actions/attest/releases/tag/v4.1.1
         with:
           subject-path: '${{ env.APPLICATION_NAME }}'
 
@@ -428,13 +428,13 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
       - name: Attest Docker Hub image
-        uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0 https://github.com/actions/attest/releases/tag/v4.1.0
+        uses: actions/attest@a1948c3f048ba23858d222213b7c278aabede763 # v4.1.1 https://github.com/actions/attest/releases/tag/v4.1.1
         with:
           subject-name: index.docker.io/blinklabs/adder
           subject-digest: ${{ steps.push.outputs.digest }}
           push-to-registry: true
       - name: Attest GHCR image
-        uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0 https://github.com/actions/attest/releases/tag/v4.1.0
+        uses: actions/attest@a1948c3f048ba23858d222213b7c278aabede763 # v4.1.1 https://github.com/actions/attest/releases/tag/v4.1.1
         with:
           subject-name: ghcr.io/${{ github.repository }}
           subject-digest: ${{ steps.push.outputs.digest }}
