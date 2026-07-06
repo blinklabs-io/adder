@@ -112,11 +112,19 @@ $IconSrc = if ($env:ICON_SRC) { $env:ICON_SRC } else { Join-Path $RepoRoot '.git
 # libgallium_wgl.dll megadriver) next to adder-tray.exe.
 #   BUNDLE_MESA=0    disable bundling (GUI then needs a host OpenGL driver)
 #   MESA_VERSION     pinned mesa-dist-win release tag (default below)
+#   MESA_SHA256      expected SHA-256 of the downloaded archive (default matches
+#                    MESA_VERSION below). Set this when overriding MESA_VERSION.
 #   MESA_OPENGL_DIR  use DLLs from an already-extracted dir instead of download
 # amd64 only: upstream (pal1000/mesa-dist-win) ships no arm64 build, so bundling
 # is skipped for arm64 with a warning.
 $BundleMesa   = if ($null -ne $env:BUNDLE_MESA) { $env:BUNDLE_MESA } else { '1' }
 $MesaVersion  = if ($env:MESA_VERSION)  { $env:MESA_VERSION }  else { '26.1.3' }
+# SHA-256 of mesa3d-26.1.3-release-mingw.7z. A downloaded archive is verified
+# against this before extraction so a tampered/MITM'd payload cannot be baked
+# into the signed MSI. When bumping MESA_VERSION, set MESA_SHA256 to the new
+# archive's hash (a mismatch fails the build rather than shipping unverified
+# binaries).
+$MesaSha256   = if ($env:MESA_SHA256) { $env:MESA_SHA256 } else { '80d5add64254c839b4c784bdab6a2b504e448675604b0fe54a9bce3c543303a7' }
 $MesaOpenGlDir = $env:MESA_OPENGL_DIR
 
 # Resolved, staged Mesa file paths (empty => not bundled; the .wxs guards on
@@ -232,6 +240,18 @@ function Resolve-Mesa {
         } finally {
             $ProgressPreference = $prevProgress
         }
+
+        # Verify integrity before extracting into the (signed) MSI. A mismatch
+        # means the release asset changed or the download was tampered with;
+        # fail rather than package unverified binaries.
+        if ([string]::IsNullOrEmpty($MesaSha256)) {
+            Die "MESA_SHA256 is empty; refusing to package an unverified Mesa archive. Set MESA_SHA256 for $asset (or BUNDLE_MESA=0)."
+        }
+        $actualHash = (Get-FileHash -Path $archive -Algorithm SHA256).Hash.ToLower()
+        if ($actualHash -ne $MesaSha256.ToLower()) {
+            Die "Mesa archive hash mismatch for $asset`nexpected $($MesaSha256.ToLower())`ngot      $actualHash"
+        }
+        Write-Log "Verified Mesa archive SHA-256"
 
         # GitHub Windows runners ship 7-Zip; accept either launcher name.
         $sevenZip = Get-Command 7z -ErrorAction SilentlyContinue

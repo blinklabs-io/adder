@@ -298,7 +298,7 @@ func serviceRegistered() (bool, error) {
 // currently running.
 func engineRunning() (bool, error) {
 	found := false
-	err := forEachEngineProcess(func(uint32) bool {
+	err := forEachEngineProcess(engineExePath(), func(uint32) bool {
 		found = true
 		return false // stop at the first match
 	})
@@ -310,16 +310,16 @@ func engineRunning() (bool, error) {
 // Missing processes are not an error; it returns the first failure, if any.
 func terminateEngine() error {
 	var firstErr error
-	err := forEachEngineProcess(func(pid uint32) bool {
+	err := forEachEngineProcess(engineExePath(), func(pid uint32) bool {
 		h, oerr := windows.OpenProcess(
 			windows.PROCESS_TERMINATE|windows.SYNCHRONIZE, false, pid,
 		)
 		if oerr != nil {
-			// The process may have exited between enumeration and open, or be
-			// otherwise inaccessible; record but keep going.
-			if firstErr == nil {
-				firstErr = fmt.Errorf("opening engine process %d: %w", pid, oerr)
-			}
+			// Non-fatal: the process either exited between enumeration and
+			// open, or is an unrelated adder.exe we cannot open (different
+			// user / protected process whose path we also couldn't read).
+			// Neither is our engine, so it must not block starting ours —
+			// recording it as a stop failure would abort startService.
 			return true
 		}
 		defer windows.CloseHandle(h)
@@ -358,9 +358,12 @@ func terminateEngine() error {
 }
 
 // forEachEngineProcess walks the process table and invokes fn with the PID of
-// every process whose image name matches engineImage. fn returns false to stop
-// iteration early.
-func forEachEngineProcess(fn func(pid uint32) bool) error {
+// every engine process. Candidates are matched by image name (engineImage);
+// when targetPath is non-empty, a candidate is skipped only if its full image
+// path can be read AND is confirmed to differ from targetPath — so an
+// unrelated adder.exe elsewhere is left alone, while a query failure never
+// causes us to lose track of our own engine. fn returns false to stop early.
+func forEachEngineProcess(targetPath string, fn func(pid uint32) bool) error {
 	snap, err := windows.CreateToolhelp32Snapshot(windows.TH32CS_SNAPPROCESS, 0)
 	if err != nil {
 		return fmt.Errorf("snapshotting processes: %w", err)
@@ -372,7 +375,8 @@ func forEachEngineProcess(fn func(pid uint32) bool) error {
 	err = windows.Process32First(snap, &entry)
 	for err == nil {
 		name := windows.UTF16ToString(entry.ExeFile[:])
-		if strings.EqualFold(name, engineImage) {
+		if strings.EqualFold(name, engineImage) &&
+			!isDifferentImage(entry.ProcessID, targetPath) {
 			if !fn(entry.ProcessID) {
 				return nil
 			}
@@ -384,4 +388,56 @@ func forEachEngineProcess(fn func(pid uint32) bool) error {
 		return nil
 	}
 	return err
+}
+
+// engineExePath returns the engine's executable path from the recorded
+// command, or "" if it cannot be determined (in which case process matching
+// falls back to image-name only).
+func engineExePath() string {
+	cmd, err := registeredCommand()
+	if err != nil {
+		return ""
+	}
+	argv, err := windows.DecomposeCommandLine(cmd)
+	if err != nil || len(argv) == 0 {
+		return ""
+	}
+	return argv[0]
+}
+
+// isDifferentImage reports whether the process pid is CONFIRMED to be running
+// from a different executable than targetPath. It returns false when
+// targetPath is empty or the process image path cannot be read, so an
+// unreadable path never causes us to skip our own engine.
+func isDifferentImage(pid uint32, targetPath string) bool {
+	if targetPath == "" {
+		return false
+	}
+	full, err := fullProcessPath(pid)
+	if err != nil || full == "" {
+		return false
+	}
+	// Normalize before comparing: QueryFullProcessImageName and the recorded
+	// command path can be equivalent yet textually different (slash style,
+	// ./.. segments, trailing separators). A false "different" here would
+	// skip our own engine. filepath.Clean canonicalizes both.
+	return !strings.EqualFold(filepath.Clean(full), filepath.Clean(targetPath))
+}
+
+// fullProcessPath returns the full image path of the process pid via
+// QueryFullProcessImageName.
+func fullProcessPath(pid uint32) (string, error) {
+	h, err := windows.OpenProcess(
+		windows.PROCESS_QUERY_LIMITED_INFORMATION, false, pid,
+	)
+	if err != nil {
+		return "", err
+	}
+	defer windows.CloseHandle(h)
+	buf := make([]uint16, 1024)
+	size := uint32(len(buf))
+	if err := windows.QueryFullProcessImageName(h, 0, &buf[0], &size); err != nil {
+		return "", err
+	}
+	return windows.UTF16ToString(buf[:size]), nil
 }

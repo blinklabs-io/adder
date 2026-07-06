@@ -73,11 +73,14 @@ const (
 	tmplTxToken = "Token transfer at " +
 		"{{or (mine .payload.outputs .params) " +
 		"(other .payload.outputs .params)}}."
+	// voteFor selects the voting procedure cast by a followed DRep
+	// (.params) so an event carrying several votes renders the followed
+	// DRep's vote, not whichever happens to be first.
 	tmplGovVote = "DRep " +
-		"{{trunc (field \"voterId\" .payload.votingProcedures)}} " +
-		"voted {{field \"vote\" .payload.votingProcedures}} " +
+		"{{trunc (field \"voterId\" (voteFor .payload.votingProcedures .params))}} " +
+		"voted {{field \"vote\" (voteFor .payload.votingProcedures .params)}} " +
 		"on proposal " +
-		"#{{field \"govActionIndex\" .payload.votingProcedures}}."
+		"#{{field \"govActionIndex\" (voteFor .payload.votingProcedures .params)}}."
 	tmplGovProposal   = "New governance proposal detected."
 	tmplGovReg        = "A registration change was detected."
 	tmplAssetActivity = "Asset activity detected in tx " +

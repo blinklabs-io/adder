@@ -45,6 +45,9 @@ func formatFuncs() template.FuncMap {
 		"outAda":    totalOutputAda,
 		"field":     firstItemField,
 		"int":       intString,
+		// Governance-aware: select the voting procedure cast by a followed
+		// DRep so a multi-vote event renders the RIGHT vote, not the first.
+		"voteFor": votingProcedureFor,
 		// Wallet-aware helpers: distinguish the watched address
 		// (".params" in the template data) from the counterparty when
 		// rendering tx notifications.
@@ -252,6 +255,43 @@ func firstItemField(field string, slice any) string {
 		return strconv.FormatFloat(f, 'f', -1, 64)
 	}
 	return fmt.Sprintf("%v", v)
+}
+
+// votingProcedureFor returns a single-element slice holding the voting
+// procedure cast by a followed DRep (matched on voterId or voterHash
+// against params), so `field` renders the RIGHT vote when a governance
+// event carries several. Falls back to the original slice when params is
+// empty (e.g. Monitor Everything) or nothing matches, preserving the
+// first-item behaviour. The []any shape keeps `field` (firstItemField)
+// working unchanged.
+func votingProcedureFor(procedures any, params any) any {
+	s, ok := procedures.([]any)
+	if !ok || len(s) == 0 {
+		return procedures
+	}
+	ps, ok := params.([]string)
+	if !ok || len(ps) == 0 {
+		return procedures
+	}
+	set := make(map[string]struct{}, len(ps))
+	for _, p := range ps {
+		set[strings.ToLower(p)] = struct{}{}
+	}
+	for _, e := range s {
+		m, ok := e.(map[string]any)
+		if !ok {
+			continue
+		}
+		id, _ := m["voterId"].(string)
+		if _, ok := set[strings.ToLower(id)]; ok {
+			return []any{m}
+		}
+		h, _ := m["voterHash"].(string)
+		if _, ok := set[strings.ToLower(h)]; ok {
+			return []any{m}
+		}
+	}
+	return procedures
 }
 
 // truncMiddle shortens a long identifier (address, hash, DRep/pool ID)
