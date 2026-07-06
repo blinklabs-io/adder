@@ -55,9 +55,16 @@ func main() {
 	// The tray is linked -H=windowsgui on Windows, so it has no console and
 	// os.Stderr is discarded. Tee logs to a file so errors and crashes are
 	// diagnosable; keep stderr for dev/console builds where it is visible.
+	//
+	// The log FILE is listed first, and deliberately so: io.MultiWriter stops
+	// at the first writer that errors, and on Windows GUI os.Stderr.Write
+	// fails (invalid handle). If stderr came first, the file — the whole point
+	// on Windows — would never be written. File-first guarantees the file is
+	// always written; a subsequent stderr error is harmless (slog discards
+	// handler write errors).
 	logOut := io.Writer(os.Stderr)
 	if f := openTrayLogFile(); f != nil {
-		logOut = io.MultiWriter(os.Stderr, f)
+		logOut = io.MultiWriter(f, os.Stderr)
 	}
 	logging.ConfigureWithWriter(logOut)
 	slog.SetDefault(logging.GetLogger())

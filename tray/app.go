@@ -735,8 +735,16 @@ func (a *App) setupTray() {
 	// self-heal by registering it now — otherwise the tray would sit
 	// disconnected forever with no path back except a manual
 	// Reconfigure. If registration fails, tell the user to run it.
-	status, _ := setup.ServiceStatusCheck()
+	// Only self-heal / autostart on a CONFIRMED status. If the probe itself
+	// failed, the fallback value is ServiceNotRegistered — acting on that
+	// would spuriously re-register and (re)start the engine on a transient
+	// probe error. Log and skip; the unconditional Connect below still runs
+	// so the tray reflects real state and reconnects with backoff.
+	status, statusErr := setup.ServiceStatusCheck()
 	switch {
+	case statusErr != nil:
+		slog.Error("could not determine adder service status; "+
+			"skipping autostart/self-heal", "error", statusErr)
 	case status == setup.ServiceNotRegistered && ConfigExists():
 		if err := a.autoRegisterService(); err != nil {
 			slog.Error("failed to auto-register adder service", "error", err)

@@ -331,10 +331,24 @@ func terminateEngine() error {
 			}
 			return true
 		}
-		// Wait (bounded) for the process to actually exit.
-		_, _ = windows.WaitForSingleObject(
+		// Wait (bounded) for the process to actually exit. Surface a
+		// timeout/error as a stop failure so the caller does not launch a
+		// second engine that races the dying one for the API port.
+		waitResult, werr := windows.WaitForSingleObject(
 			h, uint32(stopWaitTimeout.Milliseconds()),
 		)
+		if werr != nil {
+			if firstErr == nil {
+				firstErr = fmt.Errorf(
+					"waiting for engine process %d to exit: %w", pid, werr)
+			}
+			return true
+		}
+		if waitResult == uint32(windows.WAIT_TIMEOUT) && firstErr == nil {
+			firstErr = fmt.Errorf(
+				"engine process %d did not exit within %s",
+				pid, stopWaitTimeout)
+		}
 		return true
 	})
 	if err != nil {
