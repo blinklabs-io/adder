@@ -39,8 +39,6 @@ const (
 	NotifyPrefVotesCast = "Votes cast"
 	// NotifyPrefRegChanges is the preference key for registration change alerts.
 	NotifyPrefRegChanges = "Registration changes"
-	// NotifyPrefPoolParams is the preference key for pool parameter change alerts.
-	NotifyPrefPoolParams = "Pool parameter changes"
 	// NotifyPrefAssetActivity is the preference key for events touching
 	// any followed asset fingerprint (mint, burn, transfer).
 	NotifyPrefAssetActivity = "Asset activity"
@@ -62,7 +60,6 @@ var allNotifyPrefs = []string{
 	NotifyPrefOutgoingTx,
 	NotifyPrefTokenTransfers,
 	NotifyPrefBlocksMinted,
-	NotifyPrefPoolParams,
 	NotifyPrefGovProposals,
 	NotifyPrefVotesCast,
 	NotifyPrefRegChanges,

@@ -259,8 +259,7 @@ func (s *notificationsStep) getCheckLabels() []string {
 			setup.NotifyPrefRegChanges)
 	}
 	if len(s.plan.Filter.Pools) > 0 {
-		add(setup.NotifyPrefBlocksMinted,
-			setup.NotifyPrefPoolParams)
+		add(setup.NotifyPrefBlocksMinted)
 	}
 	if len(s.plan.Filter.Assets) > 0 {
 		add(setup.NotifyPrefAssetActivity)

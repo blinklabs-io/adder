@@ -84,6 +84,39 @@ func govEvent() event.Event {
 	}
 }
 
+// blockEventBy builds a block event minted by the given issuer (the hex
+// pool key-hash carried in payload.issuerVkey).
+func blockEventBy(issuer string) event.Event {
+	return event.Event{
+		Type:    EventTypeBlock,
+		Payload: map[string]any{"issuerVkey": issuer},
+	}
+}
+
+// govVoteBy builds a governance event carrying a vote cast by voterID.
+func govVoteBy(voterID string) event.Event {
+	return event.Event{
+		Type: EventTypeGovernance,
+		Payload: map[string]any{
+			"votingProcedures": []any{
+				map[string]any{"voterId": voterID},
+			},
+		},
+	}
+}
+
+// govProposal builds a governance event carrying a proposal procedure.
+func govProposal() event.Event {
+	return event.Event{
+		Type: EventTypeGovernance,
+		Payload: map[string]any{
+			"proposalProcedures": []any{
+				map[string]any{"deposit": float64(1)},
+			},
+		},
+	}
+}
+
 func TestMatchExprEvaluate(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -326,32 +359,66 @@ func TestRulesFromPlan_TrackDRep(t *testing.T) {
 	}
 	rules := RulesFromPlan(plan)
 
-	// Positive: governance matches.
-	require.True(t, anyRuleMatches(rules, govEvent()),
-		"drep gov rule should match a governance event")
+	// Positive: a vote cast by the followed DRep matches.
+	require.True(t, anyRuleMatches(rules, govVoteBy("drep1abc")),
+		"drep vote rule should match a vote by the followed DRep")
+	// Positive: a proposal matches the (target-independent) proposals rule.
+	require.True(t, anyRuleMatches(rules, govProposal()),
+		"proposals rule should match a proposal event")
+	// Negative: a vote by a DIFFERENT DRep must NOT match.
+	require.False(t, anyRuleMatches(rules, govVoteBy("drep1other")),
+		"vote by an unfollowed DRep must not match")
 	// Negative: a transaction must NOT match a DRep plan.
 	require.False(t, anyRuleMatches(rules, txEvent("h", 1)),
 		"drep plan must not match transaction events")
 }
 
 func TestRulesFromPlan_MonitorPool(t *testing.T) {
+	const poolHex = "aabbccddeeff00112233"
 	plan := setup.SetupPlan{
 		Filter: setup.FilterConfig{
-			Pools: []string{"pool1abc"},
+			Pools: []string{poolHex},
 		},
 		Notify: setup.NotificationPrefs{
 			setup.NotifyPrefBlocksMinted: true,
-			setup.NotifyPrefPoolParams:   true,
 		},
 	}
 	rules := RulesFromPlan(plan)
 
-	// Positive: block matches.
-	require.True(t, anyRuleMatches(rules, blockEvent("h")),
-		"pool block rule should match a block event")
+	// Positive: a block minted by the followed pool matches.
+	require.True(t, anyRuleMatches(rules, blockEventBy(poolHex)),
+		"pool block rule should match a block by the followed pool")
+	// Negative: a block minted by a DIFFERENT pool must NOT match.
+	require.False(t, anyRuleMatches(rules, blockEventBy("ffffffffffffffffffff")),
+		"block by an unfollowed pool must not match")
 	// Negative: governance must NOT match a pool plan.
 	require.False(t, anyRuleMatches(rules, govEvent()),
 		"pool plan must not match governance events")
+}
+
+// TestRulesFromPlan_PoolBech32MatchesOnlyOwnBlocks is the regression
+// guard for the reported bug where a user monitoring one pool received a
+// notification for EVERY block minted on the chain. A bech32 "pool1…" ID
+// must be decoded to the hex key-hash that block events carry in
+// payload.issuerVkey, and the rule must fire only for that pool's blocks.
+func TestRulesFromPlan_PoolBech32MatchesOnlyOwnBlocks(t *testing.T) {
+	// pool16cdtqyk0fvxzfkhjg3esjcuty4tnlpds5lj0lkmqmwdjyzaj7p8 decodes to
+	// this key-hash (verified via gouroboros NewPoolIdFromBech32).
+	const (
+		poolBech32 = "pool16cdtqyk0fvxzfkhjg3esjcuty4tnlpds5lj0lkmqmwdjyzaj7p8"
+		poolHash   = "d61ab012cf4b0c24daf2447309638b25573f85b0a7e4ffdb60db9b22"
+	)
+	plan := setup.SetupPlan{
+		Filter: setup.FilterConfig{Pools: []string{poolBech32}},
+		Notify: setup.NotificationPrefs{setup.NotifyPrefBlocksMinted: true},
+	}
+	rules := RulesFromPlan(plan)
+
+	require.True(t, anyRuleMatches(rules, blockEventBy(poolHash)),
+		"a block minted by the followed pool must match")
+	require.False(t, anyRuleMatches(rules, blockEventBy(
+		"0000000000000000000000000000000000000000000000000000000000")),
+		"a block minted by any other pool must NOT match")
 }
 
 func TestRulesFromPlan_AllDisabled(t *testing.T) {
@@ -418,7 +485,6 @@ func TestRulesFromPlan_MonitorEverythingORsRelevantPrefs(t *testing.T) {
 			setup.NotifyPrefBlocksMinted: true, // block family
 			setup.NotifyPrefIncomingTx:   false,
 			setup.NotifyPrefVotesCast:    false,
-			setup.NotifyPrefPoolParams:   false,
 		},
 	}
 	rules := RulesFromPlan(plan)
@@ -428,31 +494,6 @@ func TestRulesFromPlan_MonitorEverythingORsRelevantPrefs(t *testing.T) {
 		"RegChanges alone must enable the everything-gov rule")
 	assert.True(t, anyRuleMatches(rules, blockEvent("h")),
 		"BlocksMinted alone must enable the everything-block rule")
-}
-
-// TestRulesFromPlan_MonitorEverythingPoolParamsAloneDoesNotFireBlockRule
-// is the regression guard for the "block-body misleading when only
-// PoolParams is on" fix. In MonitorEverything mode the block rule is
-// gated on BlocksMinted only — PoolParams is intentionally not in the
-// pref list because the everything-block body renders "Block #N
-// minted." which is a lie when the trigger was a pool-parameter
-// change. The wizard's MonitorEverything pref list also omits
-// PoolParams; this test guards the hand-edited / migrated config path
-// where PoolParams could still be true.
-func TestRulesFromPlan_MonitorEverythingPoolParamsAloneDoesNotFireBlockRule(
-	t *testing.T,
-) {
-	plan := setup.SetupPlan{
-		Filter: setup.FilterConfig{MonitorEverything: true},
-		Notify: setup.NotificationPrefs{
-			setup.NotifyPrefPoolParams:   true,
-			setup.NotifyPrefBlocksMinted: false,
-		},
-	}
-	rules := RulesFromPlan(plan)
-	require.False(t, anyRuleMatches(rules, blockEvent("h")),
-		"PoolParams alone must not fire the everything-block rule "+
-			"(its body would mislabel pool-param changes as block mints)")
 }
 
 // TestRulesFromPlan_EmptyTargetListsEmitNoRules guards the
@@ -720,20 +761,21 @@ func TestMatchAnyAsset_PayloadEdgeCases(t *testing.T) {
 // each kind must receive notifications for any event matching any
 // kind, with no AND-style cross-filtering between them.
 func TestRulesFromPlan_MultiKindORSemantics(t *testing.T) {
+	const poolHex = "aabbccddeeff00112233"
 	plan := setup.SetupPlan{
 		Filter: setup.FilterConfig{
 			Wallets:  []string{"addr1qxy"},
 			DReps:    []string{"drep1abc"},
-			Pools:    []string{"pool1xyz"},
+			Pools:    []string{poolHex},
 			Assets:   []string{"asset1abc"},
 			Policies: []string{"polA"},
 		},
 		Notify: setup.NotificationPrefs{
-			setup.NotifyPrefBlocksMinted:    true,
-			setup.NotifyPrefIncomingTx:      true,
-			setup.NotifyPrefVotesCast:       true,
-			setup.NotifyPrefAssetActivity:   true,
-			setup.NotifyPrefPolicyActivity:  true,
+			setup.NotifyPrefBlocksMinted:   true,
+			setup.NotifyPrefIncomingTx:     true,
+			setup.NotifyPrefVotesCast:      true,
+			setup.NotifyPrefAssetActivity:  true,
+			setup.NotifyPrefPolicyActivity: true,
 		},
 	}
 	rules := RulesFromPlan(plan)
@@ -741,12 +783,12 @@ func TestRulesFromPlan_MultiKindORSemantics(t *testing.T) {
 	// Wallet-only tx (incoming to the watched address) still fires.
 	require.True(t, anyRuleMatches(rules, txEventTo("addr1qxy")),
 		"wallet rule fires on a tx sending to the watched address")
-	// Block-only event (no tx, no gov, no assets) still fires.
-	require.True(t, anyRuleMatches(rules, blockEvent("h")),
-		"pool block rule fires on a block event")
-	// Governance event still fires.
-	require.True(t, anyRuleMatches(rules, govEvent()),
-		"governance rule fires on a governance event")
+	// Block minted by the followed pool still fires.
+	require.True(t, anyRuleMatches(rules, blockEventBy(poolHex)),
+		"pool block rule fires on a block by the followed pool")
+	// Governance vote by the followed DRep still fires.
+	require.True(t, anyRuleMatches(rules, govVoteBy("drep1abc")),
+		"drep vote rule fires on a vote by the followed DRep")
 	// Asset-only tx (no wallet match in particular) still fires —
 	// proves the asset rule does not require the tx to also match
 	// another kind.

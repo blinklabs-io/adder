@@ -220,11 +220,12 @@ func TestEngine_RateLimitResetsAfterQuietGap(t *testing.T) {
 // kinds: a plan with wallet + DRep + pool must fire on a pure event of
 // any one kind, with no cross-kind AND filtering.
 func TestEngine_MultiTargetPlanORSemantics(t *testing.T) {
+	const poolHex = "aabbccddeeff00112233"
 	plan := setup.SetupPlan{
 		Filter: setup.FilterConfig{
 			Wallets: []string{"addr1xyz"},
 			DReps:   []string{"drep1abc"},
-			Pools:   []string{"pool1abc"},
+			Pools:   []string{poolHex},
 		},
 		Notify: setup.NotificationPrefs{
 			setup.NotifyPrefIncomingTx:   true,
@@ -249,12 +250,12 @@ func TestEngine_MultiTargetPlanORSemantics(t *testing.T) {
 		},
 		{
 			name:           "pure pool block fires pool rule",
-			evt:            blockEvent("h2"),
+			evt:            blockEventBy(poolHex),
 			wantRuleIDPart: "pool",
 		},
 		{
 			name:           "pure governance event fires drep rule",
-			evt:            govEvent(),
+			evt:            govVoteBy("drep1abc"),
 			wantRuleIDPart: "drep",
 		},
 	}
