@@ -1,0 +1,255 @@
+name: test-msi
+
+on:
+  push:
+    branches: ['feat/windows-msi-689']
+  workflow_dispatch:
+
+concurrency:
+  group: test-msi-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  APPLICATION_NAME: 'adder'
+
+jobs:
+  build-msi:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-latest
+            arch: amd64
+          - runner: windows-11-arm
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: '0'
+
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+        with:
+          go-version: 1.26.x
+
+      - name: Set up MSYS2 MinGW64 (amd64 CGO for Fyne)
+        if: matrix.arch == 'amd64'
+        id: msys2-amd64
+        uses: msys2/setup-msys2@66cd2cce69caa17b53920067426061ca1de3a884 # v2.32.0
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            mingw-w64-x86_64-gcc
+
+      - name: Set up MSYS2 CLANGARM64 (arm64 CGO for Fyne)
+        if: matrix.arch == 'arm64'
+        id: msys2-arm64
+        uses: msys2/setup-msys2@66cd2cce69caa17b53920067426061ca1de3a884 # v2.32.0
+        with:
+          msystem: CLANGARM64
+          update: true
+          install: >-
+            mingw-w64-clang-aarch64-clang
+
+      - name: Build binaries
+        shell: pwsh
+        run: |
+          $env:GOOS = 'windows'
+          $env:GOARCH = '${{ matrix.arch }}'
+
+          if ('${{ matrix.arch }}' -eq 'amd64') {
+            $msys2Loc = '${{ steps.msys2-amd64.outputs.msys2-location }}'
+            $env:CC  = "$msys2Loc\mingw64\bin\gcc.exe"
+            $env:CXX = "$msys2Loc\mingw64\bin\g++.exe"
+          } else {
+            $msys2Loc = '${{ steps.msys2-arm64.outputs.msys2-location }}'
+            $env:CC  = "$msys2Loc\clangarm64\bin\clang.exe"
+            $env:CXX = "$msys2Loc\clangarm64\bin\clang++.exe"
+          }
+
+          go env GOOS GOARCH CC CXX
+          & $env:CC --version
+
+          make build
+          make build-tray
+
+      # --- Optional binary signing (only when secrets are accessible) -------
+      # When the EV-cert secrets aren't available (forks, missing env), the
+      # subsequent MSI build still works and produces an UNSIGNED .msi.
+      #
+      # NOTE: the `secrets` context is NOT available in step-level `if:`
+      # conditions, so we surface secret presence as a step output here
+      # (secrets ARE allowed in step `env:`) and gate the signing steps on it.
+      - name: Check signing secrets
+        id: check_signing
+        shell: pwsh
+        env:
+          SA_CREDS: ${{ secrets.CERTIFICATE_SA_CREDENTIALS }}
+        run: |
+          if ([string]::IsNullOrEmpty($env:SA_CREDS)) {
+            "enabled=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+            Write-Warning "No signing credentials available - MSI will be UNSIGNED."
+          } else {
+            "enabled=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          }
+
+      - name: Set up Java (for jsign)
+        if: steps.check_signing.outputs.enabled == 'true'
+        uses: actions/setup-java@ad2b38190b15e4d6bdf0c97fb4fca8412226d287 # v5.3.0
+        with:
+          java-version: 21
+          distribution: 'temurin'
+
+      - id: 'auth'
+        name: Authenticate with Google Cloud
+        if: steps.check_signing.outputs.enabled == 'true'
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        continue-on-error: true
+        with:
+          credentials_json: '${{ secrets.CERTIFICATE_SA_CREDENTIALS }}'
+
+      - name: Set up Cloud SDK
+        if: ${{ steps.auth.outcome == 'success' }}
+        uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+
+      - name: Sign Windows binaries (adder.exe + adder-tray.exe)
+        id: sign-binaries
+        if: ${{ steps.auth.outcome == 'success' }}
+        shell: pwsh
+        run: |
+          Write-Host "Downloading jsign.jar"
+          Invoke-WebRequest -Uri "https://github.com/ebourg/jsign/releases/download/6.0/jsign-6.0.jar" -OutFile "jsign.jar"
+          $expectedHash = "05ca18d4ab7b8c2183289b5378d32860f0ea0f3bdab1f1b8cae5894fb225fa8a"
+          $actualHash = (Get-FileHash -Path "jsign.jar" -Algorithm SHA256).Hash.ToLower()
+          if ($actualHash -ne $expectedHash) {
+            Write-Error "jsign.jar hash mismatch (expected $expectedHash, got $actualHash)"
+            exit 1
+          }
+
+          [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String("${{ secrets.CERTIFICATE_CHAIN }}")) | Out-File -FilePath "codesign-chain.pem" -Encoding utf8
+
+          $ACCESS_TOKEN = & gcloud auth print-access-token
+          Write-Host "::add-mask::$ACCESS_TOKEN"
+
+          foreach ($filename in @("${{ env.APPLICATION_NAME }}.exe", "${{ env.APPLICATION_NAME }}-tray.exe")) {
+            if (-not (Test-Path $filename)) {
+              Write-Error "Expected binary not found: $filename"
+              exit 1
+            }
+            Write-Host "Signing $filename"
+            # --tsretries/--tsretrywait are jsign's native timestamp retry.
+            java -jar jsign.jar `
+              --storetype "${{ secrets.CERTIFICATE_STORE_TYPE }}" `
+              --storepass "$ACCESS_TOKEN" `
+              --keystore "${{ secrets.CERTIFICATE_KEYSTORE }}" `
+              --alias "${{ secrets.CERTIFICATE_KEY_NAME }}" `
+              --certfile "codesign-chain.pem" `
+              --alg SHA-256 `
+              --tsmode RFC3161 `
+              --tsaurl "http://timestamp.globalsign.com/tsa/r6advanced1" `
+              --tsretries 3 `
+              --tsretrywait 10 `
+              --name "Adder" `
+              --url "https://github.com/blinklabs-io/adder" `
+              $filename
+            if ($LASTEXITCODE -ne 0) { Write-Error "jsign failed on $filename"; exit 1 }
+
+            # Confirm signed, chain-trusted AND timestamped before MSI embedding.
+            $sig = Get-AuthenticodeSignature $filename
+            if ($sig.Status -ne 'Valid') {
+              Write-Error "signature not valid for ${filename}: $($sig.Status)"; exit 1
+            }
+            if ($null -eq $sig.TimeStamperCertificate) {
+              Write-Error "signature for ${filename} is not timestamped"; exit 1
+            }
+            Write-Host "Signed + verified: $filename ($($sig.SignerCertificate.Subject))"
+          }
+          $ACCESS_TOKEN = $null
+
+      # --- WiX + MSI build (always runs, signed or not) ---------------------
+
+      - name: Install WiX toolset
+        shell: pwsh
+        run: |
+          dotnet tool install --global wix --version 4.0.5
+          "$env:USERPROFILE\.dotnet\tools" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          & "$env:USERPROFILE\.dotnet\tools\wix.exe" --version
+
+      # Derive the throwaway MSI ProductVersion from the run number. The third
+      # MSI version field is capped at 65535, but github.run_number is
+      # unbounded, so take it modulo 65536 to stay valid (this is a 1-day
+      # smoke-test artifact; strict monotonicity is not required).
+      - name: Compute MSI version
+        shell: pwsh
+        run: |
+          $build = [int]$env:GITHUB_RUN_NUMBER % 65536
+          "MSI_VERSION=0.0.$build" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Build MSI
+        shell: pwsh
+        env:
+          ADDER_EXE: ${{ github.workspace }}\${{ env.APPLICATION_NAME }}.exe
+          ADDER_TRAY_EXE: ${{ github.workspace }}\${{ env.APPLICATION_NAME }}-tray.exe
+          VERSION: ${{ env.MSI_VERSION }}
+          ARCH: ${{ matrix.arch }}
+          # Signing env (passed through to build-msi.ps1). When the auth step
+          # was skipped these are all empty and the script no-ops signing
+          # with a warning, producing an UNSIGNED .msi.
+          JSIGN_JAR: ${{ steps.sign-binaries.outcome == 'success' && format('{0}\jsign.jar', github.workspace) || '' }}
+          JSIGN_KEYSTORE: ${{ steps.sign-binaries.outcome == 'success' && secrets.CERTIFICATE_KEYSTORE || '' }}
+          JSIGN_STORETYPE: ${{ steps.sign-binaries.outcome == 'success' && secrets.CERTIFICATE_STORE_TYPE || '' }}
+          JSIGN_ALIAS: ${{ steps.sign-binaries.outcome == 'success' && secrets.CERTIFICATE_KEY_NAME || '' }}
+          JSIGN_CERTFILE: ${{ steps.sign-binaries.outcome == 'success' && format('{0}\codesign-chain.pem', github.workspace) || '' }}
+          JSIGN_TSAURL: 'http://timestamp.globalsign.com/tsa/r6advanced1'
+        run: |
+          if ('${{ steps.sign-binaries.outcome }}' -eq 'success') {
+            $ACCESS_TOKEN = & gcloud auth print-access-token
+            Write-Host "::add-mask::$ACCESS_TOKEN"
+            $env:JSIGN_STOREPASS = $ACCESS_TOKEN
+          } else {
+            Write-Warning "No signing credentials available — producing UNSIGNED MSI for testing."
+          }
+
+          pwsh ./packaging/windows/build-msi.ps1
+          if ($LASTEXITCODE -ne 0) { Write-Error "build-msi.ps1 failed"; exit 1 }
+
+          $env:JSIGN_STOREPASS = $null
+
+      - name: Verify MSI signature
+        if: ${{ steps.sign-binaries.outcome == 'success' }}
+        shell: pwsh
+        run: |
+          $sdkRoot = "${env:ProgramFiles(x86)}\Windows Kits\10\bin"
+          $archDir = if ('${{ matrix.arch }}' -eq 'arm64') { 'arm64' } else { 'x64' }
+          $signtool = Get-ChildItem -Path $sdkRoot -Recurse -Filter signtool.exe `
+            | Where-Object { $_.FullName -match "\\$archDir\\signtool\.exe$" } `
+            | Sort-Object FullName -Descending | Select-Object -First 1
+          if (-not $signtool) {
+            $signtool = Get-ChildItem -Path $sdkRoot -Recurse -Filter signtool.exe `
+              | Sort-Object FullName -Descending | Select-Object -First 1
+          }
+          if (-not $signtool) { Write-Error "signtool.exe not found under $sdkRoot"; exit 1 }
+
+          $msi = "dist\${{ env.APPLICATION_NAME }}-${{ env.MSI_VERSION }}-windows-${{ matrix.arch }}.msi"
+          & $signtool.FullName verify /pa /v $msi
+          if ($LASTEXITCODE -ne 0) { Write-Error "signtool verify failed for $msi"; exit 1 }
+          Write-Host "MSI signature verified: $msi"
+
+      - name: Clean up signing artefacts
+        if: ${{ always() && steps.sign-binaries.outcome == 'success' }}
+        shell: pwsh
+        run: |
+          Remove-Item -Path "codesign-chain.pem" -Force -ErrorAction SilentlyContinue
+          Remove-Item -Path "jsign.jar"          -Force -ErrorAction SilentlyContinue
+
+      - name: Upload MSI artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: adder-test-windows-${{ matrix.arch }}-run${{ github.run_number }}
+          path: dist\${{ env.APPLICATION_NAME }}-${{ env.MSI_VERSION }}-windows-${{ matrix.arch }}.msi
+          if-no-files-found: error
+          retention-days: 1
