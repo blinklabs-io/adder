@@ -22,3 +22,6 @@ AdderTray.app/
 # Local editor and OS metadata
 .vscode/
 .DS_Store
+
+# Local-only: Windows MSI smoke-test workflow (not tracked for now)
+.github/workflows/test-msi.yml
