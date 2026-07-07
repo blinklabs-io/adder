@@ -1,9 +1,15 @@
 name: test-msi
 
 on:
-  push:
-    branches: ['feat/windows-msi-689']
   workflow_dispatch:
+    inputs:
+      arch:
+        description: 'Windows architecture to build'
+        type: choice
+        default: amd64
+        options:
+          - amd64
+          - arm64
 
 concurrency:
   group: test-msi-${{ github.ref }}
@@ -14,15 +20,9 @@ env:
 
 jobs:
   build-msi:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - runner: windows-latest
-            arch: amd64
-          - runner: windows-11-arm
-            arch: arm64
-    runs-on: ${{ matrix.runner }}
+    # Pick the native runner for the chosen arch: amd64 → windows-latest,
+    # arm64 → windows-11-arm.
+    runs-on: ${{ inputs.arch == 'arm64' && 'windows-11-arm' || 'windows-latest' }}
     permissions:
       contents: read
       id-token: write
@@ -31,14 +31,14 @@ jobs:
         with:
           fetch-depth: '0'
 
-      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version: 1.26.x
 
       - name: Set up MSYS2 MinGW64 (amd64 CGO for Fyne)
-        if: matrix.arch == 'amd64'
+        if: inputs.arch == 'amd64'
         id: msys2-amd64
-        uses: msys2/setup-msys2@66cd2cce69caa17b53920067426061ca1de3a884 # v2.32.0
+        uses: msys2/setup-msys2@v2
         with:
           msystem: MINGW64
           update: true
@@ -46,9 +46,9 @@ jobs:
             mingw-w64-x86_64-gcc
 
       - name: Set up MSYS2 CLANGARM64 (arm64 CGO for Fyne)
-        if: matrix.arch == 'arm64'
+        if: inputs.arch == 'arm64'
         id: msys2-arm64
-        uses: msys2/setup-msys2@66cd2cce69caa17b53920067426061ca1de3a884 # v2.32.0
+        uses: msys2/setup-msys2@v2
         with:
           msystem: CLANGARM64
           update: true
@@ -59,9 +59,9 @@ jobs:
         shell: pwsh
         run: |
           $env:GOOS = 'windows'
-          $env:GOARCH = '${{ matrix.arch }}'
+          $env:GOARCH = '${{ inputs.arch }}'
 
-          if ('${{ matrix.arch }}' -eq 'amd64') {
+          if ('${{ inputs.arch }}' -eq 'amd64') {
             $msys2Loc = '${{ steps.msys2-amd64.outputs.msys2-location }}'
             $env:CC  = "$msys2Loc\mingw64\bin\gcc.exe"
             $env:CXX = "$msys2Loc\mingw64\bin\g++.exe"
@@ -99,7 +99,7 @@ jobs:
 
       - name: Set up Java (for jsign)
         if: steps.check_signing.outputs.enabled == 'true'
-        uses: actions/setup-java@ad2b38190b15e4d6bdf0c97fb4fca8412226d287 # v5.3.0
+        uses: actions/setup-java@1bcf9fb12cf4aa7d266a90ae39939e61372fe520 # v5.4.0
         with:
           java-version: 21
           distribution: 'temurin'
@@ -143,10 +143,10 @@ jobs:
             Write-Host "Signing $filename"
             # --tsretries/--tsretrywait are jsign's native timestamp retry.
             java -jar jsign.jar `
-              --storetype "${{ secrets.CERTIFICATE_STORE_TYPE }}" `
+              --storetype ${{ secrets.CERTIFICATE_STORE_TYPE }} `
               --storepass "$ACCESS_TOKEN" `
-              --keystore "${{ secrets.CERTIFICATE_KEYSTORE }}" `
-              --alias "${{ secrets.CERTIFICATE_KEY_NAME }}" `
+              --keystore ${{ secrets.CERTIFICATE_KEYSTORE }} `
+              --alias ${{ secrets.CERTIFICATE_KEY_NAME }} `
               --certfile "codesign-chain.pem" `
               --alg SHA-256 `
               --tsmode RFC3161 `
@@ -179,23 +179,16 @@ jobs:
           "$env:USERPROFILE\.dotnet\tools" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
           & "$env:USERPROFILE\.dotnet\tools\wix.exe" --version
 
-      # Derive the throwaway MSI ProductVersion from the run number. The third
-      # MSI version field is capped at 65535, but github.run_number is
-      # unbounded, so take it modulo 65536 to stay valid (this is a 1-day
-      # smoke-test artifact; strict monotonicity is not required).
-      - name: Compute MSI version
-        shell: pwsh
-        run: |
-          $build = [int]$env:GITHUB_RUN_NUMBER % 65536
-          "MSI_VERSION=0.0.$build" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-
       - name: Build MSI
         shell: pwsh
         env:
           ADDER_EXE: ${{ github.workspace }}\${{ env.APPLICATION_NAME }}.exe
           ADDER_TRAY_EXE: ${{ github.workspace }}\${{ env.APPLICATION_NAME }}-tray.exe
-          VERSION: ${{ env.MSI_VERSION }}
-          ARCH: ${{ matrix.arch }}
+          # Use the short commit SHA as a fake version for the MSI ProductVersion.
+          # MSI requires <=3 numeric dot-separated fields, so we derive a fresh
+          # increasing version from the GitHub run number for ordered installs.
+          VERSION: 0.0.${{ github.run_number }}
+          ARCH: ${{ inputs.arch }}
           # Signing env (passed through to build-msi.ps1). When the auth step
           # was skipped these are all empty and the script no-ops signing
           # with a warning, producing an UNSIGNED .msi.
@@ -224,7 +217,7 @@ jobs:
         shell: pwsh
         run: |
           $sdkRoot = "${env:ProgramFiles(x86)}\Windows Kits\10\bin"
-          $archDir = if ('${{ matrix.arch }}' -eq 'arm64') { 'arm64' } else { 'x64' }
+          $archDir = if ('${{ inputs.arch }}' -eq 'arm64') { 'arm64' } else { 'x64' }
           $signtool = Get-ChildItem -Path $sdkRoot -Recurse -Filter signtool.exe `
             | Where-Object { $_.FullName -match "\\$archDir\\signtool\.exe$" } `
             | Sort-Object FullName -Descending | Select-Object -First 1
@@ -234,7 +227,7 @@ jobs:
           }
           if (-not $signtool) { Write-Error "signtool.exe not found under $sdkRoot"; exit 1 }
 
-          $msi = "dist\${{ env.APPLICATION_NAME }}-${{ env.MSI_VERSION }}-windows-${{ matrix.arch }}.msi"
+          $msi = "dist\${{ env.APPLICATION_NAME }}-0.0.${{ github.run_number }}-windows-${{ inputs.arch }}.msi"
           & $signtool.FullName verify /pa /v $msi
           if ($LASTEXITCODE -ne 0) { Write-Error "signtool verify failed for $msi"; exit 1 }
           Write-Host "MSI signature verified: $msi"
@@ -249,7 +242,7 @@ jobs:
       - name: Upload MSI artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: adder-test-windows-${{ matrix.arch }}-run${{ github.run_number }}
-          path: dist\${{ env.APPLICATION_NAME }}-${{ env.MSI_VERSION }}-windows-${{ matrix.arch }}.msi
+          name: adder-test-windows-${{ inputs.arch }}-run${{ github.run_number }}
+          path: dist\${{ env.APPLICATION_NAME }}-0.0.${{ github.run_number }}-windows-${{ inputs.arch }}.msi
           if-no-files-found: error
           retention-days: 1
