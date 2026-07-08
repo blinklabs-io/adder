@@ -43,7 +43,8 @@
         the component does not mix per-user and per-machine resources (ICE57).
       * Command-line variables: Version, AdderExe, AdderTrayExe, AdderIco.
 -->
-<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
   <Package
       Name="Adder"
       Manufacturer="Blink Labs Software"
@@ -59,6 +60,28 @@
     <MajorUpgrade
         AllowSameVersionUpgrades="yes"
         DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
+
+    <!-- Stop the running app before replacing files. Without this, Windows
+         Installer cannot overwrite the in-use adder.exe / adder-tray.exe: it
+         renames them to *.rbf rollback files and the old processes keep
+         running, leaving orphaned engine instances the tray can no longer
+         match or stop. CloseMessage asks the GUI tray to quit; TerminateProcess
+         force-kills after the timeout (the console engine has no window to
+         message). TerminateProcess requires RebootPrompt="no" so the install
+         never demands a reboot. -->
+    <util:CloseApplication
+        Id="CloseAdderTray"
+        Target="adder-tray.exe"
+        CloseMessage="yes"
+        TerminateProcess="0"
+        RebootPrompt="no"
+        Timeout="10" />
+    <util:CloseApplication
+        Id="CloseAdderEngine"
+        Target="adder.exe"
+        TerminateProcess="0"
+        RebootPrompt="no"
+        Timeout="10" />
 
     <!-- Add/Remove Programs (ARP) metadata. Manufacturer above maps to the
          "Publisher" field. The properties below populate Contact and the

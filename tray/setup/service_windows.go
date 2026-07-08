@@ -41,9 +41,11 @@ package setup
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -58,9 +60,11 @@ const (
 	runKeyPath = `Software\Microsoft\Windows\CurrentVersion\Run`
 	// runValueName is the value we own under runKeyPath. It launches the TRAY.
 	runValueName = "Adder"
-	// engineImage is the engine process image name, matched to determine
-	// running state and to stop the engine.
+	// engineImage is the engine process image name, used as a fallback match
+	// when a process image path cannot be read.
 	engineImage = "adder.exe"
+	// trayImage is the tray process image name, excluded from engine matching.
+	trayImage = "adder-tray.exe"
 	// stopWaitTimeout bounds how long we wait for a terminated engine to
 	// actually exit before proceeding (so a restart does not race the old
 	// process for the API port).
@@ -93,12 +97,6 @@ func renderUnit(cfg ServiceConfig) ([]byte, error) {
 		args = append(args, "--config", cfg.ConfigPath)
 	}
 	return []byte(windows.ComposeCommandLine(args)), nil
-}
-
-// serviceUnitPath returns the mirror-file path so service.go reads and diffs
-// it like any other platform's unit file.
-func serviceUnitPath() string {
-	return serviceCommandFile()
 }
 
 // trayExecutable returns the path of the running tray executable, which is what
@@ -245,8 +243,13 @@ func startService() error {
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("starting adder engine: %w", err)
 	}
+	// Record the launched PID so a later stop can terminate this exact
+	// process by PID even if its on-disk image is renamed (an MSI upgrade
+	// renames an in-use adder.exe to a .rbf rollback file, which would
+	// otherwise escape image-name matching).
 	// Detach: do not Wait; the engine outlives the tray.
 	if cmd.Process != nil {
+		writeEnginePID(cmd.Process.Pid)
 		_ = cmd.Process.Release()
 	}
 	return nil
@@ -294,11 +297,41 @@ func serviceRegistered() (bool, error) {
 	return true, nil
 }
 
-// engineRunning reports whether at least one engine process (engineImage) is
+// enginePIDFile records the PID of the engine the tray launched, so it can be
+// terminated by PID even after its on-disk image is renamed.
+func enginePIDFile() string {
+	return filepath.Join(ConfigDir(), "engine.pid")
+}
+
+func writeEnginePID(pid int) {
+	if err := os.MkdirAll(filepath.Dir(enginePIDFile()), 0o755); err != nil {
+		slog.Warn("could not create dir for engine pid file", "error", err)
+		return
+	}
+	if err := os.WriteFile(
+		enginePIDFile(), []byte(strconv.Itoa(pid)), 0o600,
+	); err != nil {
+		slog.Warn("could not write engine pid file", "error", err)
+	}
+}
+
+func readEnginePID() (uint32, bool) {
+	data, err := os.ReadFile(enginePIDFile())
+	if err != nil {
+		return 0, false
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	if err != nil || n <= 0 {
+		return 0, false
+	}
+	return uint32(n), true
+}
+
+// engineRunning reports whether at least one of our engine processes is
 // currently running.
 func engineRunning() (bool, error) {
 	found := false
-	err := forEachEngineProcess(engineExePath(), func(uint32) bool {
+	err := forEachEngineProcess(func(uint32) bool {
 		found = true
 		return false // stop at the first match
 	})
@@ -306,64 +339,102 @@ func engineRunning() (bool, error) {
 }
 
 // terminateEngine terminates every running engine process and waits (bounded)
-// for each to exit so a subsequent start does not race for the API port.
-// Missing processes are not an error; it returns the first failure, if any.
+// for each to exit so a subsequent start does not race for the API port. It
+// kills both the PID we recorded at launch (robust to a renamed image) and any
+// process whose image lives in our install directory (robust to the MSI .rbf
+// rename). A process that cannot be terminated but is still alive is a hard
+// failure, so the caller does not stack a second engine on a survivor.
 func terminateEngine() error {
 	var firstErr error
-	err := forEachEngineProcess(engineExePath(), func(pid uint32) bool {
-		h, oerr := windows.OpenProcess(
-			windows.PROCESS_TERMINATE|windows.SYNCHRONIZE, false, pid,
-		)
-		if oerr != nil {
-			// Non-fatal: the process either exited between enumeration and
-			// open, or is an unrelated adder.exe we cannot open (different
-			// user / protected process whose path we also couldn't read).
-			// Neither is our engine, so it must not block starting ours —
-			// recording it as a stop failure would abort startService.
+	killed := make(map[uint32]bool)
+
+	// 1. The exact PID we launched, even if its image was renamed.
+	if pid, ok := readEnginePID(); ok {
+		killed[pid] = true
+		if err := terminatePID(pid); err != nil {
+			firstErr = err
+		}
+	}
+
+	// 2. Any remaining engine process (image under the install dir).
+	err := forEachEngineProcess(func(pid uint32) bool {
+		if killed[pid] {
 			return true
 		}
-		defer windows.CloseHandle(h)
-		if terr := windows.TerminateProcess(h, 1); terr != nil {
-			if firstErr == nil {
-				firstErr = fmt.Errorf(
-					"terminating engine process %d: %w", pid, terr,
-				)
-			}
-			return true
-		}
-		// Wait (bounded) for the process to actually exit. Surface a
-		// timeout/error as a stop failure so the caller does not launch a
-		// second engine that races the dying one for the API port.
-		waitResult, werr := windows.WaitForSingleObject(
-			h, uint32(stopWaitTimeout.Milliseconds()),
-		)
-		if werr != nil {
-			if firstErr == nil {
-				firstErr = fmt.Errorf(
-					"waiting for engine process %d to exit: %w", pid, werr)
-			}
-			return true
-		}
-		if waitResult == uint32(windows.WAIT_TIMEOUT) && firstErr == nil {
-			firstErr = fmt.Errorf(
-				"engine process %d did not exit within %s",
-				pid, stopWaitTimeout)
+		killed[pid] = true
+		if terr := terminatePID(pid); terr != nil && firstErr == nil {
+			firstErr = terr
 		}
 		return true
 	})
+	if rmErr := os.Remove(enginePIDFile()); rmErr != nil &&
+		!errors.Is(rmErr, os.ErrNotExist) {
+		slog.Warn("could not remove engine pid file", "error", rmErr)
+	}
 	if err != nil {
 		return err
 	}
 	return firstErr
 }
 
+// terminatePID terminates a single process and waits (bounded) for it to exit.
+// An already-gone process is success. A process that cannot be opened but is
+// still alive (e.g. a leftover started at higher integrity) is a hard failure.
+func terminatePID(pid uint32) error {
+	h, err := windows.OpenProcess(
+		windows.PROCESS_TERMINATE|windows.SYNCHRONIZE, false, pid,
+	)
+	if err != nil {
+		if processAlive(pid) {
+			return fmt.Errorf(
+				"cannot terminate engine process %d (still running): %w",
+				pid, err)
+		}
+		return nil // already exited
+	}
+	defer windows.CloseHandle(h)
+	if terr := windows.TerminateProcess(h, 1); terr != nil {
+		return fmt.Errorf("terminating engine process %d: %w", pid, terr)
+	}
+	res, werr := windows.WaitForSingleObject(
+		h, uint32(stopWaitTimeout.Milliseconds()),
+	)
+	if werr != nil {
+		return fmt.Errorf(
+			"waiting for engine process %d to exit: %w", pid, werr)
+	}
+	if res == uint32(windows.WAIT_TIMEOUT) {
+		return fmt.Errorf(
+			"engine process %d did not exit within %s", pid, stopWaitTimeout)
+	}
+	return nil
+}
+
+// processAlive reports whether pid refers to a live process. An access-denied
+// on open means the process exists but is protected, so it counts as alive.
+func processAlive(pid uint32) bool {
+	h, err := windows.OpenProcess(
+		windows.PROCESS_QUERY_LIMITED_INFORMATION, false, pid,
+	)
+	if err != nil {
+		return errors.Is(err, windows.ERROR_ACCESS_DENIED)
+	}
+	defer windows.CloseHandle(h)
+	var code uint32
+	if err := windows.GetExitCodeProcess(h, &code); err != nil {
+		return true
+	}
+	const stillActive = 259 // STILL_ACTIVE
+	return code == stillActive
+}
+
 // forEachEngineProcess walks the process table and invokes fn with the PID of
-// every engine process. Candidates are matched by image name (engineImage);
-// when targetPath is non-empty, a candidate is skipped only if its full image
-// path can be read AND is confirmed to differ from targetPath — so an
-// unrelated adder.exe elsewhere is left alone, while a query failure never
-// causes us to lose track of our own engine. fn returns false to stop early.
-func forEachEngineProcess(targetPath string, fn func(pid uint32) bool) error {
+// every one of our engine processes (excluding this process). fn returns false
+// to stop early.
+func forEachEngineProcess(fn func(pid uint32) bool) error {
+	installDir := engineInstallDir()
+	self := uint32(os.Getpid())
+
 	snap, err := windows.CreateToolhelp32Snapshot(windows.TH32CS_SNAPPROCESS, 0)
 	if err != nil {
 		return fmt.Errorf("snapshotting processes: %w", err)
@@ -374,10 +445,10 @@ func forEachEngineProcess(targetPath string, fn func(pid uint32) bool) error {
 	entry.Size = uint32(unsafe.Sizeof(entry))
 	err = windows.Process32First(snap, &entry)
 	for err == nil {
+		pid := entry.ProcessID
 		name := windows.UTF16ToString(entry.ExeFile[:])
-		if strings.EqualFold(name, engineImage) &&
-			!isDifferentImage(entry.ProcessID, targetPath) {
-			if !fn(entry.ProcessID) {
+		if pid != self && isOwnEngineProcess(pid, name, installDir) {
+			if !fn(pid) {
 				return nil
 			}
 		}
@@ -388,6 +459,88 @@ func forEachEngineProcess(targetPath string, fn func(pid uint32) bool) error {
 		return nil
 	}
 	return err
+}
+
+// engineInstallDir returns the directory the engine binary lives in, or "".
+func engineInstallDir() string {
+	if p := engineExePath(); p != "" {
+		return filepath.Dir(p)
+	}
+	return ""
+}
+
+// isOwnEngineProcess reports whether pid is one of our engine processes: its
+// image lives in our install directory. Matching by directory (not file name)
+// also catches an engine whose exe an MSI upgrade renamed to a .rbf rollback
+// file, since the rename stays in the same directory. The tray executable is
+// excluded. When the image path cannot be read, fall back to the engine image
+// name so an unreadable-path engine is still caught.
+func isOwnEngineProcess(pid uint32, name, installDir string) bool {
+	if strings.EqualFold(name, trayImage) {
+		return false
+	}
+	full, err := fullProcessPath(pid)
+	if err != nil || full == "" {
+		return strings.EqualFold(name, engineImage)
+	}
+	if strings.EqualFold(filepath.Base(full), trayImage) {
+		return false
+	}
+	if installDir == "" {
+		return strings.EqualFold(name, engineImage)
+	}
+	return pathUnderDir(full, installDir)
+}
+
+// pathUnderDir reports whether path is inside dir, comparing normalized
+// (symlink-resolved, long-form, cleaned) case-insensitive paths.
+func pathUnderDir(path, dir string) bool {
+	nd := normalizeWinPath(dir)
+	if nd == "" {
+		return false
+	}
+	np := normalizeWinPath(path)
+	prefix := strings.ToLower(strings.TrimRight(nd, `\/`)) +
+		string(filepath.Separator)
+	return strings.HasPrefix(strings.ToLower(np), prefix)
+}
+
+// normalizeWinPath canonicalizes a Windows path so that short (8.3) vs long
+// names, symlink/junction form, and separator/case differences do not cause a
+// false mismatch. Steps that require the path to exist degrade gracefully.
+func normalizeWinPath(p string) string {
+	if p == "" {
+		return ""
+	}
+	if r, err := filepath.EvalSymlinks(p); err == nil && r != "" {
+		p = r
+	}
+	if l, err := longPathName(p); err == nil && l != "" {
+		p = l
+	}
+	return filepath.Clean(p)
+}
+
+// longPathName expands a path to its long (non-8.3) form. Requires the path to
+// exist; returns an error otherwise.
+func longPathName(p string) (string, error) {
+	from, err := windows.UTF16PtrFromString(p)
+	if err != nil {
+		return "", err
+	}
+	buf := make([]uint16, windows.MAX_PATH)
+	n, err := windows.GetLongPathName(from, &buf[0], uint32(len(buf)))
+	if err != nil {
+		return "", err
+	}
+	if n > uint32(len(buf)) {
+		buf = make([]uint16, n)
+		n, err = windows.GetLongPathName(from, &buf[0], uint32(len(buf)))
+		if err != nil {
+			return "", err
+		}
+	}
+	return windows.UTF16ToString(buf[:n]), nil
 }
 
 // engineExePath returns the engine's executable path from the recorded
@@ -403,25 +556,6 @@ func engineExePath() string {
 		return ""
 	}
 	return argv[0]
-}
-
-// isDifferentImage reports whether the process pid is CONFIRMED to be running
-// from a different executable than targetPath. It returns false when
-// targetPath is empty or the process image path cannot be read, so an
-// unreadable path never causes us to skip our own engine.
-func isDifferentImage(pid uint32, targetPath string) bool {
-	if targetPath == "" {
-		return false
-	}
-	full, err := fullProcessPath(pid)
-	if err != nil || full == "" {
-		return false
-	}
-	// Normalize before comparing: QueryFullProcessImageName and the recorded
-	// command path can be equivalent yet textually different (slash style,
-	// ./.. segments, trailing separators). A false "different" here would
-	// skip our own engine. filepath.Clean canonicalizes both.
-	return !strings.EqualFold(filepath.Clean(full), filepath.Clean(targetPath))
 }
 
 // fullProcessPath returns the full image path of the process pid via

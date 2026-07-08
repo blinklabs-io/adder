@@ -172,7 +172,7 @@ func formatWebhook(e *event.Event, format string) []byte {
 				Value: be.IssuerVkey,
 			})
 			baseURL := getBaseURL(bc.NetworkMagic)
-			dme.URL = fmt.Sprintf("%s/block/%s", baseURL, be.BlockHash)
+			dme.URL = fmt.Sprintf("%s/blocks/%s", baseURL, be.BlockHash)
 		case "input.rollback":
 			be := e.Payload.(event.RollbackEvent)
 			dme.Title = "Cardano Rollback"
@@ -213,7 +213,7 @@ func formatWebhook(e *event.Event, format string) []byte {
 				Value: tc.TransactionHash,
 			})
 			baseURL := getBaseURL(tc.NetworkMagic)
-			dme.URL = fmt.Sprintf("%s/tx/%s", baseURL, tc.TransactionHash)
+			dme.URL = fmt.Sprintf("%s/transactions/%s", baseURL, tc.TransactionHash)
 		case "input.governance":
 			ge := e.Payload.(event.GovernanceEvent)
 			gc := e.Context.(event.GovernanceContext)
@@ -239,7 +239,7 @@ func formatWebhook(e *event.Event, format string) []byte {
 				Value: gc.TransactionHash,
 			})
 			baseURL := getBaseURL(gc.NetworkMagic)
-			dme.URL = fmt.Sprintf("%s/tx/%s", baseURL, gc.TransactionHash)
+			dme.URL = fmt.Sprintf("%s/transactions/%s", baseURL, gc.TransactionHash)
 		default:
 			dwe.Content = fmt.Sprintf("%v", e.Payload)
 		}
@@ -279,13 +279,13 @@ type DiscordMessageEmbedField struct {
 func getBaseURL(networkMagic uint32) string {
 	switch networkMagic {
 	case mainnetNetworkMagic:
-		return "https://cexplorer.io"
+		return "https://adastat.net"
 	case preprodNetworkMagic:
-		return "https://preprod.cexplorer.io"
+		return "https://preprod.adastat.net"
 	case previewNetworkMagic:
-		return "https://preview.cexplorer.io"
+		return "https://preview.adastat.net"
 	default:
-		return "https://cexplorer.io" // default to mainnet if unknown network
+		return "https://adastat.net" // default to mainnet if unknown network
 	}
 }
 

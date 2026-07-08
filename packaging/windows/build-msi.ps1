@@ -316,6 +316,12 @@ function Build-Msi {
         Die "WiX 'wix' command not found. Install the pinned toolset with: dotnet tool install --global wix --version $WixVersion"
     }
 
+    # Ensure the Util extension (util:CloseApplication) is available, pinned to
+    # the toolset version. Idempotent: re-adding an already-added extension is a
+    # no-op.
+    & wix extension add -g "WixToolset.Util.wixext/$WixVersion"
+    if ($LASTEXITCODE -ne 0) { Die 'wix extension add WixToolset.Util.wixext failed' }
+
     # Prefer caller-supplied (typically pre-signed) binaries; fall back to the
     # binaries Build-Binaries placed under $BinDir.
     $AdderExeSrc     = if ($AdderExeIn)     { $AdderExeIn }     else { Join-Path $BinDir 'adder.exe' }
@@ -332,6 +338,7 @@ function Build-Msi {
     $wixArgs = @(
         'build', (Join-Path $ScriptDir 'adder.wxs'),
         '-arch', $WixArch,
+        '-ext', 'WixToolset.Util.wixext',
         '-d', "Version=$MsiVersion",
         '-d', "AdderExe=$AdderExeSrc",
         '-d', "AdderTrayExe=$AdderTrayExeSrc",

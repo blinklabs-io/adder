@@ -118,15 +118,31 @@ func registerService(cfg ServiceConfig) error {
 	}
 
 	target := fmt.Sprintf("gui/%d", os.Getuid())
-	if out, err := exec.Command( //nolint:gosec // paths are generated internally
-		"launchctl", "bootstrap", target, serviceUnitPath(),
-	).CombinedOutput(); err != nil {
-		if !strings.Contains(string(out), "service already bootstrapped") {
-			return fmt.Errorf("loading launch agent: %s: %w", strings.TrimSpace(string(out)), err)
-		}
-	}
 
-	return nil
+	// bootstrap can race a just-completed bootout: launchd may still be tearing
+	// down the old job and returns "Bootstrap failed: 5: Input/output error".
+	// Retrying after a short settle succeeds, so retry the transient EIO.
+	var lastErr error
+	for attempt := range 5 {
+		out, err := exec.Command( //nolint:gosec // paths are generated internally
+			"launchctl", "bootstrap", target, serviceUnitPath(),
+		).CombinedOutput()
+		if err == nil {
+			return nil
+		}
+		msg := strings.TrimSpace(string(out))
+		if strings.Contains(msg, "service already bootstrapped") {
+			return nil
+		}
+		lastErr = fmt.Errorf("loading launch agent: %s: %w", msg, err)
+		if strings.Contains(msg, "Bootstrap failed: 5") ||
+			strings.Contains(msg, "Input/output error") {
+			time.Sleep(time.Duration(attempt+1) * 300 * time.Millisecond)
+			continue
+		}
+		return lastErr
+	}
+	return lastErr
 }
 
 func unregisterService() error {

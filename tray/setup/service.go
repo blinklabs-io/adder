@@ -16,16 +16,21 @@ package setup
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 )
 
 // ServiceManager defines the interface for idempotent service lifecycle
 // management.
 type ServiceManager interface {
-	EnsureRegistered(binPath, cfgPath string) error
 	EnsureRunning() error
+	// RestartIfConfigChanged registers when missing and restarts when the
+	// service command or the engine config file contents changed; otherwise
+	// ensures it is running. It owns registration.
 	RestartIfConfigChanged(binPath, cfgPath string) error
 	Stop() error
 	Status() (ServiceStatus, error)
@@ -34,34 +39,6 @@ type ServiceManager interface {
 // OSManager implements ServiceManager by delegating to platform-specific
 // logic, ensuring operations are idempotent.
 type OSManager struct{}
-
-func (m *OSManager) EnsureRegistered(binPath, cfgPath string) error {
-	cfg := ServiceConfig{
-		BinaryPath: binPath,
-		ConfigPath: cfgPath,
-		LogDir:     LogDir(),
-	}
-
-	// 1. Render desired state
-	desired, err := renderServiceUnit(cfg)
-	if err != nil {
-		return fmt.Errorf("rendering service unit: %w", err)
-	}
-
-	// 2. Check existing state
-	path := serviceUnitFilePath()
-	existing, _ := os.ReadFile(path)
-
-	if existing != nil && bytes.Equal(existing, desired) {
-		slog.Debug("service already registered with identical configuration",
-			"path", path)
-		return nil
-	}
-
-	// 3. Update only if different
-	slog.Info("registering/updating system service", "path", path)
-	return registerService(cfg)
-}
 
 func (m *OSManager) EnsureRunning() error {
 	status, err := serviceStatusCheck()
@@ -86,18 +63,60 @@ func (m *OSManager) RestartIfConfigChanged(binPath, cfgPath string) error {
 		return err
 	}
 
-	path := serviceUnitFilePath()
-	existing, _ := os.ReadFile(path)
+	// Fingerprint = service command + engine config contents. Comparing
+	// contents (not just the command) is what makes a reconfigure that only
+	// rewrites config.yaml trigger a restart.
+	want, err := configFingerprint(desired, cfgPath)
+	if err != nil {
+		return err
+	}
+	fpPath := serviceStatePath()
+	got, _ := os.ReadFile(fpPath)
 
-	if len(existing) > 0 && !bytes.Equal(existing, desired) {
-		slog.Info("service configuration changed, restarting", "path", path)
+	if !bytes.Equal(got, want) {
+		slog.Info("service config changed, (re)registering and restarting")
+		// Stop before (re)registering: on macOS `launchctl bootstrap` fails
+		// ("Bootstrap failed: 5") if the agent is still loaded, so unload it
+		// first. Best-effort — a not-running service is not an error here.
+		_ = stopService()
 		if err := registerService(cfg); err != nil {
 			return err
 		}
-		return startService()
+		if err := startService(); err != nil {
+			return err
+		}
+		// Persist the fingerprint only after a successful (re)start, so a
+		// failed start is retried on the next apply instead of being masked.
+		if err := os.MkdirAll(filepath.Dir(fpPath), 0o755); err == nil {
+			if werr := os.WriteFile(fpPath, want, 0o600); werr != nil {
+				slog.Warn("could not persist service fingerprint", "error", werr)
+			}
+		}
+		return nil
 	}
 
 	return m.EnsureRunning()
+}
+
+// configFingerprint hashes the rendered service command together with the
+// engine config file contents, so a change to either is detected. A missing
+// config file hashes as empty (deterministic).
+func configFingerprint(unit []byte, cfgPath string) ([]byte, error) {
+	h := sha256.New()
+	h.Write(unit)
+	if cfgPath != "" {
+		content, err := os.ReadFile(cfgPath)
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return nil, fmt.Errorf("reading config for fingerprint: %w", err)
+		}
+		h.Write(content)
+	}
+	return h.Sum(nil), nil
+}
+
+// serviceStatePath is where the last-applied fingerprint is stored.
+func serviceStatePath() string {
+	return filepath.Join(ConfigDir(), "service-state")
 }
 
 func (m *OSManager) Stop() error {
@@ -108,13 +127,8 @@ func (m *OSManager) Status() (ServiceStatus, error) {
 	return serviceStatusCheck()
 }
 
-// Helper to provide uniform access to platform-specific unit rendering
+// renderServiceUnit renders the platform-specific service unit (defined in
+// service_<os>.go).
 func renderServiceUnit(cfg ServiceConfig) ([]byte, error) {
-	// These are defined in service_<os>.go
 	return renderUnit(cfg)
-}
-
-func serviceUnitFilePath() string {
-	// This is defined in service_<os>.go
-	return serviceUnitPath()
 }

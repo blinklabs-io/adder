@@ -27,10 +27,6 @@ func renderUnit(cfg ServiceConfig) ([]byte, error) {
 	return []byte{}, nil
 }
 
-func serviceUnitPath() string {
-	return "unsupported://freebsd/adder"
-}
-
 func registerService(ServiceConfig) error {
 	return errFreeBSDServiceUnsupported
 }

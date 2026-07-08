@@ -304,7 +304,14 @@ func (c *ChainSync) setupConnection() error {
 		return err
 	}
 	if c.logger != nil {
-		c.logger.Info("connected to node at " + c.dialAddress)
+		network := c.network
+		if network == "" {
+			network = "custom"
+		}
+		c.logger.Info(fmt.Sprintf(
+			"connected to node at %s (network=%s, magic=%d)",
+			c.dialAddress, network, c.networkMagic,
+		))
 	}
 	// Start async error handler
 	c.wg.Add(1)
@@ -481,7 +488,7 @@ func (c *ChainSync) handleRollForward(
 	blockEvt := event.New(
 		"input.block",
 		time.Now(),
-		event.NewBlockHeaderContext(block.Header()),
+		event.NewBlockHeaderContext(block.Header(), c.networkMagic),
 		event.NewBlockEvent(block, c.includeCbor),
 	)
 	tmpEvents = append(tmpEvents, blockEvt)

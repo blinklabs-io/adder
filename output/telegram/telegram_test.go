@@ -91,22 +91,22 @@ func TestFormatFunctions(t *testing.T) {
 
 	t.Run("getBaseURL mainnet", func(t *testing.T) {
 		result := getBaseURL(mainnetNetworkMagic)
-		assert.Equal(t, "https://cexplorer.io", result)
+		assert.Equal(t, "https://adastat.net", result)
 	})
 
 	t.Run("getBaseURL preprod", func(t *testing.T) {
 		result := getBaseURL(preprodNetworkMagic)
-		assert.Equal(t, "https://preprod.cexplorer.io", result)
+		assert.Equal(t, "https://preprod.adastat.net", result)
 	})
 
 	t.Run("getBaseURL preview", func(t *testing.T) {
 		result := getBaseURL(previewNetworkMagic)
-		assert.Equal(t, "https://preview.cexplorer.io", result)
+		assert.Equal(t, "https://preview.adastat.net", result)
 	})
 
 	t.Run("getBaseURL unknown defaults to mainnet", func(t *testing.T) {
 		result := getBaseURL(12345)
-		assert.Equal(t, "https://cexplorer.io", result)
+		assert.Equal(t, "https://adastat.net", result)
 	})
 }
 

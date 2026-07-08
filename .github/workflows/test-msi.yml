@@ -178,6 +178,9 @@ jobs:
           dotnet tool install --global wix --version 4.0.5
           "$env:USERPROFILE\.dotnet\tools" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
           & "$env:USERPROFILE\.dotnet\tools\wix.exe" --version
+          # Util extension provides util:CloseApplication (stop the running app
+          # before upgrade). Version-matched to the wix toolset above.
+          & "$env:USERPROFILE\.dotnet\tools\wix.exe" extension add -g WixToolset.Util.wixext/4.0.5
 
       - name: Build MSI
         shell: pwsh

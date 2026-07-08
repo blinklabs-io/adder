@@ -95,7 +95,7 @@ func TestEmojiAndExplorerURLHelpers(t *testing.T) {
 			name: "mainnet block by default",
 			evt:  event.Event{Type: "input.block"},
 			hash: "abc",
-			want: "https://cexplorer.io/block/abc",
+			want: "https://adastat.net/blocks/abc",
 		},
 		{
 			name: "preprod transaction",
@@ -104,7 +104,7 @@ func TestEmojiAndExplorerURLHelpers(t *testing.T) {
 				Context: map[string]any{"networkMagic": float64(1)},
 			},
 			hash: "def",
-			want: "https://preprod.cexplorer.io/tx/def",
+			want: "https://preprod.adastat.net/transactions/def",
 		},
 		{
 			name: "preview block",
@@ -113,7 +113,7 @@ func TestEmojiAndExplorerURLHelpers(t *testing.T) {
 				Context: map[string]any{"networkMagic": float64(2)},
 			},
 			hash: "123",
-			want: "https://preview.cexplorer.io/block/123",
+			want: "https://preview.adastat.net/blocks/123",
 		},
 	}
 
@@ -122,6 +122,32 @@ func TestEmojiAndExplorerURLHelpers(t *testing.T) {
 			assert.Equal(t, tc.want, getExplorerURL(tc.evt, tc.hash))
 		})
 	}
+}
+
+func TestEventLinkHash(t *testing.T) {
+	// A transaction event carries its own hash in Context and the block
+	// hash in Payload; the link must use the transaction hash, not the
+	// block hash (which is shared by every tx in the block).
+	txEvt := event.Event{
+		Type:    "input.transaction",
+		Context: map[string]any{"transactionHash": "tx-hash"},
+		Payload: map[string]any{"blockHash": "block-hash"},
+	}
+	assert.Equal(t, "tx-hash", eventLinkHash(txEvt))
+
+	govEvt := event.Event{
+		Type:    "input.governance",
+		Context: map[string]any{"transactionHash": "gov-tx-hash"},
+	}
+	assert.Equal(t, "gov-tx-hash", eventLinkHash(govEvt))
+
+	blockEvt := event.Event{
+		Type:    "input.block",
+		Payload: map[string]any{"blockHash": "block-hash"},
+	}
+	assert.Equal(t, "block-hash", eventLinkHash(blockEvt))
+
+	assert.Empty(t, eventLinkHash(event.Event{Type: "input.transaction"}))
 }
 
 // TestDispatchNotificationUpdatesHistoryAndHonorsPreferences was
@@ -159,6 +185,38 @@ func TestAddRecentEventKeepsNewestTen(t *testing.T) {
 	}, time.Second, 10*time.Millisecond)
 	assert.Equal(t, 11, trayApp.recentEvents[0].Timestamp.Second())
 	assert.Equal(t, 2, trayApp.recentEvents[9].Timestamp.Second())
+}
+
+func TestDropStaleRecentEvents(t *testing.T) {
+	test.NewApp()
+	trayApp := &App{
+		mRecent: fyne.NewMenuItem("Recent Events", nil),
+		mMenu:   fyne.NewMenu("Adder"),
+	}
+
+	mainnet := event.Event{
+		Type:    "input.transaction",
+		Context: map[string]any{"networkMagic": float64(764824073)},
+	}
+	preview := event.Event{
+		Type:    "input.transaction",
+		Context: map[string]any{"networkMagic": float64(2)},
+	}
+	trayApp.recentEvents = []event.Event{preview, mainnet}
+
+	// Switching to preview drops the mainnet event, keeps the preview one.
+	trayApp.dropStaleRecentEvents("preview")
+	require.Eventually(t, func() bool {
+		return len(trayApp.recentEvents) == 1
+	}, time.Second, 10*time.Millisecond)
+	m, ok := eventNetworkMagic(trayApp.recentEvents[0])
+	require.True(t, ok)
+	assert.Equal(t, uint64(2), m)
+
+	// A custom/unknown network leaves history untouched.
+	trayApp.recentEvents = []event.Event{preview, mainnet}
+	trayApp.dropStaleRecentEvents("custom")
+	assert.Len(t, trayApp.recentEvents, 2)
 }
 
 func TestSetupTrayBuildsDesktopMenu(t *testing.T) {
@@ -390,8 +448,7 @@ func (s *wizardFinishStore) SaveTrayAtomic(cfg setup.TrayConfig) error {
 
 type wizardFinishService struct{}
 
-func (s *wizardFinishService) EnsureRegistered(string, string) error { return nil }
-func (s *wizardFinishService) EnsureRunning() error                  { return nil }
+func (s *wizardFinishService) EnsureRunning() error { return nil }
 func (s *wizardFinishService) RestartIfConfigChanged(string, string) error {
 	return nil
 }
@@ -444,34 +501,34 @@ func installFakeTrayCommands(t *testing.T) {
 // initial status flows through to the user.
 func TestSuppressInitialFire(t *testing.T) {
 	cases := []struct {
-		name        string
-		first       bool
-		status      Status
+		name         string
+		first        bool
+		status       Status
 		wantSuppress bool
 		wantFirst    bool // value of `first` after the call
 	}{
 		{
-			name: "first fire with default Stopped is suppressed",
+			name:  "first fire with default Stopped is suppressed",
 			first: true, status: StatusStopped,
 			wantSuppress: true, wantFirst: false,
 		},
 		{
-			name: "first fire with Error is NOT suppressed",
+			name:  "first fire with Error is NOT suppressed",
 			first: true, status: StatusError,
 			wantSuppress: false, wantFirst: false,
 		},
 		{
-			name: "first fire with Connected is NOT suppressed",
+			name:  "first fire with Connected is NOT suppressed",
 			first: true, status: StatusConnected,
 			wantSuppress: false, wantFirst: false,
 		},
 		{
-			name: "subsequent Stopped fire is NOT suppressed",
+			name:  "subsequent Stopped fire is NOT suppressed",
 			first: false, status: StatusStopped,
 			wantSuppress: false, wantFirst: false,
 		},
 		{
-			name: "subsequent Error fire is NOT suppressed",
+			name:  "subsequent Error fire is NOT suppressed",
 			first: false, status: StatusError,
 			wantSuppress: false, wantFirst: false,
 		},

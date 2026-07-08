@@ -255,6 +255,9 @@ func (a *App) applyPlan(
 		limit, window := result.TrayConfig.ResolvedNotifyRate()
 		eng.SetRateLimit(limit, window)
 	}
+	// A network switch invalidates cached events from the old chain;
+	// drop them so their explorer links do not resolve on the wrong network.
+	a.dropStaleRecentEvents(plan.Network.Name)
 	return result, nil
 }
 
@@ -604,10 +607,7 @@ func (a *App) setupTray() {
 	var initialFire atomic.Bool
 	initialFire.Store(true)
 	a.conn.status.OnChange(func(s Status) {
-		icon := GetStatusIcon(s)
-		slog.Info("tray status changed",
-			"status", s.String(),
-			"icon_name", icon.Name())
+		slog.Info("tray status changed", "status", s.String())
 
 		// Sleep outside fyne.Do so the UI thread is never blocked
 		// while waiting for the OS to settle between rapid icon
@@ -616,10 +616,15 @@ func (a *App) setupTray() {
 		fyne.Do(func() {
 			a.uiMu.Lock()
 			defer a.uiMu.Unlock()
-			mStatus.Label = "Status: " + s.String()
+			// Apply the CURRENT status, not the captured s: Set spawns a
+			// goroutine per transition, so rapid transitions can run these
+			// callbacks out of order. Reading the latest status here makes
+			// every callback converge on it (e.g. a late "starting" no
+			// longer overwrites the final "connected" icon).
+			cur := a.conn.status.Status()
+			mStatus.Label = "Status: " + cur.String()
 			menu.Refresh()
-
-			desk.SetSystemTrayIcon(icon)
+			desk.SetSystemTrayIcon(GetStatusIcon(cur))
 		})
 
 		if suppressInitialFire(&initialFire, s) {
@@ -647,27 +652,31 @@ func (a *App) setupTray() {
 		}
 	})
 
-	// Startup watchdog: re-asserts the tray icon every 500ms for the
-	// first 10s to work around macOS dropping icon updates during
-	// rapid status transitions.
+	// Icon watchdog: re-asserts the tray icon whenever it no longer matches
+	// the current status. macOS can drop a SetSystemTrayIcon during rapid
+	// status transitions (e.g. a reconfigure's disconnect/reconnect), which
+	// would otherwise leave a stale icon until the next transition. Runs for
+	// the whole session and only re-sets on change, so it is cheap and self-
+	// heals a dropped update at any time, not just at startup.
 	go func() {
-		ticker := time.NewTicker(500 * time.Millisecond)
+		ticker := time.NewTicker(1 * time.Second)
 		defer ticker.Stop()
-		timeout := time.After(10 * time.Second)
+		last := Status(-1)
 
 		for {
 			select {
 			case <-ticker.C:
+				cur := a.conn.status.Status()
+				if cur == last {
+					continue
+				}
+				last = cur
 				fyne.Do(func() {
 					a.uiMu.Lock()
-					s := a.conn.status.Status()
-					desk.SetSystemTrayIcon(GetStatusIcon(s))
+					desk.SetSystemTrayIcon(GetStatusIcon(cur))
 					a.uiMu.Unlock()
 				})
 			case <-a.quitChan:
-				return
-			case <-timeout:
-				slog.Debug("startup icon watchdog finished")
 				return
 			}
 		}
@@ -729,17 +738,16 @@ func (a *App) setupTray() {
 	// (the EventClient retries with backoff, so a down engine shows
 	// "reconnecting" rather than a permanent gray "stopped").
 	//
-	// AutoStart controls whether the tray (re)starts an
-	// already-registered engine. Independently, if a config exists but
-	// the service is not registered (never installed, or removed),
-	// self-heal by registering it now — otherwise the tray would sit
-	// disconnected forever with no path back except a manual
-	// Reconfigure. If registration fails, tell the user to run it.
-	// Only self-heal / autostart on a CONFIRMED status. If the probe itself
-	// failed, the fallback value is ServiceNotRegistered — acting on that
-	// would spuriously re-register and (re)start the engine on a transient
-	// probe error. Log and skip; the unconditional Connect below still runs
-	// so the tray reflects real state and reconnects with backoff.
+	// The engine should run whenever the tray is up and configured, so
+	// launching the tray always brings monitoring up. If a config exists but
+	// the service is not registered (never installed, or removed), self-heal
+	// by registering it now; if it is registered, (re)start the engine
+	// (StartService is stop-then-start, so an already-running engine is not
+	// duplicated). Otherwise the tray would sit disconnected with no path back
+	// except a manual Reconfigure. Only act on a CONFIRMED status — a probe
+	// failure falls back to ServiceNotRegistered, and acting on that would
+	// spuriously re-register on a transient error; log and skip, the Connect
+	// below still runs so the tray reflects real state and reconnects.
 	status, statusErr := setup.ServiceStatusCheck()
 	switch {
 	case statusErr != nil:
@@ -756,7 +764,7 @@ func (a *App) setupTray() {
 		} else if err := setup.StartService(); err != nil {
 			slog.Error("failed to start adder service", "error", err)
 		}
-	case a.Config().AutoStart && status == setup.ServiceRegistered:
+	case status == setup.ServiceRegistered && ConfigExists():
 		if err := setup.StartService(); err != nil {
 			slog.Error("failed to start adder service", "error", err)
 		}
@@ -918,64 +926,132 @@ func (a *App) addRecentEvent(evt event.Event) {
 		if len(a.recentEvents) > 10 {
 			a.recentEvents = a.recentEvents[:10]
 		}
-
-		slog.Debug("updating recent events menu", "count", len(a.recentEvents))
-
-		// Update the child menu
-		items := make([]*fyne.MenuItem, 0, len(a.recentEvents))
-		for _, e := range a.recentEvents {
-			eventTime := e.Timestamp.Format("15:04:05")
-			if e.Timestamp.IsZero() {
-				eventTime = time.Now().Format("15:04:05")
-			}
-			emoji := getEmojiForType(e.Type)
-			cleanType := strings.TrimPrefix(e.Type, "input.")
-			label := fmt.Sprintf("%s %s (%s)", emoji, cleanType, eventTime)
-
-			// Create action to "Show" the event in an explorer
-			hash := ""
-			if payload, ok := e.Payload.(map[string]any); ok {
-				if h, ok := payload["blockHash"].(string); ok {
-					hash = h
-				} else if h, ok := payload["transactionHash"].(string); ok {
-					hash = h
-				}
-			}
-
-			item := fyne.NewMenuItem(label, func() {
-				if hash != "" {
-					url := getExplorerURL(e, hash)
-					openURL(url)
-				}
-			})
-			items = append(items, item)
-		}
-
-		a.mRecent.ChildMenu = fyne.NewMenu("Recent", items...)
-		if a.mMenu != nil {
-			a.mMenu.Refresh()
-		}
+		a.refreshRecentMenuLocked()
 	})
 }
 
+// refreshRecentMenuLocked rebuilds the Recent Events child menu from
+// a.recentEvents. Callers must hold uiMu.
+func (a *App) refreshRecentMenuLocked() {
+	slog.Debug("updating recent events menu", "count", len(a.recentEvents))
+
+	items := make([]*fyne.MenuItem, 0, len(a.recentEvents))
+	for _, e := range a.recentEvents {
+		eventTime := e.Timestamp.Format("15:04:05")
+		if e.Timestamp.IsZero() {
+			eventTime = time.Now().Format("15:04:05")
+		}
+		emoji := getEmojiForType(e.Type)
+		cleanType := strings.TrimPrefix(e.Type, "input.")
+		label := fmt.Sprintf("%s %s (%s)", emoji, cleanType, eventTime)
+
+		// Create action to "Show" the event in an explorer
+		hash := eventLinkHash(e)
+
+		item := fyne.NewMenuItem(label, func() {
+			if hash != "" {
+				url := getExplorerURL(e, hash)
+				openURL(url)
+			}
+		})
+		items = append(items, item)
+	}
+
+	a.mRecent.ChildMenu = fyne.NewMenu("Recent", items...)
+	if a.mMenu != nil {
+		a.mMenu.Refresh()
+	}
+}
+
+// dropStaleRecentEvents removes recent events that belong to a network
+// other than networkName, so links do not resolve on the wrong chain
+// after a network switch. Custom/unknown networks leave history intact.
+func (a *App) dropStaleRecentEvents(networkName string) {
+	want, ok := networkMagicForName(networkName)
+	if !ok {
+		return
+	}
+	fyne.Do(func() {
+		a.uiMu.Lock()
+		defer a.uiMu.Unlock()
+		kept := make([]event.Event, 0, len(a.recentEvents))
+		for _, e := range a.recentEvents {
+			if m, ok := eventNetworkMagic(e); !ok || m == want {
+				kept = append(kept, e)
+			}
+		}
+		if len(kept) == len(a.recentEvents) {
+			return
+		}
+		a.recentEvents = kept
+		a.refreshRecentMenuLocked()
+	})
+}
+
+// eventNetworkMagic returns the event's network magic from its Context.
+func eventNetworkMagic(e event.Event) (uint64, bool) {
+	if ctx, ok := e.Context.(map[string]any); ok {
+		if m, ok := ctx["networkMagic"].(float64); ok {
+			return uint64(m), true
+		}
+	}
+	return 0, false
+}
+
+// networkMagicForName maps a well-known network name to its magic.
+func networkMagicForName(name string) (uint64, bool) {
+	switch strings.ToLower(name) {
+	case "mainnet":
+		return 764824073, true
+	case "preprod":
+		return 1, true
+	case "preview":
+		return 2, true
+	}
+	return 0, false
+}
+
+// eventLinkHash returns the hash to link in an explorer for an event.
+// A transaction's hash lives in the event Context (transactionHash); a
+// block's hash lives in the Payload (blockHash). Reading blockHash for a
+// transaction produced a /transactions/<blockHash> link (404), shared by
+// every transaction in the same block.
+func eventLinkHash(e event.Event) string {
+	switch e.Type {
+	case "input.transaction", "input.governance":
+		if ctx, ok := e.Context.(map[string]any); ok {
+			if h, ok := ctx["transactionHash"].(string); ok {
+				return h
+			}
+		}
+	default:
+		if p, ok := e.Payload.(map[string]any); ok {
+			if h, ok := p["blockHash"].(string); ok {
+				return h
+			}
+		}
+	}
+	return ""
+}
+
 func getExplorerURL(e event.Event, hash string) string {
-	baseURL := "https://cexplorer.io"
+	baseURL := "https://adastat.net"
 	// Inspect context for network info
 	if ctx, ok := e.Context.(map[string]any); ok {
 		if magic, ok := ctx["networkMagic"].(float64); ok {
 			switch uint32(magic) {
 			case 1:
-				baseURL = "https://preprod.cexplorer.io"
+				baseURL = "https://preprod.adastat.net"
 			case 2:
-				baseURL = "https://preview.cexplorer.io"
+				baseURL = "https://preview.adastat.net"
 			}
 		}
 	}
 
-	if e.Type == "input.transaction" {
-		return fmt.Sprintf("%s/tx/%s", baseURL, hash)
+	if e.Type == "input.transaction" || e.Type == "input.governance" {
+		return fmt.Sprintf("%s/transactions/%s", baseURL, hash)
 	}
-	return fmt.Sprintf("%s/block/%s", baseURL, hash)
+	return fmt.Sprintf("%s/blocks/%s", baseURL, hash)
 }
 
 // openFolder opens the given directory in the platform file manager.

@@ -102,7 +102,7 @@ func followTipApplyCBOR(nativeBytes []byte, includeCbor bool, networkMagic uint3
 	out = append(out, event.New(
 		"input.block",
 		time.Now(),
-		event.NewBlockHeaderContext(block.Header()),
+		event.NewBlockHeaderContext(block.Header(), networkMagic),
 		event.NewBlockEvent(block, includeCbor),
 	))
 	for t, transaction := range txns {

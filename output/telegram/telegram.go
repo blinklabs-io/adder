@@ -310,7 +310,7 @@ func (t *TelegramOutput) processEvent(evt *event.Event) {
 
 // formatBlockMessage formats a block event for Telegram
 func formatBlockMessage(be event.BlockEvent, bc event.BlockContext, baseURL string, mode models.ParseMode) string {
-	blockURL := baseURL + "/block/" + be.BlockHash
+	blockURL := baseURL + "/blocks/" + be.BlockHash
 	return fmt.Sprintf(
 		"%s\n\n"+
 			"%s %s\n"+
@@ -350,7 +350,7 @@ func formatTransactionMessage(
 	baseURL string,
 	mode models.ParseMode,
 ) string {
-	txURL := baseURL + "/tx/" + tc.TransactionHash
+	txURL := baseURL + "/transactions/" + tc.TransactionHash
 	return fmt.Sprintf(
 		"%s\n\n"+
 			"%s %d\n"+
@@ -376,7 +376,7 @@ func formatGovernanceMessage(
 	baseURL string,
 	mode models.ParseMode,
 ) string {
-	txURL := baseURL + "/tx/" + gc.TransactionHash
+	txURL := baseURL + "/transactions/" + gc.TransactionHash
 	return fmt.Sprintf(
 		"%s\n\n"+
 			"%s %d\n"+
@@ -525,13 +525,13 @@ func formatLovelace(lovelace uint64) string {
 func getBaseURL(networkMagic uint32) string {
 	switch networkMagic {
 	case mainnetNetworkMagic:
-		return "https://cexplorer.io"
+		return "https://adastat.net"
 	case preprodNetworkMagic:
-		return "https://preprod.cexplorer.io"
+		return "https://preprod.adastat.net"
 	case previewNetworkMagic:
-		return "https://preview.cexplorer.io"
+		return "https://preview.adastat.net"
 	default:
-		return "https://cexplorer.io"
+		return "https://adastat.net"
 	}
 }
 

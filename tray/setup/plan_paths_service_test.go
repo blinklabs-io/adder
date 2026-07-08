@@ -446,8 +446,6 @@ func TestServiceRenderingAndSafeStatusPaths(t *testing.T) {
 		assert.Empty(t, text)
 	}
 
-	assert.NotEmpty(t, serviceUnitFilePath())
-
 	status, err := ServiceStatusCheck()
 	require.NoError(t, err)
 	assert.Equal(t, ServiceNotRegistered, status)
@@ -459,16 +457,8 @@ func TestServiceRenderingAndSafeStatusPaths(t *testing.T) {
 			strings.Contains(err.Error(), "service not registered") ||
 				strings.Contains(err.Error(), "not implemented"),
 		)
-
-		err = (&OSManager{}).RestartIfConfigChanged(
-			"/tmp/adder",
-			"/tmp/config.yaml",
-		)
-		require.Error(t, err)
-		assert.True(t,
-			strings.Contains(err.Error(), "service not registered") ||
-				strings.Contains(err.Error(), "not implemented"),
-		)
+		// RestartIfConfigChanged is not called here: it self-registers (real
+		// platform command). Covered by TestServiceLifecycleWithFakePlatformCommand.
 	}
 }
 
@@ -522,8 +512,9 @@ func TestServiceLifecycleWithFakePlatformCommand(t *testing.T) {
 	}
 	mgr := &OSManager{}
 
-	require.NoError(t, mgr.EnsureRegistered(cfg.BinaryPath, cfg.ConfigPath))
-	require.NoError(t, mgr.EnsureRegistered(cfg.BinaryPath, cfg.ConfigPath))
+	// Idempotent: first call registers + starts, second is a no-op restart.
+	require.NoError(t, mgr.RestartIfConfigChanged(cfg.BinaryPath, cfg.ConfigPath))
+	require.NoError(t, mgr.RestartIfConfigChanged(cfg.BinaryPath, cfg.ConfigPath))
 
 	status, err := mgr.Status()
 	require.NoError(t, err)
@@ -531,10 +522,7 @@ func TestServiceLifecycleWithFakePlatformCommand(t *testing.T) {
 
 	require.NoError(t, mgr.EnsureRunning())
 
-	require.NoError(
-		t,
-		os.WriteFile(serviceUnitFilePath(), []byte("stale"), 0o644),
-	)
+	// Re-apply with unchanged config: idempotent, no error.
 	require.NoError(
 		t,
 		mgr.RestartIfConfigChanged(cfg.BinaryPath, cfg.ConfigPath),
@@ -569,4 +557,146 @@ exit 0
 		os.WriteFile(filepath.Join(binDir, name), []byte(script), 0o755),
 	)
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+}
+
+// The change key must cover both the service command and the config file
+// contents (the latter is what makes a config-only reconfigure take effect).
+func TestConfigFingerprint(t *testing.T) {
+	dir := t.TempDir()
+	cfg := filepath.Join(dir, "config.yaml")
+	require.NoError(t, os.WriteFile(cfg, []byte("network: preview\n"), 0o600))
+
+	base, err := configFingerprint([]byte("cmd"), cfg)
+	require.NoError(t, err)
+	require.NotEmpty(t, base)
+
+	same, err := configFingerprint([]byte("cmd"), cfg)
+	require.NoError(t, err)
+	assert.Equal(t, base, same, "identical inputs must fingerprint the same")
+
+	require.NoError(t, os.WriteFile(cfg, []byte("network: preprod\n"), 0o600))
+	changedContent, err := configFingerprint([]byte("cmd"), cfg)
+	require.NoError(t, err)
+	assert.NotEqual(t, base, changedContent,
+		"config CONTENT change must change the fingerprint")
+
+	changedCmd, err := configFingerprint([]byte("cmd2"), cfg)
+	require.NoError(t, err)
+	assert.NotEqual(t, changedContent, changedCmd,
+		"command change must change the fingerprint")
+
+	_, err = configFingerprint([]byte("cmd"), filepath.Join(dir, "absent.yaml"))
+	assert.NoError(t, err, "missing config file must not error")
+}
+
+// A config-content-only change updates the fingerprint (restart branch ran);
+// re-applying an unchanged config does not.
+func TestRestartIfConfigChangedDetectsContentChange(t *testing.T) {
+	if runtime.GOOS == "windows" || runtime.GOOS == "freebsd" {
+		t.Skip("platform service command differs or is intentionally unsupported")
+	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	t.Setenv("ADDER_TRAY_CONFIG_DIR", filepath.Join(home, "cfg"))
+	installFakeServiceCommand(t)
+
+	cfgFile := filepath.Join(home, "config.yaml")
+	require.NoError(t, os.WriteFile(cfgFile, []byte("network: preview\n"), 0o600))
+	mgr := &OSManager{}
+	const bin = "/tmp/adder"
+
+	require.NoError(t, mgr.RestartIfConfigChanged(bin, cfgFile))
+	fp1, err := os.ReadFile(serviceStatePath())
+	require.NoError(t, err)
+	require.NotEmpty(t, fp1)
+
+	// Re-apply unchanged config: fingerprint unchanged (no needless restart).
+	require.NoError(t, mgr.RestartIfConfigChanged(bin, cfgFile))
+	fp2, err := os.ReadFile(serviceStatePath())
+	require.NoError(t, err)
+	assert.Equal(t, fp1, fp2, "unchanged config must not update the fingerprint")
+
+	// Change config CONTENTS only (same path): fingerprint must change.
+	require.NoError(t, os.WriteFile(cfgFile, []byte("network: preprod\n"), 0o600))
+	require.NoError(t, mgr.RestartIfConfigChanged(bin, cfgFile))
+	fp3, err := os.ReadFile(serviceStatePath())
+	require.NoError(t, err)
+	assert.NotEqual(t, fp1, fp3, "config content change must update the fingerprint")
+}
+
+// installFailingServiceCommand stubs launchctl/systemctl to always fail.
+func installFailingServiceCommand(t *testing.T) {
+	t.Helper()
+	name := "systemctl"
+	if runtime.GOOS == "darwin" {
+		name = "launchctl"
+	}
+	binDir := t.TempDir()
+	script := "#!/bin/sh\nexit 1\n"
+	require.NoError(t,
+		os.WriteFile(filepath.Join(binDir, name), []byte(script), 0o755))
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+}
+
+// A failed (re)start must not persist the fingerprint, so the next apply
+// retries instead of treating the config as already applied.
+func TestRestartIfConfigChangedFailureLeavesFingerprintUnset(t *testing.T) {
+	if runtime.GOOS == "windows" || runtime.GOOS == "freebsd" {
+		t.Skip("platform service command differs or is intentionally unsupported")
+	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	t.Setenv("ADDER_TRAY_CONFIG_DIR", filepath.Join(home, "cfg"))
+	installFailingServiceCommand(t)
+
+	cfgFile := filepath.Join(home, "config.yaml")
+	require.NoError(t, os.WriteFile(cfgFile, []byte("network: preview\n"), 0o600))
+	mgr := &OSManager{}
+	const bin = "/tmp/adder"
+
+	// First apply fails at register/restart.
+	require.Error(t, mgr.RestartIfConfigChanged(bin, cfgFile))
+
+	// Fingerprint must not exist — nothing was successfully applied.
+	_, statErr := os.Stat(serviceStatePath())
+	assert.True(t, os.IsNotExist(statErr),
+		"fingerprint must not be persisted when (re)start fails")
+
+	// Next apply must retry (still errors), not silently pass as unchanged.
+	require.Error(t, mgr.RestartIfConfigChanged(bin, cfgFile))
+}
+
+// A transient "Bootstrap failed: 5" right after bootout must be retried (macOS).
+func TestRegisterServiceRetriesBootstrapEIO(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("darwin launchctl bootstrap retry")
+	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	counter := filepath.Join(home, "n")
+	t.Setenv("COUNTER", counter)
+
+	binDir := t.TempDir()
+	script := "#!/bin/sh\n" +
+		"if [ \"$1\" = bootstrap ]; then\n" +
+		"  n=$(cat \"$COUNTER\" 2>/dev/null || echo 0); n=$((n+1)); echo $n > \"$COUNTER\"\n" +
+		"  if [ $n -eq 1 ]; then echo 'Bootstrap failed: 5: Input/output error' >&2; exit 5; fi\n" +
+		"fi\n" +
+		"exit 0\n"
+	require.NoError(t,
+		os.WriteFile(filepath.Join(binDir, "launchctl"), []byte(script), 0o755))
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	err := registerService(ServiceConfig{
+		BinaryPath: "/tmp/adder",
+		ConfigPath: "/tmp/config.yaml",
+		LogDir:     filepath.Join(home, "logs"),
+	})
+	require.NoError(t, err, "registerService must retry the transient EIO")
+
+	n, _ := os.ReadFile(counter)
+	assert.Equal(t, "2", strings.TrimSpace(string(n)),
+		"bootstrap should have been retried exactly once")
 }

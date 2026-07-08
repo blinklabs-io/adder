@@ -474,3 +474,25 @@ func TestToEngineConfigWritesCustomNodeAddress(t *testing.T) {
 		got.Plugin["input"]["chainsync"]["address"],
 	)
 }
+
+// Notification prefs must not affect the engine config, so a notify-only edit
+// leaves config.yaml unchanged and does not restart the engine.
+func TestNotifyPrefsDoNotAffectEngineConfig(t *testing.T) {
+	base := config.Config{}
+	mk := func(notify NotificationPrefs) config.Config {
+		return SetupPlan{
+			Network: NetworkConfig{Name: "mainnet"},
+			Filter:  FilterConfig{DReps: []string{"drep1abc"}},
+			Output:  OutputConfig{Type: "none", Config: make(map[string]string)},
+			Notify:  notify,
+		}.ToEngineConfig(base)
+	}
+
+	a := mk(NotificationPrefs{NotifyPrefVotesCast: true})
+	b := mk(NotificationPrefs{
+		NotifyPrefVotesCast:    false,
+		NotifyPrefGovProposals: true,
+	})
+	assert.Equal(t, a, b,
+		"notification prefs must not change the engine config (no restart)")
+}

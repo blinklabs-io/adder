@@ -44,11 +44,12 @@ func NewBlockContext(block ledger.Block, networkMagic uint32) BlockContext {
 	return ctx
 }
 
-func NewBlockHeaderContext(block ledger.BlockHeader) BlockContext {
+func NewBlockHeaderContext(block ledger.BlockHeader, networkMagic uint32) BlockContext {
 	ctx := BlockContext{
-		BlockNumber: block.BlockNumber(),
-		SlotNumber:  block.SlotNumber(),
-		Era:         block.Era().Name,
+		BlockNumber:  block.BlockNumber(),
+		SlotNumber:   block.SlotNumber(),
+		NetworkMagic: networkMagic,
+		Era:          block.Era().Name,
 	}
 	return ctx
 }

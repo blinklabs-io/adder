@@ -129,14 +129,10 @@ func (r *SetupRunner) Apply(
 		slog.Error("could not find adder binary for service registration",
 			"stage", "binary-find",
 			"error", err)
-	} else if err := r.Service.EnsureRegistered(binPath, engineCfgPath); err != nil {
-		result.ServiceRestartErr = err
-		slog.Error("failed to register service",
-			"stage", "service-register",
-			"error", err)
 	} else if err := r.Service.RestartIfConfigChanged(binPath, engineCfgPath); err != nil {
+		// RestartIfConfigChanged registers and restarts as needed.
 		result.ServiceRestartErr = err
-		slog.Error("failed to ensure service is running",
+		slog.Error("failed to (re)start service",
 			"stage", "service-restart",
 			"error", err)
 	}
