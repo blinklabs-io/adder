@@ -22,6 +22,14 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// Cardano network magics used by the tests as BlockContext fixtures and to
+// exercise getBaseURL's mapping.
+const (
+	mainnetNetworkMagic uint32 = 764824073
+	previewNetworkMagic uint32 = 2
+	preprodNetworkMagic uint32 = 1
+)
+
 func TestNew(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -91,22 +99,22 @@ func TestFormatFunctions(t *testing.T) {
 
 	t.Run("getBaseURL mainnet", func(t *testing.T) {
 		result := getBaseURL(mainnetNetworkMagic)
-		assert.Equal(t, "https://adastat.net", result)
+		assert.Equal(t, "https://cexplorer.io", result)
 	})
 
 	t.Run("getBaseURL preprod", func(t *testing.T) {
 		result := getBaseURL(preprodNetworkMagic)
-		assert.Equal(t, "https://preprod.adastat.net", result)
+		assert.Equal(t, "https://preprod.cexplorer.io", result)
 	})
 
 	t.Run("getBaseURL preview", func(t *testing.T) {
 		result := getBaseURL(previewNetworkMagic)
-		assert.Equal(t, "https://preview.adastat.net", result)
+		assert.Equal(t, "https://preview.cexplorer.io", result)
 	})
 
 	t.Run("getBaseURL unknown defaults to mainnet", func(t *testing.T) {
 		result := getBaseURL(12345)
-		assert.Equal(t, "https://adastat.net", result)
+		assert.Equal(t, "https://cexplorer.io", result)
 	})
 }
 

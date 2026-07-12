@@ -71,6 +71,7 @@ func TestAllNotifyPrefsExhaustive(t *testing.T) {
 		NotifyPrefGovProposals,
 		NotifyPrefVotesCast,
 		NotifyPrefRegChanges,
+		NotifyPrefPoolParams,
 		NotifyPrefAssetActivity,
 		NotifyPrefPolicyActivity,
 		NotifyPrefConnectionIssues,

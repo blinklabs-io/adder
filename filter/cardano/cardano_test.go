@@ -531,6 +531,28 @@ func TestFilterByDRepIdTransactionEvent(t *testing.T) {
 	})
 }
 
+func TestFilterByPoolOrDRepIdTransactionEvent(t *testing.T) {
+	poolHex := "abcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcd"
+	drepHex := "abcd1234567890abcdef1234567890abcdef1234567890abcdef1234"
+	drepHashBytes, _ := hex.DecodeString(drepHex)
+	var drepCredHash common.CredentialHash
+	copy(drepCredHash[:], drepHashBytes)
+
+	cs := New(WithPoolIds([]string{poolHex}), WithDRepIds([]string{drepHex}))
+	te := event.TransactionEvent{
+		Certificates: []ledger.Certificate{
+			&common.RegistrationDrepCertificate{
+				DrepCredential: common.Credential{
+					CredType:   0,
+					Credential: drepCredHash,
+				},
+			},
+		},
+	}
+
+	assert.True(t, cs.filterTransactionEvent(te))
+}
+
 func TestFilterByDRepIdGovernanceEvent(t *testing.T) {
 	// 28 bytes = 56 hex chars for Blake2b224
 	drepHex := "abcd1234567890abcdef1234567890abcdef1234567890abcdef1234"
@@ -988,6 +1010,53 @@ func TestFilterByPoolIdGovernanceEvent(t *testing.T) {
 			// Expected no event
 		}
 	})
+}
+
+func TestFilterByPoolOrDRepIdGovernanceEvent(t *testing.T) {
+	poolHex := "abcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcd"
+	drepHex := "abcd1234567890abcdef1234567890abcdef1234567890abcdef1234"
+	otherHex := "99999999999999999999999999999999999999999999999999999999"
+	cs := New(WithPoolIds([]string{poolHex}), WithDRepIds([]string{drepHex}))
+
+	tests := []struct {
+		name        string
+		governance  event.GovernanceEvent
+		shouldMatch bool
+	}{
+		{
+			name: "matches followed DRep vote without pool activity",
+			governance: event.GovernanceEvent{
+				VotingProcedures: []event.VotingProcedureData{
+					{VoterType: "DRep", VoterHash: drepHex, Vote: "Yes"},
+				},
+			},
+			shouldMatch: true,
+		},
+		{
+			name: "matches followed pool vote without DRep activity",
+			governance: event.GovernanceEvent{
+				VotingProcedures: []event.VotingProcedureData{
+					{VoterType: "SPO", VoterHash: poolHex, Vote: "Yes"},
+				},
+			},
+			shouldMatch: true,
+		},
+		{
+			name: "rejects unrelated governance activity",
+			governance: event.GovernanceEvent{
+				VotingProcedures: []event.VotingProcedureData{
+					{VoterType: "DRep", VoterHash: otherHex, Vote: "Yes"},
+				},
+			},
+			shouldMatch: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.shouldMatch, cs.filterGovernanceEvent(tt.governance))
+		})
+	}
 }
 
 func TestFilterByAddressGovernanceEvent(t *testing.T) {

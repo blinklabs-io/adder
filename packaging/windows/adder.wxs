@@ -182,9 +182,10 @@
     </ComponentGroup>
 
     <!-- The single feature that installs everything. We deliberately do NOT
-         register a Scheduled Task here: service registration is owned by the
-         adder-tray first-run wizard (mirrors the macOS installer, which does
-         not install a LaunchAgent). -->
+         register autostart here: it is owned by the adder-tray first-run
+         wizard, which writes a per-user HKCU\...\Run value (no elevation) that
+         launches the tray at logon. Mirrors the macOS installer, which does
+         not install a LaunchAgent. -->
     <Feature Id="Main" Title="Adder" Level="1">
       <ComponentGroupRef Id="AdderComponents" />
     </Feature>

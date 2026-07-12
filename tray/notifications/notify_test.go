@@ -182,6 +182,23 @@ func TestDispatch_DropsStaleEpochRequests(t *testing.T) {
 			"the unified Stats().Dropped reflects dispatch-side losses")
 }
 
+func TestDispatch_OnDeliveredOnlyReceivesFreshNotifications(t *testing.T) {
+	n := &recordingNotifier{}
+	reqs := make(chan Request, 2)
+	currentEpoch := func() int64 { return 1 }
+	reqs <- Request{RuleID: "stale", Title: "stale", Epoch: 0}
+	reqs <- Request{RuleID: "fresh", Title: "fresh", Epoch: 1}
+	close(reqs)
+
+	var delivered []Request
+	Dispatch(reqs, n, currentEpoch, nil, func(req Request) {
+		delivered = append(delivered, req)
+	})
+
+	require.Len(t, delivered, 1)
+	require.Equal(t, "fresh", delivered[0].RuleID)
+}
+
 // TestEngine_SetRulesBumpsEpochAndDispatcherDropsInFlightStale exercises
 // the end-to-end path: an event fires under the old rule set, then
 // SetRules is called before Dispatch consumes the buffered Request;

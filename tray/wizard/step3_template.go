@@ -158,6 +158,10 @@ func (s *templateStep) Content() fyne.CanvasObject {
 			fyne.TextAlignLeading,
 			fyne.TextStyle{Bold: true},
 		),
+		newFilterLogicLabel(
+			"Matching logic: OR within each target section; compatible "+
+				"target sections narrow matching alerts together.",
+		),
 		s.everythingCheck,
 		s.targetsBox,
 		s.summaryLabel,

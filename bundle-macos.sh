@@ -8,6 +8,12 @@ CONTENTS_DIR="${BUNDLE_DIR}/Contents"
 MACOS_DIR="${CONTENTS_DIR}/MacOS"
 RESOURCES_DIR="${CONTENTS_DIR}/Resources"
 
+echo "--- Terminating running instances ---"
+# Best-effort terminate any running tray or engine to prevent "text file busy" locks
+pkill -f "${APP_NAME}" || true
+pkill -f "Contents/MacOS/adder" || true
+pkill -f "adder-tray" || true
+
 echo "--- Cleaning old builds ---"
 rm -f adder adder-tray
 rm -rf "${BUNDLE_DIR}"
@@ -32,8 +38,12 @@ else
     echo "Warning: Adder.icns not found in .github/assets/"
 fi
 
-VERSION="1.5.0"
-echo "--- Generating Info.plist (Version: ${VERSION}) ---"
+BASE_VERSION="1.5.0"
+TIMESTAMP=$(date +%Y%m%d.%H%M%S)
+GIT_HASH=$(git rev-parse --short HEAD 2>/dev/null || echo "nohash")
+BUILD_VER="${BASE_VERSION}-dev+${TIMESTAMP}.${GIT_HASH}"
+
+echo "--- Generating Info.plist (Version: ${BASE_VERSION}, Build: ${BUILD_VER}) ---"
 cat <<EOF > "${CONTENTS_DIR}/Info.plist"
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -52,9 +62,9 @@ cat <<EOF > "${CONTENTS_DIR}/Info.plist"
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>${VERSION}</string>
+    <string>${BASE_VERSION}</string>
     <key>CFBundleVersion</key>
-    <string>${VERSION}</string>
+    <string>${BUILD_VER}</string>
     <key>LSUIElement</key>
     <false/>
     <key>NSHighResolutionCapable</key>
@@ -88,5 +98,8 @@ rm -rf "${DEST_APP}"
 cp -R "${BUNDLE_DIR}" /Applications/
 
 echo "--- SUCCESS: ${APP_NAME}.app installed to /Applications ---"
+echo "To verify the installed build version (QA), run:"
+echo "  defaults read \"${DEST_APP}/Contents/Info\" CFBundleVersion"
+echo ""
 echo "To run with the correct icon and functional notifications, use:"
-echo "open \"${DEST_APP}\""
+echo "  open \"${DEST_APP}\""

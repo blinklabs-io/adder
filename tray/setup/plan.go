@@ -39,6 +39,8 @@ const (
 	NotifyPrefVotesCast = "Votes cast"
 	// NotifyPrefRegChanges is the preference key for registration change alerts.
 	NotifyPrefRegChanges = "Registration changes"
+	// NotifyPrefPoolParams is the preference key for pool parameter change alerts.
+	NotifyPrefPoolParams = "Pool parameter changes"
 	// NotifyPrefAssetActivity is the preference key for events touching
 	// any followed asset fingerprint (mint, burn, transfer).
 	NotifyPrefAssetActivity = "Asset activity"
@@ -60,6 +62,7 @@ var allNotifyPrefs = []string{
 	NotifyPrefOutgoingTx,
 	NotifyPrefTokenTransfers,
 	NotifyPrefBlocksMinted,
+	NotifyPrefPoolParams,
 	NotifyPrefGovProposals,
 	NotifyPrefVotesCast,
 	NotifyPrefRegChanges,
@@ -95,12 +98,11 @@ type NetworkConfig struct {
 	CustomPort    uint
 }
 
-// FilterConfig defines the user's monitoring targets. The five lists
-// are independent — the engine emits one rule per kind and OR-matches
-// across them. MonitorEverything ignores the per-target lists and
-// emits one coarse rule per event type. Persisted on TrayConfig (the
-// sidecar engine config carries no per-target lists, since the
-// cardano filter would AND-combine them on transaction events).
+// FilterConfig defines the user's monitoring targets. Values inside
+// each list OR together; non-empty lists AND together. MonitorEverything
+// ignores the per-target lists and emits one coarse rule per event type.
+// Persisted on TrayConfig so the tray notification engine owns the
+// matching semantics instead of leaking UI state into the sidecar config.
 type FilterConfig struct {
 	MonitorEverything bool     `yaml:"monitor_everything"`
 	Wallets           []string `yaml:"wallets,omitempty"`

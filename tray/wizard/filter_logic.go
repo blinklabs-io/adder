@@ -12,9 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build !windows
+package wizard
 
-package main
+import (
+	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/widget"
+)
 
-// acquireSingleInstance is a no-op on non-Windows platforms.
-func acquireSingleInstance() bool { return true }
+func newFilterLogicLabel(text string) *widget.Label {
+	label := widget.NewLabel(text)
+	label.Wrapping = fyne.TextWrapWord
+	return label
+}

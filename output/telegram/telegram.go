@@ -24,6 +24,7 @@ import (
 
 	"github.com/blinklabs-io/adder/event"
 	"github.com/blinklabs-io/adder/internal/cardanofmt"
+	"github.com/blinklabs-io/adder/internal/explorer"
 	"github.com/blinklabs-io/adder/internal/logging"
 	"github.com/blinklabs-io/adder/plugin"
 	"github.com/go-telegram/bot"
@@ -31,10 +32,6 @@ import (
 )
 
 const (
-	mainnetNetworkMagic uint32 = 764824073
-	previewNetworkMagic uint32 = 2
-	preprodNetworkMagic uint32 = 1
-
 	// Default retry configuration
 	defaultMaxRetries     = 3
 	defaultInitialBackoff = 1 * time.Second
@@ -310,7 +307,7 @@ func (t *TelegramOutput) processEvent(evt *event.Event) {
 
 // formatBlockMessage formats a block event for Telegram
 func formatBlockMessage(be event.BlockEvent, bc event.BlockContext, baseURL string, mode models.ParseMode) string {
-	blockURL := baseURL + "/blocks/" + be.BlockHash
+	blockURL := baseURL + "/block/" + be.BlockHash
 	return fmt.Sprintf(
 		"%s\n\n"+
 			"%s %s\n"+
@@ -350,7 +347,7 @@ func formatTransactionMessage(
 	baseURL string,
 	mode models.ParseMode,
 ) string {
-	txURL := baseURL + "/transactions/" + tc.TransactionHash
+	txURL := baseURL + "/tx/" + tc.TransactionHash
 	return fmt.Sprintf(
 		"%s\n\n"+
 			"%s %d\n"+
@@ -376,7 +373,7 @@ func formatGovernanceMessage(
 	baseURL string,
 	mode models.ParseMode,
 ) string {
-	txURL := baseURL + "/transactions/" + gc.TransactionHash
+	txURL := baseURL + "/tx/" + gc.TransactionHash
 	return fmt.Sprintf(
 		"%s\n\n"+
 			"%s %d\n"+
@@ -523,16 +520,7 @@ func formatLovelace(lovelace uint64) string {
 
 // getBaseURL returns the block explorer URL based on network magic
 func getBaseURL(networkMagic uint32) string {
-	switch networkMagic {
-	case mainnetNetworkMagic:
-		return "https://adastat.net"
-	case preprodNetworkMagic:
-		return "https://preprod.adastat.net"
-	case previewNetworkMagic:
-		return "https://preview.adastat.net"
-	default:
-		return "https://adastat.net"
-	}
+	return explorer.BaseURL(networkMagic)
 }
 
 // SendMessage sends a message to the configured Telegram chat

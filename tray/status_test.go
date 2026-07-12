@@ -156,6 +156,51 @@ func TestStatusTracker_ConcurrentAccess(t *testing.T) {
 	assert.Equal(t, StatusConnected, tracker.Status())
 }
 
+func TestStatusTracker_OrderedDelivery(t *testing.T) {
+	tracker := NewStatusTracker()
+
+	var mu sync.Mutex
+	var got []Status
+	const n = 5
+	done := make(chan struct{}, n+1)
+	tracker.OnChange(func(s Status) {
+		mu.Lock()
+		got = append(got, s)
+		mu.Unlock()
+		done <- struct{}{}
+	})
+
+	// A rapid burst of alternating transitions. With per-transition
+	// goroutines these could arrive out of order; the single ordered
+	// worker must deliver them exactly as sent.
+	sent := []Status{
+		StatusStarting,
+		StatusConnected,
+		StatusReconnecting,
+		StatusConnected,
+		StatusStopped,
+	}
+	for _, s := range sent {
+		tracker.Set(s)
+	}
+
+	// n from Set + 1 immediate from OnChange.
+	for i := 0; i < n+1; i++ {
+		select {
+		case <-done:
+		case <-time.After(2 * time.Second):
+			t.Fatal("timed out waiting for ordered delivery")
+		}
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	// First delivery is the synchronous OnChange call (StatusStopped),
+	// followed by the burst in exact send order.
+	want := append([]Status{StatusStopped}, sent...)
+	assert.Equal(t, want, got)
+}
+
 func TestStatus_String(t *testing.T) {
 	tests := []struct {
 		status Status

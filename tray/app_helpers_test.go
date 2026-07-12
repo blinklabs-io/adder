@@ -28,6 +28,7 @@ import (
 	"fyne.io/fyne/v2/test"
 	"github.com/blinklabs-io/adder/event"
 	"github.com/blinklabs-io/adder/internal/config"
+	"github.com/blinklabs-io/adder/tray/notifications"
 	"github.com/blinklabs-io/adder/tray/setup"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -95,7 +96,7 @@ func TestEmojiAndExplorerURLHelpers(t *testing.T) {
 			name: "mainnet block by default",
 			evt:  event.Event{Type: "input.block"},
 			hash: "abc",
-			want: "https://adastat.net/blocks/abc",
+			want: "https://cexplorer.io/block/abc",
 		},
 		{
 			name: "preprod transaction",
@@ -104,7 +105,7 @@ func TestEmojiAndExplorerURLHelpers(t *testing.T) {
 				Context: map[string]any{"networkMagic": float64(1)},
 			},
 			hash: "def",
-			want: "https://preprod.adastat.net/transactions/def",
+			want: "https://preprod.cexplorer.io/tx/def",
 		},
 		{
 			name: "preview block",
@@ -113,7 +114,7 @@ func TestEmojiAndExplorerURLHelpers(t *testing.T) {
 				Context: map[string]any{"networkMagic": float64(2)},
 			},
 			hash: "123",
-			want: "https://preview.adastat.net/blocks/123",
+			want: "https://preview.cexplorer.io/block/123",
 		},
 	}
 
@@ -122,32 +123,6 @@ func TestEmojiAndExplorerURLHelpers(t *testing.T) {
 			assert.Equal(t, tc.want, getExplorerURL(tc.evt, tc.hash))
 		})
 	}
-}
-
-func TestEventLinkHash(t *testing.T) {
-	// A transaction event carries its own hash in Context and the block
-	// hash in Payload; the link must use the transaction hash, not the
-	// block hash (which is shared by every tx in the block).
-	txEvt := event.Event{
-		Type:    "input.transaction",
-		Context: map[string]any{"transactionHash": "tx-hash"},
-		Payload: map[string]any{"blockHash": "block-hash"},
-	}
-	assert.Equal(t, "tx-hash", eventLinkHash(txEvt))
-
-	govEvt := event.Event{
-		Type:    "input.governance",
-		Context: map[string]any{"transactionHash": "gov-tx-hash"},
-	}
-	assert.Equal(t, "gov-tx-hash", eventLinkHash(govEvt))
-
-	blockEvt := event.Event{
-		Type:    "input.block",
-		Payload: map[string]any{"blockHash": "block-hash"},
-	}
-	assert.Equal(t, "block-hash", eventLinkHash(blockEvt))
-
-	assert.Empty(t, eventLinkHash(event.Event{Type: "input.transaction"}))
 }
 
 // TestDispatchNotificationUpdatesHistoryAndHonorsPreferences was
@@ -161,9 +136,9 @@ func TestEventLinkHash(t *testing.T) {
 //   - tray/notifications/rules_test.go      (per-template rule fan-out)
 //   - tray/notifications/render_test.go     (Cardano-aware template
 //                                            rendering)
-//   - TestAddRecentEventKeepsNewestTen below (recent-events history)
+//   - TestAddRecentAlertKeepsNewestTen below (recent alert history)
 
-func TestAddRecentEventKeepsNewestTen(t *testing.T) {
+func TestAddRecentAlertKeepsNewestTen(t *testing.T) {
 	test.NewApp()
 	trayApp := &App{
 		mRecent: fyne.NewMenuItem("Recent Events", nil),
@@ -171,10 +146,13 @@ func TestAddRecentEventKeepsNewestTen(t *testing.T) {
 	}
 
 	for i := 0; i < 12; i++ {
-		trayApp.addRecentEvent(event.Event{
-			Type:      "input.block",
-			Timestamp: time.Date(2026, 5, 28, 12, 0, i, 0, time.UTC),
-			Payload:   map[string]any{"blockHash": "hash"},
+		trayApp.addRecentAlert(notifications.Request{
+			Title: "Block Minted",
+			Event: event.Event{
+				Type:      "input.block",
+				Timestamp: time.Date(2026, 5, 28, 12, 0, i, 0, time.UTC),
+				Payload:   map[string]any{"blockHash": "hash"},
+			},
 		})
 	}
 
@@ -185,38 +163,145 @@ func TestAddRecentEventKeepsNewestTen(t *testing.T) {
 	}, time.Second, 10*time.Millisecond)
 	assert.Equal(t, 11, trayApp.recentEvents[0].Timestamp.Second())
 	assert.Equal(t, 2, trayApp.recentEvents[9].Timestamp.Second())
+	assert.Equal(t, "Block Minted", trayApp.recentEvents[0].Title)
+	assert.Contains(t, trayApp.mRecent.ChildMenu.Items[0].Label, "12:00:11")
 }
 
-func TestDropStaleRecentEvents(t *testing.T) {
+func TestRecentLabelAvoidsDoubleEmoji(t *testing.T) {
+	tests := []struct {
+		name      string
+		title     string
+		evtType   string
+		eventTime string
+		want      string
+	}{
+		{
+			// Title already carries the emoji (rules.go) — must not
+			// double up.
+			name:      "title with leading emoji",
+			title:     "🔄 Chain Rollback",
+			evtType:   "input.rollback",
+			eventTime: "16:56:06",
+			want:      "🔄 Chain Rollback (16:56:06)",
+		},
+		{
+			name:      "block title with emoji",
+			title:     "🧱 Block Minted",
+			evtType:   "input.block",
+			eventTime: "12:00:00",
+			want:      "🧱 Block Minted (12:00:00)",
+		},
+		{
+			// Connection alert: plain title, empty type → fallback.
+			name:      "connection alert no emoji",
+			title:     "Adder Connection",
+			evtType:   "",
+			eventTime: "12:00:00",
+			want:      "❓ Adder Connection (12:00:00)",
+		},
+		{
+			// Plain event title gets the type emoji prepended.
+			name:      "plain title gets type emoji",
+			title:     "Block Minted",
+			evtType:   "input.block",
+			eventTime: "12:00:00",
+			want:      "🧱 Block Minted (12:00:00)",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want,
+				recentLabel(tc.title, tc.evtType, tc.eventTime))
+		})
+	}
+}
+
+func TestTitleHasLeadingEmoji(t *testing.T) {
+	assert.True(t, titleHasLeadingEmoji("🔄 Chain Rollback"))
+	assert.True(t, titleHasLeadingEmoji("🧱 Block Minted"))
+	assert.False(t, titleHasLeadingEmoji("Adder Connection"))
+	assert.False(t, titleHasLeadingEmoji("123 numeric"))
+	assert.False(t, titleHasLeadingEmoji(""))
+	assert.False(t, titleHasLeadingEmoji(" leading space"))
+}
+
+func TestAddRecentAlertDedupsReplayedEvents(t *testing.T) {
 	test.NewApp()
 	trayApp := &App{
 		mRecent: fyne.NewMenuItem("Recent Events", nil),
 		mMenu:   fyne.NewMenu("Adder"),
 	}
 
-	mainnet := event.Event{
-		Type:    "input.transaction",
-		Context: map[string]any{"networkMagic": float64(764824073)},
+	evt := event.Event{
+		Type:      "input.rollback",
+		Timestamp: time.Date(2026, 7, 12, 16, 56, 6, 0, time.UTC),
+		Payload:   map[string]any{"blockHash": "hash"},
 	}
-	preview := event.Event{
-		Type:    "input.transaction",
-		Context: map[string]any{"networkMagic": float64(2)},
+	// Same event replayed by the ring buffer on 3 reconnects.
+	for i := 0; i < 3; i++ {
+		trayApp.addRecentAlert(notifications.Request{
+			Title: "🔄 Chain Rollback",
+			Event: evt,
+		})
 	}
-	trayApp.recentEvents = []event.Event{preview, mainnet}
-
-	// Switching to preview drops the mainnet event, keeps the preview one.
-	trayApp.dropStaleRecentEvents("preview")
 	require.Eventually(t, func() bool {
 		return len(trayApp.recentEvents) == 1
 	}, time.Second, 10*time.Millisecond)
-	m, ok := eventNetworkMagic(trayApp.recentEvents[0])
-	require.True(t, ok)
-	assert.Equal(t, uint64(2), m)
 
-	// A custom/unknown network leaves history untouched.
-	trayApp.recentEvents = []event.Event{preview, mainnet}
-	trayApp.dropStaleRecentEvents("custom")
-	assert.Len(t, trayApp.recentEvents, 2)
+	// A distinct event (different timestamp) is still added.
+	trayApp.addRecentAlert(notifications.Request{
+		Title: "🔄 Chain Rollback",
+		Event: event.Event{
+			Type:      "input.rollback",
+			Timestamp: time.Date(2026, 7, 12, 16, 57, 0, 0, time.UTC),
+			Payload:   map[string]any{"blockHash": "hash"},
+		},
+	})
+	require.Eventually(t, func() bool {
+		return len(trayApp.recentEvents) == 2
+	}, time.Second, 10*time.Millisecond)
+}
+
+func TestAddRecentAlertConnectionEventsNotDeduped(t *testing.T) {
+	test.NewApp()
+	trayApp := &App{
+		mRecent: fyne.NewMenuItem("Recent Events", nil),
+		mMenu:   fyne.NewMenu("Adder"),
+	}
+	// Connection alerts have empty Type — intentionally repeatable.
+	for i := 0; i < 3; i++ {
+		trayApp.addRecentAlert(notifications.Request{
+			Title: "Adder Connection",
+			Event: event.Event{},
+		})
+	}
+	require.Eventually(t, func() bool {
+		return len(trayApp.recentEvents) == 3
+	}, time.Second, 10*time.Millisecond)
+}
+
+func TestSuppressConnAlert(t *testing.T) {
+	// Not applying: nothing suppressed.
+	assert.False(t, suppressConnAlert(false, StatusStopped))
+	assert.False(t, suppressConnAlert(false, StatusConnected))
+	// Applying: transient stop/connect suppressed, errors never.
+	assert.True(t, suppressConnAlert(true, StatusStopped))
+	assert.True(t, suppressConnAlert(true, StatusConnected))
+	assert.False(t, suppressConnAlert(true, StatusError))
+}
+
+func TestConsumeApplyingStatus(t *testing.T) {
+	var applying atomic.Bool
+	applying.Store(true)
+
+	assert.True(t, consumeApplyingStatus(&applying, StatusStopped))
+	assert.True(t, applying.Load())
+	assert.True(t, consumeApplyingStatus(&applying, StatusConnected))
+	assert.False(t, applying.Load())
+
+	applying.Store(true)
+	assert.False(t, consumeApplyingStatus(&applying, StatusError))
+	assert.False(t, applying.Load())
 }
 
 func TestSetupTrayBuildsDesktopMenu(t *testing.T) {
@@ -247,9 +332,13 @@ func TestSetupTrayBuildsDesktopMenu(t *testing.T) {
 				setup.NotifyPrefConnectionIssues: true,
 			},
 		},
-		fyneApp:  deskApp,
-		conn:     NewConnectionManager(),
-		runner:   &setup.SetupRunner{Store: &reconfigureStore{engine: reconfigurePlan.ToEngineConfig(*config.GetConfig())}},
+		fyneApp: deskApp,
+		conn:    NewConnectionManager(),
+		runner: &setup.SetupRunner{
+			Store: &reconfigureStore{
+				engine: reconfigurePlan.ToEngineConfig(*config.GetConfig()),
+			},
+		},
 		quitChan: make(chan struct{}),
 	}
 	t.Cleanup(func() {
@@ -264,7 +353,7 @@ func TestSetupTrayBuildsDesktopMenu(t *testing.T) {
 	assert.NotNil(t, trayApp.mRecent)
 	assert.NotNil(t, trayApp.mMenu)
 
-	trayApp.recentEvents = []event.Event{{Type: "input.block"}}
+	trayApp.recentEvents = []recentAlert{{Title: "Block Minted"}}
 	clearItem := deskApp.menu.Items[3]
 	require.Equal(t, "Clear History", clearItem.Label)
 	clearItem.Action()
@@ -297,6 +386,48 @@ func TestSetupTrayBuildsDesktopMenu(t *testing.T) {
 	require.Eventually(t, func() bool {
 		return deskApp.getIcon() != nil
 	}, time.Second, 10*time.Millisecond)
+}
+
+func TestSetupTrayEnsuresConfiguredServiceOnLaunch(t *testing.T) {
+	configDir := t.TempDir()
+	t.Setenv("ADDER_TRAY_CONFIG_DIR", configDir)
+	require.NoError(t, os.WriteFile(
+		ConfigPath(),
+		[]byte("api_address: 127.0.0.1\napi_port: 8080\n"),
+		0o600,
+	))
+
+	baseApp := test.NewApp()
+	deskApp := &desktopTestApp{App: baseApp}
+	service := &launchEnsureService{}
+	trayApp := &App{
+		config: TrayConfig{
+			APIAddress:  "127.0.0.1",
+			APIPort:     8080,
+			AdderConfig: filepath.Join(configDir, "config.yaml"),
+			NotifyPrefs: make(map[string]bool),
+		},
+		fyneApp: deskApp,
+		conn:    NewConnectionManager(),
+		runner: &setup.SetupRunner{
+			Service: service,
+			Finder:  &wizardFinishFinder{path: "/opt/Adder/adder"},
+		},
+		quitChan: make(chan struct{}),
+	}
+	t.Cleanup(func() {
+		trayApp.conn.Disconnect()
+		trayApp.Shutdown()
+	})
+
+	trayApp.setupTray()
+
+	require.Eventually(t, func() bool {
+		return service.registered && service.restarted
+	}, time.Second, 10*time.Millisecond)
+	assert.Equal(t, "/opt/Adder/adder", service.bin)
+	assert.Equal(t, trayApp.Config().AdderConfig, service.cfg)
+	assert.Equal(t, []string{"register", "restart"}, service.calls)
 }
 
 func TestShutdownClosesQuitChannel(t *testing.T) {
@@ -369,6 +500,32 @@ func TestShutdownWaitsForProducer(t *testing.T) {
 		"Shutdown must wait for producerDone before returning")
 }
 
+func TestShutdownDisconnectsConnection(t *testing.T) {
+	app := test.NewApp()
+	manager := NewConnectionManager()
+	client := NewEventClient("127.0.0.1", 1,
+		WithEventStatusTracker(manager.status))
+	require.NoError(t, client.Start())
+	manager.mu.Lock()
+	manager.eventClient = client
+	manager.connected = true
+	manager.mu.Unlock()
+	trayApp := &App{
+		fyneApp:  app,
+		conn:     manager,
+		quitChan: make(chan struct{}),
+	}
+
+	trayApp.Shutdown()
+
+	select {
+	case <-client.stopCh:
+	default:
+		t.Fatal("connection worker was not stopped by Shutdown")
+	}
+	assert.False(t, manager.connected)
+}
+
 func TestOpenFolderIgnoresEmptyPath(t *testing.T) {
 	openFolder("")
 }
@@ -432,7 +589,10 @@ func (s *wizardFinishStore) LoadEngine(string) (config.Config, error) {
 	return s.engine, nil
 }
 
-func (s *wizardFinishStore) SaveEngineAtomic(_ string, cfg config.Config) error {
+func (s *wizardFinishStore) SaveEngineAtomic(
+	_ string,
+	cfg config.Config,
+) error {
 	s.engine = cfg
 	return nil
 }
@@ -448,7 +608,17 @@ func (s *wizardFinishStore) SaveTrayAtomic(cfg setup.TrayConfig) error {
 
 type wizardFinishService struct{}
 
-func (s *wizardFinishService) EnsureRunning() error { return nil }
+func (s *wizardFinishService) EnsureRegistered(
+	string,
+	string,
+) error {
+	return nil
+}
+
+func (s *wizardFinishService) EnsureRunning() error {
+	return nil
+}
+
 func (s *wizardFinishService) RestartIfConfigChanged(string, string) error {
 	return nil
 }
@@ -471,6 +641,37 @@ type wizardFinishFinder struct {
 
 func (f *wizardFinishFinder) Find() (string, error) {
 	return f.path, nil
+}
+
+type launchEnsureService struct {
+	registered bool
+	restarted  bool
+	bin        string
+	cfg        string
+	calls      []string
+}
+
+func (s *launchEnsureService) EnsureRegistered(bin, cfg string) error {
+	s.registered = true
+	s.bin = bin
+	s.cfg = cfg
+	s.calls = append(s.calls, "register")
+	return nil
+}
+
+func (s *launchEnsureService) EnsureRunning() error { return nil }
+
+func (s *launchEnsureService) RestartIfConfigChanged(bin, cfg string) error {
+	s.restarted = true
+	s.bin = bin
+	s.cfg = cfg
+	s.calls = append(s.calls, "restart")
+	return nil
+}
+
+func (s *launchEnsureService) Stop() error { return nil }
+func (s *launchEnsureService) Status() (setup.ServiceStatus, error) {
+	return setup.ServiceRunning, nil
 }
 
 func installFakeTrayCommands(t *testing.T) {

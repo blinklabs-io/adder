@@ -158,9 +158,8 @@ func TestRenderTemplates_RealPhrasings(t *testing.T) {
 			want: "DRep drep1abc…wxyz voted Yes on proposal #42.",
 		},
 		{
-			// Regression (#9): an event carrying several votes must render
-			// the FOLLOWED DRep's vote, not whichever is first. The
-			// followed DRep is second here; voteFor(.params) selects it.
+			// Regression: an event carrying several votes must render
+			// the FOLLOWED DRep's vote, not whichever is first.
 			name:   "drep vote picks followed drep among many",
 			tmpl:   tmplGovVote,
 			params: []string{"drep1followedAAAAwxyz"},

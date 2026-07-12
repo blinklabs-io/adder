@@ -452,6 +452,7 @@ func TestNotificationsStepLabelsAndApply(t *testing.T) {
 			filter: setup.FilterConfig{Pools: []string{"p"}},
 			want: []string{
 				setup.NotifyPrefBlocksMinted,
+				setup.NotifyPrefPoolParams,
 			},
 		},
 		{
@@ -471,6 +472,7 @@ func TestNotificationsStepLabelsAndApply(t *testing.T) {
 				setup.NotifyPrefVotesCast,
 				setup.NotifyPrefRegChanges,
 				setup.NotifyPrefBlocksMinted,
+				setup.NotifyPrefPoolParams,
 			},
 		},
 		{name: "empty plan", filter: setup.FilterConfig{}},
@@ -530,6 +532,7 @@ func TestNotificationsStepApplyOverwritesStalePrefs(t *testing.T) {
 			setup.NotifyPrefTokenTransfers: true,
 			// Stale, from a prior "Monitor Pool" run.
 			setup.NotifyPrefBlocksMinted: true,
+			setup.NotifyPrefPoolParams:   true,
 			// Still relevant.
 			setup.NotifyPrefConnectionIssues: true,
 		},

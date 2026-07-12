@@ -15,6 +15,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -220,6 +221,15 @@ func run(cmd *cobra.Command) error {
 		logger.Error(fmt.Sprintf("failed to start API: %s", err))
 		return fmt.Errorf("failed to start API: %w", err)
 	}
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(
+			context.Background(), 10*time.Second,
+		)
+		defer cancel()
+		if err := apiInstance.Shutdown(shutdownCtx); err != nil {
+			logger.Error(fmt.Sprintf("failed to stop API: %s", err))
+		}
+	}()
 
 	// Start pipeline and wait for error
 	if err := pipe.Start(); err != nil {
@@ -249,6 +259,12 @@ func run(cmd *cobra.Command) error {
 	if err := pipe.Stop(); err != nil {
 		logger.Error(fmt.Sprintf("failed to stop pipeline: %s", err))
 		return fmt.Errorf("failed to stop pipeline: %w", err)
+	}
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := apiInstance.Shutdown(shutdownCtx); err != nil {
+		logger.Error(fmt.Sprintf("failed to stop API: %s", err))
+		return fmt.Errorf("failed to stop API: %w", err)
 	}
 
 	logger.Info("Adder stopped gracefully")

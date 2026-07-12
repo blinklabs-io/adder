@@ -12,9 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build !windows
+package explorer
 
-package main
+import "testing"
 
-// acquireSingleInstance is a no-op on non-Windows platforms.
-func acquireSingleInstance() bool { return true }
+func TestBaseURL(t *testing.T) {
+	cases := map[uint32]string{
+		764824073: "https://cexplorer.io",         // mainnet
+		1:         "https://preprod.cexplorer.io", // preprod
+		2:         "https://preview.cexplorer.io", // preview
+		0:         "https://cexplorer.io",         // unset → mainnet
+		999:       "https://cexplorer.io",         // unknown → mainnet
+	}
+	for magic, want := range cases {
+		if got := BaseURL(magic); got != want {
+			t.Errorf("BaseURL(%d) = %q, want %q", magic, got, want)
+		}
+	}
+}

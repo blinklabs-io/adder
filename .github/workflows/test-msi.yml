@@ -1,6 +1,9 @@
 name: test-msi
 
 on:
+  push:
+    branches:
+      - feat/windows-msi-689
   workflow_dispatch:
     inputs:
       arch:
@@ -20,12 +23,13 @@ env:
 
 jobs:
   build-msi:
-    # Pick the native runner for the chosen arch: amd64 → windows-latest,
-    # arm64 → windows-11-arm.
-    runs-on: ${{ inputs.arch == 'arm64' && 'windows-11-arm' || 'windows-latest' }}
+    # Push builds default to amd64; manual runs can choose amd64 or arm64.
+    runs-on: ${{ github.event_name == 'workflow_dispatch' && inputs.arch == 'arm64' && 'windows-11-arm' || 'windows-latest' }}
     permissions:
       contents: read
       id-token: write
+    env:
+      WINDOWS_ARCH: ${{ github.event_name == 'workflow_dispatch' && inputs.arch || 'amd64' }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -36,7 +40,7 @@ jobs:
           go-version: 1.26.x
 
       - name: Set up MSYS2 MinGW64 (amd64 CGO for Fyne)
-        if: inputs.arch == 'amd64'
+        if: env.WINDOWS_ARCH == 'amd64'
         id: msys2-amd64
         uses: msys2/setup-msys2@v2
         with:
@@ -46,7 +50,7 @@ jobs:
             mingw-w64-x86_64-gcc
 
       - name: Set up MSYS2 CLANGARM64 (arm64 CGO for Fyne)
-        if: inputs.arch == 'arm64'
+        if: env.WINDOWS_ARCH == 'arm64'
         id: msys2-arm64
         uses: msys2/setup-msys2@v2
         with:
@@ -59,9 +63,9 @@ jobs:
         shell: pwsh
         run: |
           $env:GOOS = 'windows'
-          $env:GOARCH = '${{ inputs.arch }}'
+          $env:GOARCH = '${{ env.WINDOWS_ARCH }}'
 
-          if ('${{ inputs.arch }}' -eq 'amd64') {
+          if ('${{ env.WINDOWS_ARCH }}' -eq 'amd64') {
             $msys2Loc = '${{ steps.msys2-amd64.outputs.msys2-location }}'
             $env:CC  = "$msys2Loc\mingw64\bin\gcc.exe"
             $env:CXX = "$msys2Loc\mingw64\bin\g++.exe"
@@ -178,9 +182,6 @@ jobs:
           dotnet tool install --global wix --version 4.0.5
           "$env:USERPROFILE\.dotnet\tools" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
           & "$env:USERPROFILE\.dotnet\tools\wix.exe" --version
-          # Util extension provides util:CloseApplication (stop the running app
-          # before upgrade). Version-matched to the wix toolset above.
-          & "$env:USERPROFILE\.dotnet\tools\wix.exe" extension add -g WixToolset.Util.wixext/4.0.5
 
       - name: Build MSI
         shell: pwsh
@@ -191,7 +192,7 @@ jobs:
           # MSI requires <=3 numeric dot-separated fields, so we derive a fresh
           # increasing version from the GitHub run number for ordered installs.
           VERSION: 0.0.${{ github.run_number }}
-          ARCH: ${{ inputs.arch }}
+          ARCH: ${{ env.WINDOWS_ARCH }}
           # Signing env (passed through to build-msi.ps1). When the auth step
           # was skipped these are all empty and the script no-ops signing
           # with a warning, producing an UNSIGNED .msi.
@@ -220,7 +221,7 @@ jobs:
         shell: pwsh
         run: |
           $sdkRoot = "${env:ProgramFiles(x86)}\Windows Kits\10\bin"
-          $archDir = if ('${{ inputs.arch }}' -eq 'arm64') { 'arm64' } else { 'x64' }
+          $archDir = if ('${{ env.WINDOWS_ARCH }}' -eq 'arm64') { 'arm64' } else { 'x64' }
           $signtool = Get-ChildItem -Path $sdkRoot -Recurse -Filter signtool.exe `
             | Where-Object { $_.FullName -match "\\$archDir\\signtool\.exe$" } `
             | Sort-Object FullName -Descending | Select-Object -First 1
@@ -230,7 +231,7 @@ jobs:
           }
           if (-not $signtool) { Write-Error "signtool.exe not found under $sdkRoot"; exit 1 }
 
-          $msi = "dist\${{ env.APPLICATION_NAME }}-0.0.${{ github.run_number }}-windows-${{ inputs.arch }}.msi"
+          $msi = "dist\${{ env.APPLICATION_NAME }}-0.0.${{ github.run_number }}-windows-${{ env.WINDOWS_ARCH }}.msi"
           & $signtool.FullName verify /pa /v $msi
           if ($LASTEXITCODE -ne 0) { Write-Error "signtool verify failed for $msi"; exit 1 }
           Write-Host "MSI signature verified: $msi"
@@ -245,7 +246,7 @@ jobs:
       - name: Upload MSI artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: adder-test-windows-${{ inputs.arch }}-run${{ github.run_number }}
-          path: dist\${{ env.APPLICATION_NAME }}-0.0.${{ github.run_number }}-windows-${{ inputs.arch }}.msi
+          name: adder-test-windows-${{ env.WINDOWS_ARCH }}-run${{ github.run_number }}
+          path: dist\${{ env.APPLICATION_NAME }}-0.0.${{ github.run_number }}-windows-${{ env.WINDOWS_ARCH }}.msi
           if-no-files-found: error
           retention-days: 1

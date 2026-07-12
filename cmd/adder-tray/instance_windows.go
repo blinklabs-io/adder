@@ -23,14 +23,11 @@ import (
 )
 
 // instanceMutexName is per-session (Local\) so one tray runs per logon session.
-// On Windows the tray autostarts from the HKCU Run key AND can be launched
-// manually from the Start Menu; without this guard both would run, and since
-// startService restarts the engine, the two trays would fight over it.
 const instanceMutexName = `Local\io.blinklabs.adder.tray`
 
 // acquireSingleInstance returns true if this is the only tray instance in the
 // session. It creates a named mutex held for the process lifetime; a second
-// instance sees ERROR_ALREADY_EXISTS. On any unexpected error it returns true
+// instance sees ERROR_ALREADY_EXISTS. On unexpected errors it returns true
 // (fail open) rather than blocking startup.
 func acquireSingleInstance() bool {
 	name, err := windows.UTF16PtrFromString(instanceMutexName)

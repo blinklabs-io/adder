@@ -36,10 +36,9 @@ import (
 func main() {
 	// On Windows the MSI bundles Mesa's software OpenGL (opengl32.dll +
 	// libgallium_wgl.dll) next to the exe so the Fyne GUI renders on VMs /
-	// headless / RDP hosts that lack a hardware OpenGL driver (e.g.
-	// VirtualBox). Pin the Gallium driver to llvmpipe so Mesa does not try the
-	// D3D12 (dozen) path, which needs dxil.dll we do not ship. Respect an
-	// explicit user override.
+	// headless / RDP hosts that lack a hardware OpenGL driver. Pin the Gallium
+	// driver to llvmpipe so Mesa does not try the D3D12 path, which needs
+	// dxil.dll we do not ship. Respect an explicit user override.
 	if runtime.GOOS == "windows" {
 		if _, ok := os.LookupEnv("GALLIUM_DRIVER"); !ok {
 			_ = os.Setenv("GALLIUM_DRIVER", "llvmpipe")
@@ -55,13 +54,6 @@ func main() {
 	// The tray is linked -H=windowsgui on Windows, so it has no console and
 	// os.Stderr is discarded. Tee logs to a file so errors and crashes are
 	// diagnosable; keep stderr for dev/console builds where it is visible.
-	//
-	// The log FILE is listed first, and deliberately so: io.MultiWriter stops
-	// at the first writer that errors, and on Windows GUI os.Stderr.Write
-	// fails (invalid handle). If stderr came first, the file — the whole point
-	// on Windows — would never be written. File-first guarantees the file is
-	// always written; a subsequent stderr error is harmless (slog discards
-	// handler write errors).
 	logOut := io.Writer(os.Stderr)
 	if f := openTrayLogFile(); f != nil {
 		logOut = io.MultiWriter(f, os.Stderr)
@@ -85,9 +77,8 @@ func main() {
 		}
 	}()
 
-	// Refuse to run a second tray in the same session (Windows autostarts the
-	// tray from the Run key and it can also be launched from the Start Menu).
-	// A duplicate would fight the first over the engine lifecycle.
+	// Refuse to run a second tray in the same session. A duplicate would fight
+	// the first over the engine lifecycle.
 	if !acquireSingleInstance() {
 		slog.Info("another adder-tray instance is already running; exiting")
 		return

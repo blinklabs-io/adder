@@ -43,6 +43,7 @@ func Dispatch(
 	n Notifier,
 	currentEpoch func() int64,
 	recordDrop func(),
+	onDelivered ...func(Request),
 ) {
 	for req := range reqs {
 		if currentEpoch != nil && req.Epoch < currentEpoch() {
@@ -65,5 +66,10 @@ func Dispatch(
 			"batched", req.Batched,
 			"count", req.Count)
 		n.SendNotification(fyne.NewNotification(title, req.Body))
+		for _, fn := range onDelivered {
+			if fn != nil {
+				fn(req)
+			}
+		}
 	}
 }

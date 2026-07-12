@@ -28,16 +28,13 @@ import (
 	"time"
 
 	"github.com/blinklabs-io/adder/event"
+	"github.com/blinklabs-io/adder/internal/explorer"
 	"github.com/blinklabs-io/adder/internal/logging"
 	"github.com/blinklabs-io/adder/internal/version"
 	"github.com/blinklabs-io/adder/plugin"
 )
 
 const (
-	mainnetNetworkMagic uint32 = 764824073
-	previewNetworkMagic uint32 = 2
-	preprodNetworkMagic uint32 = 1
-
 	// Default retry configuration
 	defaultMaxRetries     = 3
 	defaultInitialBackoff = 1 * time.Second
@@ -172,7 +169,7 @@ func formatWebhook(e *event.Event, format string) []byte {
 				Value: be.IssuerVkey,
 			})
 			baseURL := getBaseURL(bc.NetworkMagic)
-			dme.URL = fmt.Sprintf("%s/blocks/%s", baseURL, be.BlockHash)
+			dme.URL = fmt.Sprintf("%s/block/%s", baseURL, be.BlockHash)
 		case "input.rollback":
 			be := e.Payload.(event.RollbackEvent)
 			dme.Title = "Cardano Rollback"
@@ -213,7 +210,7 @@ func formatWebhook(e *event.Event, format string) []byte {
 				Value: tc.TransactionHash,
 			})
 			baseURL := getBaseURL(tc.NetworkMagic)
-			dme.URL = fmt.Sprintf("%s/transactions/%s", baseURL, tc.TransactionHash)
+			dme.URL = fmt.Sprintf("%s/tx/%s", baseURL, tc.TransactionHash)
 		case "input.governance":
 			ge := e.Payload.(event.GovernanceEvent)
 			gc := e.Context.(event.GovernanceContext)
@@ -239,7 +236,7 @@ func formatWebhook(e *event.Event, format string) []byte {
 				Value: gc.TransactionHash,
 			})
 			baseURL := getBaseURL(gc.NetworkMagic)
-			dme.URL = fmt.Sprintf("%s/transactions/%s", baseURL, gc.TransactionHash)
+			dme.URL = fmt.Sprintf("%s/tx/%s", baseURL, gc.TransactionHash)
 		default:
 			dwe.Content = fmt.Sprintf("%v", e.Payload)
 		}
@@ -277,16 +274,7 @@ type DiscordMessageEmbedField struct {
 }
 
 func getBaseURL(networkMagic uint32) string {
-	switch networkMagic {
-	case mainnetNetworkMagic:
-		return "https://adastat.net"
-	case preprodNetworkMagic:
-		return "https://preprod.adastat.net"
-	case previewNetworkMagic:
-		return "https://preview.adastat.net"
-	default:
-		return "https://adastat.net" // default to mainnet if unknown network
-	}
+	return explorer.BaseURL(networkMagic)
 }
 
 func (w *WebhookOutput) SendWebhook(e *event.Event) error {

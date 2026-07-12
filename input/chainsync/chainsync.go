@@ -304,14 +304,7 @@ func (c *ChainSync) setupConnection() error {
 		return err
 	}
 	if c.logger != nil {
-		network := c.network
-		if network == "" {
-			network = "custom"
-		}
-		c.logger.Info(fmt.Sprintf(
-			"connected to node at %s (network=%s, magic=%d)",
-			c.dialAddress, network, c.networkMagic,
-		))
+		c.logger.Info("connected to node at " + c.dialAddress)
 	}
 	// Start async error handler
 	c.wg.Add(1)

@@ -224,11 +224,12 @@ func valueToString(v any) string {
 // tray/wizard/step4_notifications.go) and the existing inline dispatch
 // logic in tray/app.go, so this engine can replace that inline path.
 //
-// The wizard lets the user populate the three per-target lists
-// (Wallets, DReps, Pools) independently — and this function fans out a
-// rule per entry in each list, giving natural OR semantics across the
-// kinds. When MonitorEverything is on the per-target lists are ignored
-// and a single coarse rule per event type is emitted instead.
+// The wizard lets the user populate per-target lists independently.
+// Values inside a list OR together; compatible non-empty lists on the
+// same event family AND together (for example wallet + asset on a tx).
+// Event families that cannot carry the same fields keep their own
+// event-shaped matching. When MonitorEverything is on the per-target
+// lists are ignored and a single coarse rule per event type is emitted.
 //
 // Assumption (documented): several preferences are finer-grained than
 // the event types adder emits. Incoming/Outgoing/Token-transfer all
@@ -248,15 +249,33 @@ func RulesFromPlan(plan setup.SetupPlan) []Rule {
 		rules = append(rules, everythingRules(prefs)...)
 	} else {
 		rules = append(rules,
-			walletRules(prefs, plan.Filter.Wallets)...)
+			withTargetFilter(
+				walletRules(prefs, plan.Filter.Wallets),
+				transactionTargetFilterMatcher(plan.Filter, true),
+			)...)
 		rules = append(rules,
-			drepRules(prefs, plan.Filter.DReps)...)
+			withTargetFilter(
+				drepRules(prefs, plan.Filter.DReps),
+				// DRep rules own their subtype-specific matching:
+				// proposals are target-independent, while votes and
+				// registrations match the selected DRep IDs.
+				nil,
+			)...)
 		rules = append(rules,
-			poolRules(prefs, plan.Filter.Pools)...)
+			withTargetFilter(
+				poolRules(prefs, plan.Filter.Pools),
+				poolTargetFilterMatcher(plan.Filter),
+			)...)
 		rules = append(rules,
-			assetRules(prefs, plan.Filter.Assets)...)
+			withTargetFilter(
+				assetRules(prefs, plan.Filter.Assets),
+				transactionTargetFilterMatcher(plan.Filter, false),
+			)...)
 		rules = append(rules,
-			policyRules(prefs, plan.Filter.Policies)...)
+			withTargetFilter(
+				policyRules(prefs, plan.Filter.Policies),
+				transactionTargetFilterMatcher(plan.Filter, false),
+			)...)
 	}
 
 	// Rollback fires for fork resolutions regardless of monitored
@@ -281,6 +300,76 @@ func RulesFromPlan(plan setup.SetupPlan) []Rule {
 	})
 
 	return rules
+}
+
+func transactionTargetFilterMatcher(
+	f setup.FilterConfig,
+	requireWalletMatch bool,
+) func(event.Event) bool {
+	var matchers []func(event.Event) bool
+	paymentAddrs := make([]string, 0, len(f.Wallets))
+	for _, wallet := range f.Wallets {
+		if !strings.HasPrefix(strings.ToLower(wallet), "stake") {
+			paymentAddrs = append(paymentAddrs, wallet)
+		}
+	}
+	if len(paymentAddrs) > 0 {
+		addrs := stringSet(paymentAddrs)
+		matchers = append(matchers, func(evt event.Event) bool {
+			return matchAnyOutputAddress(addrs)(evt) ||
+				matchAnyResolvedInputAddress(addrs)(evt)
+		})
+	} else if requireWalletMatch && len(f.Wallets) > 0 {
+		matchers = append(matchers, func(event.Event) bool { return false })
+	}
+	if len(f.Assets) > 0 {
+		matchers = append(matchers, matchAnyAsset(f.Assets))
+	}
+	if len(f.Policies) > 0 {
+		matchers = append(matchers, matchAnyPolicy(f.Policies))
+	}
+	if len(matchers) == 0 {
+		return nil
+	}
+	return func(evt event.Event) bool {
+		for _, match := range matchers {
+			if !match(evt) {
+				return false
+			}
+		}
+		return true
+	}
+}
+
+func poolTargetFilterMatcher(f setup.FilterConfig) func(event.Event) bool {
+	if len(f.Pools) > 0 {
+		return matchBlockIssuer(f.Pools)
+	}
+	return nil
+}
+
+func withTargetFilter(rules []Rule, filter func(event.Event) bool) []Rule {
+	if filter == nil {
+		return rules
+	}
+	for i := range rules {
+		rule := rules[i]
+		rules[i].CustomMatch = func(evt event.Event) bool {
+			if !rulePredicateMatches(rule, evt) {
+				return false
+			}
+			return filter(evt)
+		}
+		rules[i].MatchExpr = ""
+	}
+	return rules
+}
+
+func rulePredicateMatches(r Rule, evt event.Event) bool {
+	if r.CustomMatch != nil {
+		return r.CustomMatch(evt)
+	}
+	return evalMatchExpr(r.MatchExpr, evt)
 }
 
 // coarseRule describes one of the broad event-family rules emitted in
@@ -587,6 +676,18 @@ func lowerSet(vals []string) map[string]struct{} {
 		set[strings.ToLower(v)] = struct{}{}
 	}
 	return set
+}
+
+// stringSet returns a set of the input strings matched exactly. Unlike
+// lowerSet it does not fold case: wallet/asset/policy identifiers are compared
+// verbatim, whereas pool/DRep IDs (lowerSet) may be given in hex or bech32 and
+// are matched case-insensitively.
+func stringSet(values []string) map[string]struct{} {
+	out := make(map[string]struct{}, len(values))
+	for _, v := range values {
+		out[v] = struct{}{}
+	}
+	return out
 }
 
 // matchBlockIssuer fires when a block's issuer is one of the followed

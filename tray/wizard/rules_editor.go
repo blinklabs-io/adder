@@ -135,6 +135,12 @@ func NewRulesEditor(
 			fyne.TextAlignLeading,
 			fyne.TextStyle{Bold: true},
 		),
+		newFilterLogicLabel(
+			"Matching logic: OR within each target section; compatible "+
+				"target sections narrow matching alerts together. "+
+				"Notification Preferences choose which matching alert "+
+				"types are shown.",
+		),
 		e.everythingCheck,
 		e.targetsBox,
 		widget.NewSeparator(),

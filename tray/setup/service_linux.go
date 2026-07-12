@@ -140,3 +140,8 @@ func stopService() error {
 	}
 	return nil
 }
+
+func existingUnit() []byte {
+	data, _ := os.ReadFile(serviceUnitPath())
+	return data
+}

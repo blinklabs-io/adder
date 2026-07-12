@@ -58,13 +58,11 @@ to `adder-tray.exe`:
 
 ## What the installer does NOT do
 
-- It does **not** register a Scheduled Task or any autostart. Autostart is
-  owned by the `adder-tray` first-run wizard (`tray/setup/service_windows.go`),
-  which on Windows writes a per-user `HKCU\...\Run` value that launches the
-  **tray** at logon (GUI subsystem → silent). The tray in turn launches the
-  **engine** (`adder.exe`) as a detached, windowless child and manages its
-  lifecycle. The engine is never put in the Run key directly, because Explorer
-  would open a visible console window for it. No elevation is required; this
+- It does **not** register any autostart. Autostart is owned by the
+  `adder-tray` first-run wizard (`tray/setup/service_windows.go`), which writes
+  a per-user `HKCU\...\Run` value that launches the **tray** at logon (GUI
+  subsystem → silent, no elevation). The tray in turn launches the **engine**
+  (`adder.exe`) as a detached, windowless child and manages its lifecycle. This
   mirrors the macOS installer's "no LaunchAgent" stance.
 
 ## WiX version
