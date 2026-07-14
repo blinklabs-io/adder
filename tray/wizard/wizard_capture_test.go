@@ -23,6 +23,7 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/test"
+	"github.com/blinklabs-io/adder/tray/setup"
 	"github.com/stretchr/testify/require"
 )
 
@@ -77,4 +78,40 @@ func TestCaptureSteps(t *testing.T) {
 		win.Close()
 		t.Logf("wrote %s (%s)", path, step.Title())
 	}
+
+	captureEditor := func(name, title string, plan setup.SetupPlan) {
+		editor := NewRulesEditor(plan, nil)
+		editor.window.Resize(fyne.NewSize(surfaceWidth, surfaceHeight))
+		editor.window.Content().Refresh()
+		path := fmt.Sprintf("%s/%s", dir, name)
+		f, err := os.Create(path)
+		require.NoError(t, err)
+		require.NoError(t, png.Encode(f, editor.window.Canvas().Capture()))
+		require.NoError(t, f.Close())
+		editor.Close()
+		t.Logf("wrote %s (%s)", path, title)
+	}
+
+	captureEditor("rules_editor_standard.png", "Standard notification rules",
+		setup.SetupPlan{
+			Filter: setup.FilterConfig{
+				DRepMatch:   setup.AdvancedMatchAll,
+				PoolMatch:   setup.AdvancedMatchAny,
+				AssetMatch:  setup.AdvancedMatchAll,
+				PolicyMatch: setup.AdvancedMatchAll,
+				Wallets: []string{
+					"addr1q9hlrf6lmtgu7mqupwlysw7qcvexmjkmwfynqlfh33dz87xy3y67g" +
+						"60shkajwfsewt2tjs85a3xkpkmcafpwwzpevlcsmwzj82",
+					"stake1u9ylzsgvtepmc7g7ecm4sskn5f8t8k4r5xs6z4t70w4n25g4n7v9x",
+				},
+				DReps: []string{
+					"drep1y2cvruq6syfa4w7uksw9jur9q06lwlc60p9kjcxnxd9ww7gh8gtt0",
+				},
+				Pools: []string{
+					"pool1ws7gpqkw4wpdj33lf3hcjy9zk5pxr8htnnxkxepe49p5gp3srcg",
+				},
+			},
+		},
+	)
+
 }

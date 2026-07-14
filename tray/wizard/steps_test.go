@@ -260,7 +260,7 @@ func TestTemplateStepAddRemoveAndSummary(t *testing.T) {
 	step.Content()
 
 	// Initially: nothing configured, MonitorEverything off.
-	assert.Equal(t, "Current configuration: nothing configured",
+	assert.Equal(t, "Current configuration: No monitoring targets configured",
 		step.summaryLabel.Text)
 
 	// Add two wallets, one DRep, one pool.
@@ -274,27 +274,30 @@ func TestTemplateStepAddRemoveAndSummary(t *testing.T) {
 	step.pools.add(step.pools.entry.Text)
 
 	assert.Equal(t,
-		"Current configuration: 2 wallets, 1 DRep, 1 pool",
+		"Current configuration: Standard: "+
+			"2 wallets OR 1 DRep OR 1 pool",
 		step.summaryLabel.Text)
 
 	// Remove one wallet via the section's bookkeeping.
 	step.wallets.removeValue("stake1b", step.wallets.list.Objects[1])
 	assert.Equal(t, []string{"addr1a"}, step.wallets.values)
 	assert.Equal(t,
-		"Current configuration: 1 wallet, 1 DRep, 1 pool",
+		"Current configuration: Standard: "+
+			"1 wallet OR 1 DRep OR 1 pool",
 		step.summaryLabel.Text)
 
 	// Toggling MonitorEverything on hides the summary detail; the
 	// section values are preserved so toggling off restores them.
 	step.everythingCheck.SetChecked(true)
-	assert.Equal(t, "Current configuration: everything",
+	assert.Equal(t, "Current configuration: Monitor everything",
 		step.summaryLabel.Text)
 	assert.Equal(t, []string{"addr1a"}, step.wallets.values,
 		"toggling Monitor Everything must preserve the lists")
 
 	step.everythingCheck.SetChecked(false)
 	assert.Equal(t,
-		"Current configuration: 1 wallet, 1 DRep, 1 pool",
+		"Current configuration: Standard: "+
+			"1 wallet OR 1 DRep OR 1 pool",
 		step.summaryLabel.Text)
 
 	// Apply with MonitorEverything off persists the lists; Apply with
@@ -312,6 +315,28 @@ func TestTemplateStepAddRemoveAndSummary(t *testing.T) {
 	assert.Empty(t, got.Filter.Wallets)
 	assert.Empty(t, got.Filter.DReps)
 	assert.Empty(t, got.Filter.Pools)
+}
+
+func TestTemplateStepAppliesTargetConnectors(t *testing.T) {
+	test.NewApp()
+	step := &templateStep{
+		plan: &setup.SetupPlan{
+			Filter: setup.FilterConfig{
+				Wallets:   []string{"addr1abc"},
+				DReps:     []string{"drep1abc"},
+				DRepMatch: setup.AdvancedMatchAll,
+			},
+			Output: setup.OutputConfig{Config: map[string]string{}},
+		},
+	}
+	step.Content()
+
+	assert.Equal(t, connectorAndLabel, step.drepConnector.Selected)
+	step.poolConnector.SetSelected(connectorAndLabel)
+	got := &setup.SetupPlan{}
+	step.Apply(got)
+	assert.Equal(t, setup.AdvancedMatchAll, got.Filter.DRepMatch)
+	assert.Equal(t, setup.AdvancedMatchAll, got.Filter.PoolMatch)
 }
 
 // TestTemplateStepAddSplitsCSV is the regression guard for the silent

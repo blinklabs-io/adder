@@ -46,6 +46,10 @@ type RulesEditor struct {
 	cancel context.CancelFunc
 
 	everythingCheck *widget.Check
+	drepConnector   *widget.RadioGroup
+	poolConnector   *widget.RadioGroup
+	assetConnector  *widget.RadioGroup
+	policyConnector *widget.RadioGroup
 	targetsBox      *fyne.Container
 	sections        []*targetSection
 	wallets         *targetSection
@@ -135,12 +139,7 @@ func NewRulesEditor(
 			fyne.TextAlignLeading,
 			fyne.TextStyle{Bold: true},
 		),
-		newFilterLogicLabel(
-			"Matching logic: OR within each target section; compatible "+
-				"target sections narrow matching alerts together. "+
-				"Notification Preferences choose which matching alert "+
-				"types are shown.",
-		),
+		newFilterLogicLabel(filterLogicDescription),
 		e.everythingCheck,
 		e.targetsBox,
 		widget.NewSeparator(),
@@ -200,7 +199,7 @@ func (e *RulesEditor) buildTargetSections() {
 		validate func(string) error,
 	) *targetSection {
 		sec := newTargetSection(label, placeholder, validate,
-			e.snapshotFilter)
+			e.onTargetsChanged)
 		sec.onDelete = e.confirmDelete(label)
 		return sec
 	}
@@ -229,17 +228,21 @@ func (e *RulesEditor) buildTargetSections() {
 	e.assets.setValues(e.working.Filter.Assets)
 	e.policies.setValues(e.working.Filter.Policies)
 
-	e.targetsBox = container.NewVBox(
-		e.wallets.canvasObject(),
-		widget.NewSeparator(),
-		e.dreps.canvasObject(),
-		widget.NewSeparator(),
-		e.pools.canvasObject(),
-		widget.NewSeparator(),
-		e.assets.canvasObject(),
-		widget.NewSeparator(),
-		e.policies.canvasObject(),
+	e.targetsBox = container.NewVBox()
+	e.drepConnector = newTargetConnector(
+		e.working.Filter.ResolvedDRepMatch(), e.connectorChanged,
 	)
+	e.poolConnector = newTargetConnector(
+		e.working.Filter.ResolvedPoolMatch(), e.connectorChanged,
+	)
+	e.assetConnector = newTargetConnector(
+		e.working.Filter.ResolvedAssetMatch(), e.connectorChanged,
+	)
+	e.policyConnector = newTargetConnector(
+		e.working.Filter.ResolvedPolicyMatch(), e.connectorChanged,
+	)
+
+	e.refreshTargetMode()
 
 	// Hydrate Checked + initial visibility BEFORE wiring OnChanged so
 	// hydration cannot trigger a spurious user-action side effect.
@@ -257,6 +260,50 @@ func (e *RulesEditor) buildTargetSections() {
 			e.targetsBox.Hide()
 		} else {
 			e.targetsBox.Show()
+		}
+	}
+}
+
+func (e *RulesEditor) connectorChanged(string) {
+	e.snapshotFilter()
+}
+
+// onTargetsChanged fires after any section add/remove: snapshot the values
+// back into the working filter, then rebuild the layout so connector
+// visibility tracks which groups are populated.
+func (e *RulesEditor) onTargetsChanged() {
+	e.snapshotFilter()
+	e.refreshTargetMode()
+}
+
+func (e *RulesEditor) refreshTargetMode() {
+	e.targetsBox.RemoveAll()
+	// A group's connector renders only when that group AND some earlier
+	// group are populated; the connector joins the group to the previous
+	// populated one (see standardFilterMatcher) and is meaningless
+	// otherwise. Sections always render so they can accept input.
+	rows := []struct {
+		sec       *targetSection
+		connector *widget.RadioGroup
+	}{
+		{e.wallets, nil},
+		{e.dreps, e.drepConnector},
+		{e.pools, e.poolConnector},
+		{e.assets, e.assetConnector},
+		{e.policies, e.policyConnector},
+	}
+	earlier := false
+	for i, r := range rows {
+		populated := len(r.sec.values) > 0
+		if r.connector != nil && populated && earlier {
+			e.targetsBox.Add(connectorRow(r.connector))
+		}
+		if i > 0 {
+			e.targetsBox.Add(widget.NewSeparator())
+		}
+		e.targetsBox.Add(r.sec.canvasObject())
+		if populated {
+			earlier = true
 		}
 	}
 }
@@ -336,6 +383,10 @@ func (e *RulesEditor) snapshotFilter() {
 	e.working.Filter.Policies = append(
 		[]string(nil), e.policies.values...,
 	)
+	e.working.Filter.DRepMatch = connectorMode(e.drepConnector)
+	e.working.Filter.PoolMatch = connectorMode(e.poolConnector)
+	e.working.Filter.AssetMatch = connectorMode(e.assetConnector)
+	e.working.Filter.PolicyMatch = connectorMode(e.policyConnector)
 }
 
 // onApply snapshots the working plan, freezes every mutating input
@@ -345,6 +396,19 @@ func (e *RulesEditor) snapshotFilter() {
 // race-free).
 func (e *RulesEditor) onApply() {
 	e.snapshotFilter()
+	// Block a never-matching filter from restarting Adder into silence.
+	if !e.working.Filter.MonitorEverything &&
+		e.working.Filter.MatchesNothing() {
+		dialog.ShowInformation(
+			"Filter matches nothing",
+			"This AND combination can never match: it joins targets "+
+				"from different event types (pools match blocks, "+
+				"wallets/assets/policies match transactions, DReps "+
+				"match governance). Use OR between them, or remove one.",
+			e.window,
+		)
+		return
+	}
 	e.applying = true
 	e.setInputsEnabled(false)
 	if e.callback != nil {
@@ -366,6 +430,10 @@ func (e *RulesEditor) setInputsEnabled(enabled bool) {
 	toggle(e.applyBtn)
 	toggle(e.closeBtn)
 	toggle(e.everythingCheck)
+	toggle(e.drepConnector)
+	toggle(e.poolConnector)
+	toggle(e.assetConnector)
+	toggle(e.policyConnector)
 	for _, c := range e.prefChecks {
 		toggle(c)
 	}

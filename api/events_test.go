@@ -119,6 +119,29 @@ func TestEventHub_RingBufferReplay(t *testing.T) {
 	}
 }
 
+func TestEventHub_ReplayCanBeDisabled(t *testing.T) {
+	hub := api.NewEventHub(5)
+	defer hub.Close()
+	hub.Broadcast(event.Event{
+		Type:      "input.rollback",
+		Timestamp: time.Now(),
+	})
+
+	router := newTestRouter(hub)
+	server := httptest.NewServer(router)
+	defer server.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") +
+		"/events?replay=false"
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	require.NoError(t, err)
+	defer conn.Close()
+
+	conn.SetReadDeadline(time.Now().Add(200 * time.Millisecond))
+	_, _, err = conn.ReadMessage()
+	assert.Error(t, err, "buffered rollback must not replay")
+}
+
 func TestEventHub_TypeFiltering(t *testing.T) {
 	hub := api.NewEventHub(10)
 	defer hub.Close()

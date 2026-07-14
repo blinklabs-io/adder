@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -143,19 +144,21 @@ func (c *EventClient) Stop() {
 	c.wg.Wait()
 }
 
-// wsURL builds the WebSocket URL with optional type filter query
-// parameter.
-func (c *EventClient) wsURL() string {
+// wsURL builds the WebSocket URL with optional type filtering. The first
+// connection requests live events only; reconnects request buffered replay
+// to recover events emitted while the tray was disconnected.
+func (c *EventClient) wsURL(replay bool) string {
 	u := url.URL{
 		Scheme: "ws",
 		Host:   fmt.Sprintf("%s:%d", c.address, c.port),
 		Path:   "/events",
 	}
+	q := u.Query()
+	q.Set("replay", strconv.FormatBool(replay))
 	if len(c.typeFilter) > 0 {
-		q := u.Query()
 		q.Set("types", strings.Join(c.typeFilter, ","))
-		u.RawQuery = q.Encode()
 	}
+	u.RawQuery = q.Encode()
 	return u.String()
 }
 
@@ -168,6 +171,7 @@ func (c *EventClient) connectLoop() {
 	}()
 
 	attempt := 0
+	hasConnected := false
 	for {
 		select {
 		case <-c.stopCh:
@@ -175,7 +179,7 @@ func (c *EventClient) connectLoop() {
 		default:
 		}
 
-		conn, err := c.dial()
+		conn, err := c.dial(hasConnected)
 		if err != nil {
 			slog.Debug("ws dial failed", "error", err, "attempt", attempt)
 			attempt++
@@ -202,7 +206,9 @@ func (c *EventClient) connectLoop() {
 
 		attempt = 0
 		c.status.Set(StatusConnected)
-		slog.Info("connected to adder events endpoint", "url", c.wsURL())
+		slog.Info("connected to adder events endpoint",
+			"url", c.wsURL(hasConnected))
+		hasConnected = true
 
 		// Read events until error or stop
 		reconnect := c.readLoop(conn)
@@ -226,8 +232,8 @@ func (c *EventClient) connectLoop() {
 }
 
 // dial connects to the WS endpoint.
-func (c *EventClient) dial() (*websocket.Conn, error) {
-	conn, _, err := websocket.DefaultDialer.Dial(c.wsURL(), nil)
+func (c *EventClient) dial(replay bool) (*websocket.Conn, error) {
+	conn, _, err := websocket.DefaultDialer.Dial(c.wsURL(replay), nil)
 	if err != nil {
 		return nil, fmt.Errorf("dialing ws: %w", err)
 	}

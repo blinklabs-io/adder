@@ -219,10 +219,9 @@ func TestEngine_RateLimitResetsAfterQuietGap(t *testing.T) {
 	assert.Equal(t, 1, r3.Count)
 }
 
-// TestEngine_CompatibleTargetGroupsANDSemantics asserts that compatible
-// target sections narrow matching on the same event, while values within
-// each section remain ORed by the rule matcher.
-func TestEngine_CompatibleTargetGroupsANDSemantics(t *testing.T) {
+// TestEngine_SimpleTargetGroupsORSemantics asserts that target groups default
+// to OR. Users can narrow matching by selecting explicit AND connectors.
+func TestEngine_SimpleTargetGroupsORSemantics(t *testing.T) {
 	plan := setup.SetupPlan{
 		Filter: setup.FilterConfig{
 			Wallets: []string{"addr1xyz"},
@@ -239,23 +238,19 @@ func TestEngine_CompatibleTargetGroupsANDSemantics(t *testing.T) {
 	defer eng.Stop()
 
 	events <- txEventTo("addr1xyz")
-	select {
-	case r := <-eng.Requests():
-		t.Fatalf("unexpected request for wallet-only event: %+v", r)
-	case <-time.After(150 * time.Millisecond):
-	}
-
-	events <- txWithTokens([2]string{"polA", "asset1abc"})
-	select {
-	case r := <-eng.Requests():
-		t.Fatalf("unexpected request for asset-only event: %+v", r)
-	case <-time.After(150 * time.Millisecond):
-	}
-
-	events <- txToWithTokens("addr1xyz", [2]string{"polA", "asset1abc"})
 	req, ok := recvRequest(t, eng.Requests())
 	require.True(t, ok)
-	assert.Contains(t, req.RuleID, "wallet")
+	assert.Equal(t, "wallet-in", req.RuleID)
+
+	events <- txWithTokens([2]string{"polA", "asset1abc"})
+	req, ok = recvRequest(t, eng.Requests())
+	require.True(t, ok)
+	assert.Equal(t, "asset-activity", req.RuleID)
+
+	events <- txToWithTokens("addr1xyz", [2]string{"polA", "asset1abc"})
+	req, ok = recvRequest(t, eng.Requests())
+	require.True(t, ok)
+	assert.Contains(t, []string{"wallet-in", "asset-activity"}, req.RuleID)
 }
 
 // TestEngine_SetRulesDrainsStaleRequests guards the review finding

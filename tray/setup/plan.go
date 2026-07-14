@@ -98,18 +98,57 @@ type NetworkConfig struct {
 	CustomPort    uint
 }
 
-// FilterConfig defines the user's monitoring targets. Values inside
-// each list OR together; non-empty lists AND together. MonitorEverything
-// ignores the per-target lists and emits one coarse rule per event type.
-// Persisted on TrayConfig so the tray notification engine owns the
-// matching semantics instead of leaking UI state into the sidecar config.
+// AdvancedMatchMode selects how a populated target group joins the
+// preceding populated group when the filter expression is built: AND
+// ("all") or OR ("any"). The name is historical — it drives the standard
+// per-group connectors, not a separate "advanced" mode.
+type AdvancedMatchMode string
+
+const (
+	AdvancedMatchAll AdvancedMatchMode = "all"
+	AdvancedMatchAny AdvancedMatchMode = "any"
+)
+
+// FilterConfig defines the user's monitoring targets. Values within a
+// target group OR together; the per-group *Match connectors join adjacent
+// populated groups with AND or OR. MonitorEverything ignores all target
+// lists and emits one coarse rule per event type. Persisted on TrayConfig
+// so the tray notification engine owns the matching semantics instead of
+// leaking UI state into the sidecar config.
 type FilterConfig struct {
-	MonitorEverything bool     `yaml:"monitor_everything"`
-	Wallets           []string `yaml:"wallets,omitempty"`
-	DReps             []string `yaml:"dreps,omitempty"`
-	Pools             []string `yaml:"pools,omitempty"`
-	Assets            []string `yaml:"assets,omitempty"`
-	Policies          []string `yaml:"policies,omitempty"`
+	MonitorEverything bool              `yaml:"monitor_everything"`
+	DRepMatch         AdvancedMatchMode `yaml:"drep_match,omitempty"`
+	PoolMatch         AdvancedMatchMode `yaml:"pool_match,omitempty"`
+	AssetMatch        AdvancedMatchMode `yaml:"asset_match,omitempty"`
+	PolicyMatch       AdvancedMatchMode `yaml:"policy_match,omitempty"`
+	Wallets           []string          `yaml:"wallets,omitempty"`
+	DReps             []string          `yaml:"dreps,omitempty"`
+	Pools             []string          `yaml:"pools,omitempty"`
+	Assets            []string          `yaml:"assets,omitempty"`
+	Policies          []string          `yaml:"policies,omitempty"`
+}
+
+func resolvedStandardMatch(mode AdvancedMatchMode) AdvancedMatchMode {
+	if mode == AdvancedMatchAll {
+		return AdvancedMatchAll
+	}
+	return AdvancedMatchAny
+}
+
+func (f FilterConfig) ResolvedDRepMatch() AdvancedMatchMode {
+	return resolvedStandardMatch(f.DRepMatch)
+}
+
+func (f FilterConfig) ResolvedPoolMatch() AdvancedMatchMode {
+	return resolvedStandardMatch(f.PoolMatch)
+}
+
+func (f FilterConfig) ResolvedAssetMatch() AdvancedMatchMode {
+	return resolvedStandardMatch(f.AssetMatch)
+}
+
+func (f FilterConfig) ResolvedPolicyMatch() AdvancedMatchMode {
+	return resolvedStandardMatch(f.PolicyMatch)
 }
 
 // CloneFilter returns a deep copy of f with fresh slice backing
@@ -181,38 +220,122 @@ const (
 	templatePolicy = "Follow Policy"
 )
 
-// SummarizeFilter returns a human-readable one-line description of a
-// FilterConfig for use in dialogs, notifications, and the wizard's
-// "Current configuration" line. Examples:
+// SummarizeFilter returns a human-readable description of the active matching
+// expression for use in dialogs, notifications, and the wizard's current
+// configuration line. Examples:
 //
-//	"everything"
-//	"2 wallets, 1 DRep, 1 pool"
-//	"2 wallets, 3 assets, 1 policy"
-//	"nothing configured"
+//	"Monitor everything"
+//	"Standard: 2 wallets OR 1 DRep OR 1 pool"
+//	"No monitoring targets configured"
 func SummarizeFilter(f FilterConfig) string {
 	if f.MonitorEverything {
-		return "everything"
+		return "Monitor everything"
 	}
-	var parts []string
+	type summaryPart struct {
+		text string
+		join AdvancedMatchMode
+	}
+	var parts []summaryPart
 	if n := len(f.Wallets); n > 0 {
-		parts = append(parts, plural(n, "wallet", "wallets"))
+		parts = append(parts, summaryPart{
+			text: plural(n, "wallet", "wallets"),
+			join: AdvancedMatchAny,
+		})
 	}
 	if n := len(f.DReps); n > 0 {
-		parts = append(parts, plural(n, "DRep", "DReps"))
+		parts = append(parts, summaryPart{
+			text: plural(n, "DRep", "DReps"),
+			join: f.ResolvedDRepMatch(),
+		})
 	}
 	if n := len(f.Pools); n > 0 {
-		parts = append(parts, plural(n, "pool", "pools"))
+		parts = append(parts, summaryPart{
+			text: plural(n, "pool", "pools"),
+			join: f.ResolvedPoolMatch(),
+		})
 	}
 	if n := len(f.Assets); n > 0 {
-		parts = append(parts, plural(n, "asset", "assets"))
+		parts = append(parts, summaryPart{
+			text: plural(n, "asset", "assets"),
+			join: f.ResolvedAssetMatch(),
+		})
 	}
 	if n := len(f.Policies); n > 0 {
-		parts = append(parts, plural(n, "policy", "policies"))
+		parts = append(parts, summaryPart{
+			text: plural(n, "policy", "policies"),
+			join: f.ResolvedPolicyMatch(),
+		})
 	}
 	if len(parts) == 0 {
-		return "nothing configured"
+		return "No monitoring targets configured"
 	}
-	return strings.Join(parts, ", ")
+	var expression strings.Builder
+	expression.WriteString(parts[0].text)
+	for _, part := range parts[1:] {
+		if part.join == AdvancedMatchAll {
+			expression.WriteString(" AND ")
+		} else {
+			expression.WriteString(" OR ")
+		}
+		expression.WriteString(part.text)
+	}
+	return "Standard: " + expression.String()
+}
+
+// MatchesNothing reports whether f's standard target expression can never
+// match any event because every AND-term joins target groups from
+// incompatible event families. Wallets/Assets/Policies match transaction
+// events, Pools match block events, and DReps match governance events, so
+// an AND across two families (e.g. Pool AND Wallet) is a term no single
+// event can satisfy. The expression is a disjunction (OR) of such AND-
+// terms — see standardFilterMatcher — so it is dead only when EVERY term
+// is dead. MonitorEverything and single-group filters are never dead.
+func (f FilterConfig) MatchesNothing() bool {
+	if f.MonitorEverything {
+		return false
+	}
+	type group struct {
+		family string
+		join   AdvancedMatchMode
+	}
+	var groups []group
+	if len(f.Wallets) > 0 {
+		groups = append(groups, group{"tx", AdvancedMatchAny})
+	}
+	if len(f.DReps) > 0 {
+		groups = append(groups, group{"gov", f.ResolvedDRepMatch()})
+	}
+	if len(f.Pools) > 0 {
+		groups = append(groups, group{"block", f.ResolvedPoolMatch()})
+	}
+	if len(f.Assets) > 0 {
+		groups = append(groups, group{"tx", f.ResolvedAssetMatch()})
+	}
+	if len(f.Policies) > 0 {
+		groups = append(groups, group{"tx", f.ResolvedPolicyMatch()})
+	}
+	if len(groups) == 0 {
+		return false
+	}
+	// Split into AND-terms at each OR boundary, mirroring the fold in
+	// standardFilterMatcher, and check whether every term spans more than
+	// one event family.
+	fam := make(map[string]struct{})
+	allDead := true
+	flush := func() {
+		if len(fam) <= 1 {
+			allDead = false
+		}
+		fam = make(map[string]struct{})
+	}
+	for i, g := range groups {
+		if i > 0 && g.join == AdvancedMatchAny {
+			flush()
+		}
+		fam[g.family] = struct{}{}
+	}
+	flush()
+	return allDead
 }
 
 func plural(n int, singular, plural string) string {

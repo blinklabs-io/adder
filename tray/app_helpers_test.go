@@ -280,28 +280,75 @@ func TestAddRecentAlertConnectionEventsNotDeduped(t *testing.T) {
 	}, time.Second, 10*time.Millisecond)
 }
 
-func TestSuppressConnAlert(t *testing.T) {
-	// Not applying: nothing suppressed.
-	assert.False(t, suppressConnAlert(false, StatusStopped))
-	assert.False(t, suppressConnAlert(false, StatusConnected))
-	// Applying: transient stop/connect suppressed, errors never.
-	assert.True(t, suppressConnAlert(true, StatusStopped))
-	assert.True(t, suppressConnAlert(true, StatusConnected))
-	assert.False(t, suppressConnAlert(true, StatusError))
-}
+func TestApplySuppress(t *testing.T) {
+	const now = int64(1_000)
+	const future = now + 1 // deadline not yet reached
+	const past = now - 1   // deadline already passed
 
-func TestConsumeApplyingStatus(t *testing.T) {
-	var applying atomic.Bool
-	applying.Store(true)
-
-	assert.True(t, consumeApplyingStatus(&applying, StatusStopped))
-	assert.True(t, applying.Load())
-	assert.True(t, consumeApplyingStatus(&applying, StatusConnected))
-	assert.False(t, applying.Load())
-
-	applying.Store(true)
-	assert.False(t, consumeApplyingStatus(&applying, StatusError))
-	assert.False(t, applying.Load())
+	tests := []struct {
+		name         string
+		deadline     int64
+		status       Status
+		wantSuppress bool
+		wantClear    bool
+	}{
+		{
+			// Not applying: never suppress, nothing to clear.
+			name:     "not applying",
+			deadline: 0,
+			status:   StatusStopped,
+		},
+		{
+			// In-flight restart churn: the transient stop is suppressed,
+			// deadline stays armed until it settles.
+			name:         "in-flight stopped suppressed",
+			deadline:     future,
+			status:       StatusStopped,
+			wantSuppress: true,
+			wantClear:    false,
+		},
+		{
+			name:         "in-flight reconnecting suppressed",
+			deadline:     future,
+			status:       StatusReconnecting,
+			wantSuppress: true,
+			wantClear:    false,
+		},
+		{
+			// Connection settled the Apply: suppress this restart connect
+			// and clear the deadline.
+			name:         "in-flight connected settles",
+			deadline:     future,
+			status:       StatusConnected,
+			wantSuppress: true,
+			wantClear:    true,
+		},
+		{
+			// A failed Apply settles too, but the error still surfaces.
+			name:         "in-flight error surfaces and settles",
+			deadline:     future,
+			status:       StatusError,
+			wantSuppress: false,
+			wantClear:    true,
+		},
+		{
+			// Engine never reconnected within the grace: suppression
+			// lapses so a genuine persistent loss surfaces, and the stale
+			// deadline is cleared.
+			name:         "deadline lapsed surfaces and clears",
+			deadline:     past,
+			status:       StatusStopped,
+			wantSuppress: false,
+			wantClear:    true,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			suppress, clear := applySuppress(tc.deadline, now, tc.status)
+			assert.Equal(t, tc.wantSuppress, suppress, "suppress")
+			assert.Equal(t, tc.wantClear, clear, "clear")
+		})
+	}
 }
 
 func TestSetupTrayBuildsDesktopMenu(t *testing.T) {

@@ -1,9 +1,6 @@
 name: test-msi
 
 on:
-  push:
-    branches:
-      - feat/windows-msi-689
   workflow_dispatch:
     inputs:
       arch:

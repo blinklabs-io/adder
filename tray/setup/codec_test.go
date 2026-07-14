@@ -443,6 +443,8 @@ func TestSetupPlanFromEngineConfigDoesNotAliasFilterSlices(t *testing.T) {
 		"Assets backing array must be detached")
 	assert.Equal(t, "pol1", got.Filter.Policies[0],
 		"Policies backing array must be detached")
+	assert.False(t, got.Filter.MonitorEverything,
+		"configured targets must prevent fallback to MonitorEverything")
 }
 
 func TestToEngineConfigWritesCustomNodeAddress(t *testing.T) {

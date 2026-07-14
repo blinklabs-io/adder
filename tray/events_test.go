@@ -165,6 +165,54 @@ func TestEventClient_ReconnectsOnClose(t *testing.T) {
 	mu.Unlock()
 }
 
+func TestEventClient_ReplaysOnlyAfterReconnect(t *testing.T) {
+	queries := make(chan string, 2)
+	var connectionCount int
+	var mu sync.Mutex
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		queries <- r.URL.Query().Get("replay")
+		conn, err := testUpgrader.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		mu.Lock()
+		connectionCount++
+		count := connectionCount
+		mu.Unlock()
+		if count == 1 {
+			conn.Close()
+			return
+		}
+		defer conn.Close()
+		for {
+			if _, _, err := conn.ReadMessage(); err != nil {
+				return
+			}
+		}
+	})
+
+	server := httptest.NewServer(handler)
+	defer server.Close()
+	address, port := parseTestURL(t, server.URL)
+	client := NewEventClient(address, port)
+	require.NoError(t, client.Start())
+	defer client.Stop()
+
+	select {
+	case replay := <-queries:
+		assert.Equal(t, "false", replay)
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for initial connection")
+	}
+	select {
+	case replay := <-queries:
+		assert.Equal(t, "true", replay)
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for reconnect")
+	}
+}
+
 func TestEventClient_TypeFilter(t *testing.T) {
 	// Verify that the type filter is sent as a query parameter
 	queryCh := make(chan string, 1)

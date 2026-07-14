@@ -88,14 +88,16 @@ type App struct {
 	// Written from menu handlers and read from the status observer
 	// goroutine, hence atomic.
 	intentionalStop atomic.Bool
-	// applying is set for the duration of an Apply (wizard finish /
-	// reconfigure / notification-rules edit), which restarts the engine
-	// and briefly cycles the connection. It suppresses the transient
-	// "Lost connection"/"Reconnected" alerts that restart would
-	// otherwise emit. Written from applyPlan, read from the status
-	// observer goroutine, hence atomic.
-	applying atomic.Bool
-	quitChan chan struct{}
+	// applyDeadline suppresses the transient connection alerts an Apply
+	// (wizard finish / reconfigure / notification-rules edit) emits when
+	// it restarts the engine. It holds a UnixNano deadline (0 = not
+	// applying): alerts are suppressed until the connection settles
+	// (StatusConnected/StatusError clears it) OR the deadline passes —
+	// the deadline guarantees a genuine, persistent loss still surfaces
+	// if the engine never reconnects after a restart. Written from
+	// applyPlan, read from the status observer goroutine, hence atomic.
+	applyDeadline atomic.Int64
+	quitChan      chan struct{}
 	// shutdownOnce guards Shutdown so multiple call sites (Quit menu,
 	// signal handler, test cleanup) cannot double-close quitChan.
 	shutdownOnce sync.Once
@@ -276,20 +278,21 @@ func (a *App) applyPlan(
 ) (setup.ApplyResult, error) {
 	// Suppress the transient connection alerts the engine restart inside
 	// Apply would otherwise emit. runner.Apply reconnects synchronously,
-	// but the status observer fires asynchronously, so the observer
-	// consumes-and-clears this flag on the first StatusConnected; the
-	// StatusConnected or StatusError consumes the flag after queued status
-	// transitions are delivered. Clearing it when Apply returns races that
-	// asynchronous delivery and leaks phantom connection notifications.
-	a.applying.Store(true)
+	// but the status observer fires asynchronously, so a plain
+	// clear-on-return would race that delivery and leak phantom alerts.
+	// Instead arm a deadline: the observer clears it on the settling
+	// StatusConnected/StatusError, and the deadline bounds suppression so
+	// a genuine, persistent loss still surfaces if the engine never
+	// reconnects after the restart.
+	a.applyDeadline.Store(time.Now().Add(applyGrace).UnixNano())
 
 	result, err := a.runner.Apply(ctx, plan)
 	if err != nil {
-		a.applying.Store(false)
+		a.applyDeadline.Store(0)
 		return result, err
 	}
 	if ctx.Err() != nil {
-		a.applying.Store(false)
+		a.applyDeadline.Store(0)
 	}
 	a.configMu.Lock()
 	a.config = result.TrayConfig
@@ -657,6 +660,7 @@ func (a *App) setupTray() {
 	// so rapid transitions can still deliver out-of-order.
 	var initialFire atomic.Bool
 	initialFire.Store(true)
+	var hasConnected atomic.Bool
 	a.conn.status.OnChange(func(s Status) {
 		icon := GetStatusIcon(s)
 		slog.Info("tray status changed",
@@ -682,11 +686,21 @@ func (a *App) setupTray() {
 
 		// During an Apply the engine restart cycles the connection
 		// (stopped → connected). Suppress the phantom Lost/Reconnected
-		// alerts that would otherwise fire, and consume the flag on the
-		// settling StatusConnected so genuine drops after Apply still
-		// report. Errors are never suppressed.
-		if consumeApplyingStatus(&a.applying, s) {
-			return
+		// alerts, clearing the deadline once the connection settles.
+		if dl := a.applyDeadline.Load(); dl != 0 {
+			suppress, clear := applySuppress(dl, time.Now().UnixNano(), s)
+			if clear {
+				a.applyDeadline.Store(0)
+			}
+			if suppress {
+				// Mark a suppressed connect as seen so the first genuine
+				// reconnect after this Apply still notifies (otherwise it
+				// looks like the first-ever connect and is skipped).
+				if s == StatusConnected {
+					hasConnected.Store(true)
+				}
+				return
+			}
 		}
 
 		// Connection-status notifications go through the engine: the
@@ -704,9 +718,11 @@ func (a *App) setupTray() {
 				"Adder Connection",
 				"Lost connection to sidecar API. Reconnecting...")
 		case s == StatusConnected:
-			eng.NotifyConnection(
-				"Adder Connection",
-				"Reconnected to node.")
+			if hasConnected.Swap(true) {
+				eng.NotifyConnection(
+					"Adder Connection",
+					"Reconnected to node.")
+			}
 		}
 	})
 
@@ -962,23 +978,38 @@ func getEmojiForType(evtType string) string {
 // a still-tracked event.
 const recentEventKeyCap = 128
 
-// suppressConnAlert reports whether a connection-status notification
-// should be skipped because an Apply-driven restart is in flight.
-// Errors always surface; any other transition during an Apply is a
-// side effect of the restart, not a real connection change.
-func suppressConnAlert(applying bool, s Status) bool {
-	return applying && s != StatusError
-}
+// applyGrace bounds how long an Apply suppresses connection alerts. The
+// restart churn (stop → reconnect) settles well under this; if the
+// engine never reconnects within it, suppression lapses so a genuine
+// persistent loss still surfaces. Var (not const) so tests can shrink it.
+var applyGrace = 10 * time.Second
 
-// consumeApplyingStatus updates the Apply suppression lifecycle and reports
-// whether the current connection alert should be skipped. Connected settles a
-// successful Apply; Error settles a failed Apply but still surfaces the error.
-func consumeApplyingStatus(applying *atomic.Bool, s Status) bool {
-	inFlight := applying.Load()
-	if inFlight && (s == StatusConnected || s == StatusError) {
-		applying.Store(false)
+// applySuppress decides, for a connection-status transition, whether to
+// suppress its notification and whether to clear the Apply deadline. It
+// is pure so the lifecycle is unit-testable without timers:
+//
+//   - deadline == 0 → not applying: never suppress, nothing to clear.
+//   - now >= deadline → suppression lapsed: surface the alert and clear
+//     the stale deadline (covers an engine that never reconnected).
+//   - StatusError → surface the error but clear (a failed Apply settled).
+//   - StatusConnected → suppress this restart connect and clear (settled).
+//   - anything else while in-flight → suppress (transient restart churn).
+func applySuppress(
+	deadlineNano, nowNano int64, s Status,
+) (suppress, clear bool) {
+	if deadlineNano == 0 {
+		return false, false
 	}
-	return suppressConnAlert(inFlight, s)
+	if nowNano >= deadlineNano {
+		return false, true
+	}
+	if s == StatusError {
+		return false, true
+	}
+	if s == StatusConnected {
+		return true, true
+	}
+	return true, false
 }
 
 // recentLabel builds a recent-events menu label. The notification title

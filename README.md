@@ -288,6 +288,12 @@ specifying multiple possible values separated by commas. When specifying
 multiple values for a filter, only one of the values specified must match an
 event.
 
+Adder Tray applies target-oriented notification semantics rather than the
+generic pipeline rules described below. See
+[Adder Tray Filtering and Notification Semantics](./docs/adder-tray-filtering.md)
+for simple target matching, advanced rule groups, DRep and pool behavior, and
+the current ChainSync notification inventory.
+
 You can get a list of all available filter options by using the `-h`/`-help`
 flag.
 

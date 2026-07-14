@@ -252,6 +252,35 @@ func TestRulesFromPlan_WatchWallet(t *testing.T) {
 		"wallet plan must not match block events")
 }
 
+func TestRulesFromPlan_StandardPoolAssetConnector(t *testing.T) {
+	plan := setup.SetupPlan{
+		Filter: setup.FilterConfig{
+			Pools:      []string{"pool-hash"},
+			Assets:     []string{"asset1wanted"},
+			AssetMatch: setup.AdvancedMatchAll,
+		},
+		Notify: setup.NotificationPrefs{
+			setup.NotifyPrefBlocksMinted:  true,
+			setup.NotifyPrefAssetActivity: true,
+		},
+	}
+	poolBlock := poolBlockEvent("block-hash", "pool-hash")
+	assetTx := txWithTokens([2]string{"other", "asset1wanted"})
+
+	andRules := RulesFromPlan(plan)
+	require.False(t, anyRuleMatches(andRules, poolBlock),
+		"Pool AND Asset cannot match a block event")
+	require.False(t, anyRuleMatches(andRules, assetTx),
+		"Pool AND Asset cannot match a transaction without issuer data")
+
+	plan.Filter.AssetMatch = setup.AdvancedMatchAny
+	orRules := RulesFromPlan(plan)
+	require.True(t, anyRuleMatches(orRules, poolBlock),
+		"Pool OR Asset should match a followed pool block")
+	require.True(t, anyRuleMatches(orRules, assetTx),
+		"Pool OR Asset should match followed asset activity")
+}
+
 // TestWalletRules_DirectionFiltering pins the three wallet matchers'
 // per-direction behaviour: a pure-ADA incoming tx fires Incoming
 // (not Outgoing, not TokenTransfer); a pure-ADA outgoing tx fires
@@ -747,6 +776,30 @@ func TestRulesFromPlan_FollowPolicy(t *testing.T) {
 		"policy rule must not match unrelated policy ID")
 }
 
+// TestRulesFromPlan_FollowPolicy_CaseInsensitive guards the fix for the
+// uppercase-policy silent no-match: ValidatePolicyID accepts mixed-case
+// hex (hex.DecodeString is case-insensitive), but the ledger emits the
+// policy field lowercase. The matcher must fold case on both sides, as it
+// does for pool/DRep IDs — otherwise a validly-entered uppercase policy
+// ID would never match anything, with no error.
+func TestRulesFromPlan_FollowPolicy_CaseInsensitive(t *testing.T) {
+	const upper = "ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF01"
+	const lower = "abcdef0123456789abcdef0123456789abcdef0123456789abcdef01"
+	plan := setup.SetupPlan{
+		Filter: setup.FilterConfig{
+			Policies: []string{upper},
+		},
+		Notify: setup.NotificationPrefs{
+			setup.NotifyPrefPolicyActivity: true,
+		},
+	}
+	rules := RulesFromPlan(plan)
+
+	require.True(t,
+		anyRuleMatches(rules, txWithTokens([2]string{lower, "asset1abc"})),
+		"uppercase-configured policy must match lowercase chain policy")
+}
+
 // TestMatchAnyAsset_PayloadEdgeCases locks in the documented
 // "no panic, no false match" behaviour of the asset matcher when the
 // payload is malformed, missing fields, or schema-drifted. Each case
@@ -798,11 +851,10 @@ func TestMatchAnyAsset_PayloadEdgeCases(t *testing.T) {
 	}
 }
 
-// TestRulesFromPlan_CompatibleTargetGroupsANDSemantics guards the UI
-// promise for target groups that can coexist on one event: entries
-// inside a target section OR together, while populated compatible
-// sections AND together.
-func TestRulesFromPlan_CompatibleTargetGroupsANDSemantics(t *testing.T) {
+// TestRulesFromPlan_SimpleTargetGroupsORSemantics guards the default UI
+// promise: independent target sections OR together. Users opt into compound
+// AND behavior by creating an advanced rule.
+func TestRulesFromPlan_SimpleTargetGroupsORSemantics(t *testing.T) {
 	plan := setup.SetupPlan{
 		Filter: setup.FilterConfig{
 			Wallets: []string{"addr1watch"},
@@ -815,11 +867,11 @@ func TestRulesFromPlan_CompatibleTargetGroupsANDSemantics(t *testing.T) {
 	}
 	rules := RulesFromPlan(plan)
 
-	require.False(t, anyRuleMatches(rules, txEventTo("addr1watch")),
-		"wallet-only tx must not match when asset is also configured")
-	require.False(t,
+	require.True(t, anyRuleMatches(rules, txEventTo("addr1watch")),
+		"wallet-only tx should match its independent target")
+	require.True(t,
 		anyRuleMatches(rules, txWithTokens([2]string{"polA", "asset1abc"})),
-		"asset-only tx must not match when wallet is also configured")
+		"asset-only tx should match its independent target")
 	require.True(t,
 		anyRuleMatches(
 			rules,
