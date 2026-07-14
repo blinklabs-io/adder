@@ -22,6 +22,14 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// Cardano network magics used by the tests as BlockContext fixtures and to
+// exercise getBaseURL's mapping.
+const (
+	mainnetNetworkMagic uint32 = 764824073
+	previewNetworkMagic uint32 = 2
+	preprodNetworkMagic uint32 = 1
+)
+
 func TestNew(t *testing.T) {
 	tests := []struct {
 		name        string

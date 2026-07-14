@@ -21,6 +21,7 @@
 package notifications
 
 import (
+	"encoding/hex"
 	"fmt"
 	"strconv"
 	"strings"
@@ -28,6 +29,7 @@ import (
 
 	"github.com/blinklabs-io/adder/event"
 	"github.com/blinklabs-io/adder/tray/setup"
+	lcommon "github.com/blinklabs-io/gouroboros/ledger/common"
 )
 
 // Event type constants. The input.* values mirror the event types
@@ -71,11 +73,14 @@ const (
 	tmplTxToken = "Token transfer at " +
 		"{{or (mine .payload.outputs .params) " +
 		"(other .payload.outputs .params)}}."
+	// voteFor selects the voting procedure cast by a followed DRep
+	// (.params) so an event carrying several votes renders the followed
+	// DRep's vote, not whichever happens to be first.
 	tmplGovVote = "DRep " +
-		"{{trunc (field \"voterId\" .payload.votingProcedures)}} " +
-		"voted {{field \"vote\" .payload.votingProcedures}} " +
+		"{{trunc (field \"voterId\" (voteFor .payload.votingProcedures .params))}} " +
+		"voted {{field \"vote\" (voteFor .payload.votingProcedures .params)}} " +
 		"on proposal " +
-		"#{{field \"govActionIndex\" .payload.votingProcedures}}."
+		"#{{field \"govActionIndex\" (voteFor .payload.votingProcedures .params)}}."
 	tmplGovProposal   = "New governance proposal detected."
 	tmplGovReg        = "A registration change was detected."
 	tmplAssetActivity = "Asset activity detected in tx " +
@@ -219,11 +224,11 @@ func valueToString(v any) string {
 // tray/wizard/step4_notifications.go) and the existing inline dispatch
 // logic in tray/app.go, so this engine can replace that inline path.
 //
-// The wizard lets the user populate the three per-target lists
-// (Wallets, DReps, Pools) independently — and this function fans out a
-// rule per entry in each list, giving natural OR semantics across the
-// kinds. When MonitorEverything is on the per-target lists are ignored
-// and a single coarse rule per event type is emitted instead.
+// Values inside each target group OR together. The configured connectors join
+// adjacent populated groups with AND or OR. Event families that cannot carry
+// the same fields naturally fail expressions requiring those fields. When
+// MonitorEverything is on, targets are ignored and a single coarse rule per
+// event type is emitted.
 //
 // Assumption (documented): several preferences are finer-grained than
 // the event types adder emits. Incoming/Outgoing/Token-transfer all
@@ -242,16 +247,22 @@ func RulesFromPlan(plan setup.SetupPlan) []Rule {
 	if plan.Filter.MonitorEverything {
 		rules = append(rules, everythingRules(prefs)...)
 	} else {
-		rules = append(rules,
+		targetRules := make([]Rule, 0,
+			len(plan.Filter.Wallets)+len(plan.Filter.DReps)+
+				len(plan.Filter.Pools)+len(plan.Filter.Assets)+
+				len(plan.Filter.Policies))
+		targetRules = append(targetRules,
 			walletRules(prefs, plan.Filter.Wallets)...)
-		rules = append(rules,
+		targetRules = append(targetRules,
 			drepRules(prefs, plan.Filter.DReps)...)
-		rules = append(rules,
+		targetRules = append(targetRules,
 			poolRules(prefs, plan.Filter.Pools)...)
-		rules = append(rules,
+		targetRules = append(targetRules,
 			assetRules(prefs, plan.Filter.Assets)...)
-		rules = append(rules,
+		targetRules = append(targetRules,
 			policyRules(prefs, plan.Filter.Policies)...)
+		rules = append(rules,
+			applyStandardExpression(targetRules, plan.Filter)...)
 	}
 
 	// Rollback fires for fork resolutions regardless of monitored
@@ -278,10 +289,103 @@ func RulesFromPlan(plan setup.SetupPlan) []Rule {
 	return rules
 }
 
-// templatedRule describes one (preference, suffix, title, body) tuple
-// that is fanned out per parameter value by perParam.
-type templatedRule struct {
-	pref, suffix, title, body string
+func applyStandardExpression(
+	rules []Rule,
+	filter setup.FilterConfig,
+) []Rule {
+	expression := standardFilterMatcher(filter)
+	if expression == nil {
+		return rules
+	}
+	for i := range rules {
+		ownMatch := rules[i].CustomMatch
+		if ownMatch == nil {
+			// Defensive: every current target rule sets CustomMatch, but a
+			// future rule without one would panic in the closure below.
+			// Fall back to the combined expression alone.
+			rules[i].CustomMatch = expression
+			continue
+		}
+		rules[i].CustomMatch = func(evt event.Event) bool {
+			return ownMatch(evt) && expression(evt)
+		}
+	}
+	return rules
+}
+
+func standardFilterMatcher(
+	filter setup.FilterConfig,
+) func(event.Event) bool {
+	type joinedCondition struct {
+		match func(event.Event) bool
+		join  setup.AdvancedMatchMode
+	}
+	var conditions []joinedCondition
+	if len(filter.Wallets) > 0 {
+		addresses := stringSet(filter.Wallets)
+		conditions = append(conditions, joinedCondition{
+			match: func(evt event.Event) bool {
+				return matchAnyOutputAddress(addresses)(evt) ||
+					matchAnyResolvedInputAddress(addresses)(evt)
+			},
+			join: setup.AdvancedMatchAny,
+		})
+	}
+	if len(filter.DReps) > 0 {
+		conditions = append(conditions, joinedCondition{
+			match: matchDRepActivity(filter.DReps),
+			join:  filter.ResolvedDRepMatch(),
+		})
+	}
+	if len(filter.Pools) > 0 {
+		conditions = append(conditions, joinedCondition{
+			match: matchBlockIssuer(filter.Pools),
+			join:  filter.ResolvedPoolMatch(),
+		})
+	}
+	if len(filter.Assets) > 0 {
+		conditions = append(conditions, joinedCondition{
+			match: matchAnyAsset(filter.Assets),
+			join:  filter.ResolvedAssetMatch(),
+		})
+	}
+	if len(filter.Policies) > 0 {
+		conditions = append(conditions, joinedCondition{
+			match: matchAnyPolicy(filter.Policies),
+			join:  filter.ResolvedPolicyMatch(),
+		})
+	}
+	if len(conditions) == 0 {
+		return nil
+	}
+	return func(evt event.Event) bool {
+		groupMatches := conditions[0].match(evt)
+		for _, condition := range conditions[1:] {
+			if condition.join == setup.AdvancedMatchAny {
+				if groupMatches {
+					return true
+				}
+				groupMatches = condition.match(evt)
+			} else {
+				groupMatches = groupMatches && condition.match(evt)
+			}
+		}
+		return groupMatches
+	}
+}
+
+func matchDRepActivity(dreps []string) func(event.Event) bool {
+	set := lowerSet(dreps)
+	votes := matchGovIdentity(
+		"votingProcedures", "voterId", "voterHash", set,
+	)
+	certificates := matchGovIdentity(
+		"drepCertificates", "drepId", "drepHash", set,
+	)
+	proposals := matchHasEntries("proposalProcedures")
+	return func(evt event.Event) bool {
+		return votes(evt) || certificates(evt) || proposals(evt)
+	}
 }
 
 // coarseRule describes one of the broad event-family rules emitted in
@@ -352,44 +456,6 @@ func everythingRules(prefs setup.NotificationPrefs) []Rule {
 		})
 	}
 	return out
-}
-
-// perParam emits one Rule per pref-def for the supplied params. The
-// full params list is preserved verbatim on Rule.Params so a later
-// address-aware filter can refine matching without reshaping the rule
-// model, but the rule itself is single — a chain event therefore fires
-// at most one notification per pref no matter how many wallets/DReps/
-// pools the user is monitoring. Empty params returns nil so an
-// unconfigured target section never produces a catch-all rule.
-func perParam(
-	idPrefix, eventType string,
-	prefs setup.NotificationPrefs,
-	params []string,
-	defs []templatedRule,
-) []Rule {
-	if len(params) == 0 {
-		return nil
-	}
-	// Defensive copy of params so a downstream Rule consumer cannot
-	// mutate the wizard plan's slice through the rule.
-	paramsCopy := append([]string(nil), params...)
-	rules := make([]Rule, 0, len(defs))
-	for _, d := range defs {
-		rules = append(rules, Rule{
-			ID:          fmt.Sprintf("%s-%s", idPrefix, d.suffix),
-			Enabled:     prefs[d.pref],
-			EventType:   eventType,
-			Params:      paramsCopy,
-			NotifyTitle: d.title,
-			NotifyBody:  d.body,
-			// Phase 1: coarse type match. Address-aware matching
-			// (consuming Params) is a future enhancement; without it
-			// every rule with MatchExpr=="" matches every event of
-			// the right EventType, so emitting per-param rules would
-			// only multiply identical notifications.
-		})
-	}
-	return rules
 }
 
 // walletRules builds transaction rules for the followed wallets. Each
@@ -546,46 +612,158 @@ func anyMapEntry(
 	return false
 }
 
-// drepRules builds governance rules for the Track DRep template: one
-// rule per DRep ID per enabled governance preference, so each (DRep ID,
-// pref) pair is independently addressable by a later address-aware
-// filter.
+// drepRules builds governance rules scoped to the followed DReps. A
+// governance event is a single "input.governance" type carrying any of
+// proposals, votes, and DRep certificates, so each rule uses a
+// CustomMatch that (a) checks the event actually contains its subtype
+// and (b) for votes/registrations, that a followed DRep is the actor —
+// otherwise every rule fired on every governance event regardless of
+// DRep, notifying the user about the whole network's activity.
+//
+// Proposals are not attributable to a specific DRep (anyone may create
+// one), so the proposals rule fires on any governance event that carries
+// a proposal — a call to action for the DReps the user follows.
 func drepRules(prefs setup.NotificationPrefs, params []string) []Rule {
-	return perParam("drep", EventTypeGovernance, prefs, params,
-		[]templatedRule{
-			{
-				setup.NotifyPrefGovProposals, "proposals",
-				"🗳️ Governance Proposal", tmplGovProposal,
-			},
-			{
-				setup.NotifyPrefVotesCast, "votes",
-				"🗳️ Vote Cast", tmplGovVote,
-			},
-			{
-				setup.NotifyPrefRegChanges, "reg",
-				"🗳️ Registration Change", tmplGovReg,
-			},
+	if len(params) == 0 {
+		return nil
+	}
+	snap := append([]string(nil), params...)
+	set := lowerSet(snap)
+	return []Rule{
+		{
+			ID:          "drep-proposals",
+			Enabled:     prefs[setup.NotifyPrefGovProposals],
+			EventType:   EventTypeGovernance,
+			Params:      snap,
+			NotifyTitle: "🗳️ Governance Proposal",
+			NotifyBody:  tmplGovProposal,
+			CustomMatch: matchHasEntries("proposalProcedures"),
 		},
-	)
+		{
+			ID:          "drep-votes",
+			Enabled:     prefs[setup.NotifyPrefVotesCast],
+			EventType:   EventTypeGovernance,
+			Params:      snap,
+			NotifyTitle: "🗳️ Vote Cast",
+			NotifyBody:  tmplGovVote,
+			CustomMatch: matchGovIdentity(
+				"votingProcedures", "voterId", "voterHash", set),
+		},
+		{
+			ID:          "drep-reg",
+			Enabled:     prefs[setup.NotifyPrefRegChanges],
+			EventType:   EventTypeGovernance,
+			Params:      snap,
+			NotifyTitle: "🗳️ Registration Change",
+			NotifyBody:  tmplGovReg,
+			CustomMatch: matchGovIdentity(
+				"drepCertificates", "drepId", "drepHash", set),
+		},
+	}
 }
 
-// poolRules builds block-event rules for the Monitor Pool template: one
-// rule per pool ID per enabled pool preference, so each (pool ID, pref)
-// pair is independently addressable by a later address-aware filter.
+// poolRules builds a block rule scoped to the followed pools: it fires
+// only when the block's issuer is one of them. Without the issuer match
+// the rule fired on every block on the chain, not just the user's pool.
+//
+// There is intentionally no pool-parameter rule: adder emits no
+// pool-parameter-change event, so the old "params" rule was mapped onto
+// block events and simply fired (mislabeled) on every block.
 func poolRules(prefs setup.NotificationPrefs, params []string) []Rule {
-	return perParam("pool", EventTypeBlock, prefs, params,
-		[]templatedRule{
-			{
-				setup.NotifyPrefBlocksMinted, "blocks",
-				"🧱 Block Minted", tmplPoolBlock,
-			},
-			{
-				setup.NotifyPrefPoolParams, "params",
-				"🧱 Pool Parameter Change",
-				"A pool parameter change was detected.",
-			},
-		},
-	)
+	if len(params) == 0 {
+		return nil
+	}
+	snap := append([]string(nil), params...)
+	return []Rule{{
+		ID:          "pool-blocks",
+		Enabled:     prefs[setup.NotifyPrefBlocksMinted],
+		EventType:   EventTypeBlock,
+		Params:      snap,
+		NotifyTitle: "🧱 Block Minted",
+		NotifyBody:  tmplPoolBlock,
+		CustomMatch: matchBlockIssuer(snap),
+	}}
+}
+
+// lowerSet returns a set of the lowercased input strings.
+func lowerSet(vals []string) map[string]struct{} {
+	set := make(map[string]struct{}, len(vals))
+	for _, v := range vals {
+		set[strings.ToLower(v)] = struct{}{}
+	}
+	return set
+}
+
+// stringSet returns a set of the input strings matched exactly, without
+// case folding. Used for wallet addresses and asset fingerprints, which
+// are bech32 and lowercase-only by spec. Pool/DRep IDs (lowerSet) and
+// policy IDs (matchAnyPolicy) fold case instead, since they may be
+// entered as mixed-case hex.
+func stringSet(values []string) map[string]struct{} {
+	out := make(map[string]struct{}, len(values))
+	for _, v := range values {
+		out[v] = struct{}{}
+	}
+	return out
+}
+
+// matchBlockIssuer fires when a block's issuer is one of the followed
+// pools. Block events carry payload.issuerVkey as the hex pool key-hash
+// (block.IssuerVkey().Hash()); configured pool IDs may be bech32
+// ("pool1…") or that same hex, so bech32 IDs are decoded to hex before
+// comparison.
+func matchBlockIssuer(pools []string) func(event.Event) bool {
+	set := make(map[string]struct{}, len(pools))
+	for _, p := range pools {
+		if strings.HasPrefix(p, "pool1") {
+			if id, err := lcommon.NewPoolIdFromBech32(p); err == nil {
+				set[hex.EncodeToString(id[:])] = struct{}{}
+			}
+			continue
+		}
+		set[strings.ToLower(p)] = struct{}{}
+	}
+	return func(evt event.Event) bool {
+		payload, ok := evt.Payload.(map[string]any)
+		if !ok {
+			return false
+		}
+		issuer, _ := payload["issuerVkey"].(string)
+		_, ok = set[strings.ToLower(issuer)]
+		return ok
+	}
+}
+
+// matchGovIdentity fires when any entry under payload[key] names a
+// followed target in either its bech32 id field or its hex hash field
+// (the user may configure DReps as "drep1…" or as hex).
+func matchGovIdentity(
+	key, idField, hashField string, set map[string]struct{},
+) func(event.Event) bool {
+	return func(evt event.Event) bool {
+		return anyMapEntry(evt, key, func(m map[string]any) bool {
+			id, _ := m[idField].(string)
+			if _, ok := set[strings.ToLower(id)]; ok {
+				return true
+			}
+			h, _ := m[hashField].(string)
+			_, ok := set[strings.ToLower(h)]
+			return ok
+		})
+	}
+}
+
+// matchHasEntries fires when payload[key] is a non-empty list, i.e. the
+// governance event actually carries that subtype.
+func matchHasEntries(key string) func(event.Event) bool {
+	return func(evt event.Event) bool {
+		payload, ok := evt.Payload.(map[string]any)
+		if !ok {
+			return false
+		}
+		entries, ok := payload[key].([]any)
+		return ok && len(entries) > 0
+	}
 }
 
 // assetRules builds one rule that fires on any transaction touching
@@ -644,16 +822,20 @@ func matchAnyAsset(assets []string) func(event.Event) bool {
 	}
 }
 
-// matchAnyPolicy is the policy-ID counterpart of matchAnyAsset.
+// matchAnyPolicy is the policy-ID counterpart of matchAnyAsset. Policy
+// IDs are hex script hashes and hex.DecodeString is case-insensitive, so
+// a validly-entered uppercase/mixed-case ID must still match the chain's
+// lowercase policy field. Fold both sides to lower, as matchBlockIssuer
+// and matchGovIdentity do for pool/DRep IDs.
 func matchAnyPolicy(policies []string) func(event.Event) bool {
 	set := make(map[string]struct{}, len(policies))
 	for _, p := range policies {
-		set[p] = struct{}{}
+		set[strings.ToLower(p)] = struct{}{}
 	}
 	return func(evt event.Event) bool {
 		return anyOutputToken(evt, func(tok map[string]any) bool {
 			pol, _ := tok["policy"].(string)
-			_, ok := set[pol]
+			_, ok := set[strings.ToLower(pol)]
 			return ok
 		})
 	}

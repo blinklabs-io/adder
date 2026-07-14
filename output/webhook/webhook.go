@@ -28,16 +28,13 @@ import (
 	"time"
 
 	"github.com/blinklabs-io/adder/event"
+	"github.com/blinklabs-io/adder/internal/explorer"
 	"github.com/blinklabs-io/adder/internal/logging"
 	"github.com/blinklabs-io/adder/internal/version"
 	"github.com/blinklabs-io/adder/plugin"
 )
 
 const (
-	mainnetNetworkMagic uint32 = 764824073
-	previewNetworkMagic uint32 = 2
-	preprodNetworkMagic uint32 = 1
-
 	// Default retry configuration
 	defaultMaxRetries     = 3
 	defaultInitialBackoff = 1 * time.Second
@@ -277,16 +274,7 @@ type DiscordMessageEmbedField struct {
 }
 
 func getBaseURL(networkMagic uint32) string {
-	switch networkMagic {
-	case mainnetNetworkMagic:
-		return "https://cexplorer.io"
-	case preprodNetworkMagic:
-		return "https://preprod.cexplorer.io"
-	case previewNetworkMagic:
-		return "https://preview.cexplorer.io"
-	default:
-		return "https://cexplorer.io" // default to mainnet if unknown network
-	}
+	return explorer.BaseURL(networkMagic)
 }
 
 func (w *WebhookOutput) SendWebhook(e *event.Event) error {

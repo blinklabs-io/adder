@@ -47,6 +47,10 @@ type Request struct {
 	// avoid delivering notifications rendered against superseded
 	// rules.
 	Epoch int64
+	// Event is the source event that matched the rule. It lets callers
+	// build a history from the same filtered alert stream the desktop
+	// dispatcher uses, instead of keeping a separate raw-event history.
+	Event event.Event
 }
 
 // Timer is a stoppable single-shot timer mirroring *time.Timer so
@@ -499,6 +503,7 @@ func (e *Engine) process(evt event.Event, lim *limiter) {
 				Body:   renderRule(r.bodyTmpl, r.NotifyBody, evt, r.Params),
 				Count:  1,
 				Epoch:  epoch,
+				Event:  evt,
 			})
 			continue
 		}
@@ -518,6 +523,7 @@ func (e *Engine) process(evt event.Event, lim *limiter) {
 			Body:   renderRule(r.bodyTmpl, r.NotifyBody, evt, r.Params),
 			Count:  1,
 			Epoch:  epoch,
+			Event:  evt,
 		})
 		lim.sent++
 	}

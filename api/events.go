@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -184,13 +185,19 @@ var wsUpgrader = websocket.Upgrader{
 // WebSocket if possible, otherwise falls back to SSE.
 func (h *EventHub) HandleEvents(c *gin.Context) {
 	typeFilter := parseTypeFilter(c.Query("types"))
+	replay := true
+	if value := c.Query("replay"); value != "" {
+		if parsed, err := strconv.ParseBool(value); err == nil {
+			replay = parsed
+		}
+	}
 
 	if websocket.IsWebSocketUpgrade(c.Request) {
-		h.handleWebSocket(c.Writer, c.Request, typeFilter)
+		h.handleWebSocket(c.Writer, c.Request, typeFilter, replay)
 		return
 	}
 
-	h.handleSSE(c, typeFilter)
+	h.handleSSE(c, typeFilter, replay)
 }
 
 // parseTypeFilter parses a comma-separated list of event types into a
@@ -216,6 +223,7 @@ func (h *EventHub) handleWebSocket(
 	w http.ResponseWriter,
 	r *http.Request,
 	typeFilter map[string]bool,
+	replayEnabled bool,
 ) {
 	conn, err := wsUpgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -233,7 +241,10 @@ func (h *EventHub) handleWebSocket(
 	// event can be both replayed and delivered via client.send.
 	h.mu.Lock()
 	h.clients[client] = struct{}{}
-	replay := h.recentEventsLocked(typeFilter)
+	var replay []event.Event
+	if replayEnabled {
+		replay = h.recentEventsLocked(typeFilter)
+	}
 	h.mu.Unlock()
 
 	// Replay recent events directly on this goroutine. This MUST
@@ -292,7 +303,11 @@ func (h *EventHub) handleWebSocket(
 	}()
 }
 
-func (h *EventHub) handleSSE(c *gin.Context, typeFilter map[string]bool) {
+func (h *EventHub) handleSSE(
+	c *gin.Context,
+	typeFilter map[string]bool,
+	replayEnabled bool,
+) {
 	c.Header("Content-Type", "text/event-stream")
 	c.Header("Cache-Control", "no-cache")
 	c.Header("Connection", "keep-alive")
@@ -307,7 +322,10 @@ func (h *EventHub) handleSSE(c *gin.Context, typeFilter map[string]bool) {
 	// event can be both replayed and delivered via client.send.
 	h.mu.Lock()
 	h.clients[client] = struct{}{}
-	replay := h.recentEventsLocked(typeFilter)
+	var replay []event.Event
+	if replayEnabled {
+		replay = h.recentEventsLocked(typeFilter)
+	}
 	h.mu.Unlock()
 
 	defer func() {

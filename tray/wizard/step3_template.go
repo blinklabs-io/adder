@@ -23,7 +23,6 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
 	"github.com/blinklabs-io/adder/tray/setup"
 )
@@ -37,13 +36,16 @@ type templateStep struct {
 	plan *setup.SetupPlan
 
 	everythingCheck *widget.Check
+	drepConnector   *widget.RadioGroup
+	poolConnector   *widget.RadioGroup
+	assetConnector  *widget.RadioGroup
+	policyConnector *widget.RadioGroup
 	targetsBox      *fyne.Container
 	wallets         *targetSection
 	dreps           *targetSection
 	pools           *targetSection
 	assets          *targetSection
 	policies        *targetSection
-	advanced        *widget.Accordion
 	summaryLabel    *widget.Label
 
 	// Output destination (unchanged from the previous wizard).
@@ -94,30 +96,29 @@ func (s *templateStep) Content() fyne.CanvasObject {
 		s.summaryLabel = widget.NewLabel("")
 		s.summaryLabel.TextStyle = fyne.TextStyle{Italic: true}
 
-		// Assets + policies are the power-user fields; keep them
-		// behind an accordion so the default view stays simple.
-		advancedBody := container.NewVBox(
-			s.assets.canvasObject(),
-			widget.NewSeparator(),
-			s.policies.canvasObject(),
-		)
-		s.advanced = widget.NewAccordion(
-			widget.NewAccordionItem(
-				"Advanced — Assets & Policies",
-				advancedBody,
-			),
-		)
+		filter := setup.FilterConfig{}
+		if s.plan != nil {
+			filter = s.plan.Filter
+		}
+		s.wallets.setValues(filter.Wallets)
+		s.dreps.setValues(filter.DReps)
+		s.pools.setValues(filter.Pools)
+		s.assets.setValues(filter.Assets)
+		s.policies.setValues(filter.Policies)
 
-		s.targetsBox = container.NewVBox(
-			s.wallets.canvasObject(),
-			widget.NewSeparator(),
-			s.dreps.canvasObject(),
-			widget.NewSeparator(),
-			s.pools.canvasObject(),
-			widget.NewSeparator(),
-			s.advanced,
+		s.targetsBox = container.NewVBox()
+		s.drepConnector = newTargetConnector(
+			filter.ResolvedDRepMatch(), func(string) { s.refreshSummary() },
 		)
-
+		s.poolConnector = newTargetConnector(
+			filter.ResolvedPoolMatch(), func(string) { s.refreshSummary() },
+		)
+		s.assetConnector = newTargetConnector(
+			filter.ResolvedAssetMatch(), func(string) { s.refreshSummary() },
+		)
+		s.policyConnector = newTargetConnector(
+			filter.ResolvedPolicyMatch(), func(string) { s.refreshSummary() },
+		)
 		s.everythingCheck = widget.NewCheck(
 			"Monitor Everything (ignore per-target lists)",
 			func(checked bool) {
@@ -130,22 +131,12 @@ func (s *templateStep) Content() fyne.CanvasObject {
 			},
 		)
 
-		// Hydrate from the plan.
 		if s.plan != nil {
-			s.wallets.setValues(s.plan.Filter.Wallets)
-			s.dreps.setValues(s.plan.Filter.DReps)
-			s.pools.setValues(s.plan.Filter.Pools)
-			s.assets.setValues(s.plan.Filter.Assets)
-			s.policies.setValues(s.plan.Filter.Policies)
 			s.everythingCheck.SetChecked(
 				s.plan.Filter.MonitorEverything,
 			)
-			// Auto-open Advanced when assets/policies are configured.
-			if len(s.plan.Filter.Assets) > 0 ||
-				len(s.plan.Filter.Policies) > 0 {
-				s.advanced.Open(0)
-			}
 		}
+		s.refreshTargetMode()
 		s.refreshSummary()
 	}
 
@@ -159,6 +150,7 @@ func (s *templateStep) Content() fyne.CanvasObject {
 			fyne.TextAlignLeading,
 			fyne.TextStyle{Bold: true},
 		),
+		newFilterLogicLabel(filterLogicDescription),
 		s.everythingCheck,
 		s.targetsBox,
 		s.summaryLabel,
@@ -180,9 +172,12 @@ func (s *templateStep) Content() fyne.CanvasObject {
 		s.outputContainer,
 	)
 
+	// No Spacer between the boxes: the outer content scrolls (see
+	// wizard.updateStep), and in a squeezed box layout a Spacer takes
+	// negative height, overlapping outputBox onto monitorBox. outputBox
+	// already opens with a separator for visual division.
 	return container.NewVBox(
 		monitorBox,
-		layout.NewSpacer(),
 		outputBox,
 	)
 }
@@ -194,24 +189,76 @@ func (s *templateStep) newSection(
 	validate func(string) error,
 ) *targetSection {
 	return newTargetSection(
-		label, placeholder, validate, s.refreshSummary,
+		label, placeholder, validate, s.onTargetsChanged,
 	)
 }
 
+// onTargetsChanged fires after any section add/remove: rebuild the target
+// layout (so connector visibility tracks which groups are populated) and
+// refresh the summary line.
+func (s *templateStep) onTargetsChanged() {
+	s.refreshTargetMode()
+	s.refreshSummary()
+}
+
+func (s *templateStep) refreshTargetMode() {
+	s.targetsBox.RemoveAll()
+	// Sections always render (they must accept input even when empty). A
+	// group's connector renders only when that group AND some earlier group
+	// are populated, since the connector joins the group to the previous
+	// populated one (see standardFilterMatcher) and is meaningless
+	// otherwise — this hides orphan connectors framing empty sections.
+	rows := []struct {
+		sec       *targetSection
+		connector *widget.RadioGroup
+	}{
+		{s.wallets, nil},
+		{s.dreps, s.drepConnector},
+		{s.pools, s.poolConnector},
+		{s.assets, s.assetConnector},
+		{s.policies, s.policyConnector},
+	}
+	earlier := false
+	for i, r := range rows {
+		populated := len(r.sec.values) > 0
+		if r.connector != nil && populated && earlier {
+			s.targetsBox.Add(connectorRow(r.connector))
+		}
+		if i > 0 {
+			s.targetsBox.Add(widget.NewSeparator())
+		}
+		s.targetsBox.Add(r.sec.canvasObject())
+		if populated {
+			earlier = true
+		}
+	}
+}
+
+func (s *templateStep) currentFilter() setup.FilterConfig {
+	filter := setup.FilterConfig{
+		MonitorEverything: s.everythingCheck.Checked,
+		Wallets:           append([]string(nil), s.wallets.values...),
+		DReps:             append([]string(nil), s.dreps.values...),
+		Pools:             append([]string(nil), s.pools.values...),
+		Assets:            append([]string(nil), s.assets.values...),
+		Policies:          append([]string(nil), s.policies.values...),
+		DRepMatch:         connectorMode(s.drepConnector),
+		PoolMatch:         connectorMode(s.poolConnector),
+		AssetMatch:        connectorMode(s.assetConnector),
+		PolicyMatch:       connectorMode(s.policyConnector),
+	}
+	if filter.MonitorEverything {
+		return setup.FilterConfig{MonitorEverything: true}
+	}
+	return filter
+}
+
 func (s *templateStep) refreshSummary() {
-	if s.everythingCheck != nil && s.everythingCheck.Checked {
-		s.summaryLabel.SetText("Current configuration: everything")
+	if s.summaryLabel == nil || s.everythingCheck == nil {
 		return
 	}
-	f := setup.FilterConfig{
-		Wallets:  s.wallets.values,
-		DReps:    s.dreps.values,
-		Pools:    s.pools.values,
-		Assets:   s.assets.values,
-		Policies: s.policies.values,
-	}
 	s.summaryLabel.SetText(
-		"Current configuration: " + setup.SummarizeFilter(f),
+		"Current configuration: " + setup.SummarizeFilter(s.currentFilter()),
 	)
 }
 
@@ -305,15 +352,22 @@ func (s *templateStep) onOutputChange(selected string) {
 // sub-validations are unchanged from the previous step3.
 func (s *templateStep) Validate() error {
 	if !s.everythingCheck.Checked {
-		if len(s.wallets.values) == 0 &&
-			len(s.dreps.values) == 0 &&
-			len(s.pools.values) == 0 &&
-			len(s.assets.values) == 0 &&
-			len(s.policies.values) == 0 {
+		filter := s.currentFilter()
+		hasTarget := len(filter.Wallets) > 0 || len(filter.DReps) > 0 ||
+			len(filter.Pools) > 0 || len(filter.Assets) > 0 ||
+			len(filter.Policies) > 0
+		if !hasTarget {
 			return errors.New(
-				"add at least one wallet, DRep, pool, " +
-					"asset, or policy — or enable " +
-					"Monitor Everything",
+				"add at least one wallet, DRep, pool, asset, or policy " +
+					"or enable Monitor Everything",
+			)
+		}
+		if filter.MatchesNothing() {
+			return errors.New(
+				"this AND combination can never match: it joins targets " +
+					"from different event types (pools match blocks, " +
+					"wallets/assets/policies match transactions, DReps " +
+					"match governance) — use OR between them, or remove one",
 			)
 		}
 	}
@@ -360,25 +414,7 @@ func (s *templateStep) Validate() error {
 }
 
 func (s *templateStep) Apply(plan *setup.SetupPlan) {
-	plan.Filter.MonitorEverything = s.everythingCheck.Checked
-	if s.everythingCheck.Checked {
-		plan.Filter.Wallets = nil
-		plan.Filter.DReps = nil
-		plan.Filter.Pools = nil
-		plan.Filter.Assets = nil
-		plan.Filter.Policies = nil
-	} else {
-		plan.Filter.Wallets = append(
-			[]string(nil), s.wallets.values...)
-		plan.Filter.DReps = append(
-			[]string(nil), s.dreps.values...)
-		plan.Filter.Pools = append(
-			[]string(nil), s.pools.values...)
-		plan.Filter.Assets = append(
-			[]string(nil), s.assets.values...)
-		plan.Filter.Policies = append(
-			[]string(nil), s.policies.values...)
-	}
+	plan.Filter = s.currentFilter()
 
 	plan.Output.Config = make(map[string]string)
 	switch s.outputSelect.Selected {

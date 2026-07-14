@@ -481,7 +481,7 @@ func (c *ChainSync) handleRollForward(
 	blockEvt := event.New(
 		"input.block",
 		time.Now(),
-		event.NewBlockHeaderContext(block.Header()),
+		event.NewBlockHeaderContext(block.Header(), c.networkMagic),
 		event.NewBlockEvent(block, c.includeCbor),
 	)
 	tmpEvents = append(tmpEvents, blockEvt)

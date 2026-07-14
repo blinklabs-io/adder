@@ -98,8 +98,8 @@ func (r *SetupRunner) Apply(
 		return result, fmt.Errorf("saving engine config: %w", err)
 	}
 
-	// 3. Save Tray Config — Filter lives here, not in engine config
-	// (the cardano filter would AND-combine kinds on tx events).
+	// 3. Save Tray Config — Filter lives here, not in engine config,
+	// so the tray notification engine owns target matching semantics.
 	// Notify map and Filter slices are deep-copied so later mutations
 	// of plan don't leak into the persisted TrayConfig.
 	notify := make(map[string]bool, len(plan.Notify))
@@ -129,13 +129,22 @@ func (r *SetupRunner) Apply(
 		slog.Error("could not find adder binary for service registration",
 			"stage", "binary-find",
 			"error", err)
-	} else {
-		if err := r.Service.RestartIfConfigChanged(binPath, engineCfgPath); err != nil {
-			result.ServiceRestartErr = err
-			slog.Error("failed to ensure service is running",
-				"stage", "service-restart",
-				"error", err)
-		}
+	} else if err := r.Service.EnsureRegistered(
+		binPath,
+		engineCfgPath,
+	); err != nil {
+		result.ServiceRestartErr = err
+		slog.Error("failed to register service",
+			"stage", "service-register",
+			"error", err)
+	} else if err := r.Service.RestartIfConfigChanged(
+		binPath,
+		engineCfgPath,
+	); err != nil {
+		result.ServiceRestartErr = err
+		slog.Error("failed to ensure service is running",
+			"stage", "service-restart",
+			"error", err)
 	}
 
 	// 5. Connection Update

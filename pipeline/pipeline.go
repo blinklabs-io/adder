@@ -24,19 +24,20 @@ import (
 )
 
 type Pipeline struct {
-	filterChan chan event.Event
-	outputChan chan event.Event
-	errorChan  chan error
-	doneChan   chan bool
-	inputs     []plugin.Plugin
-	filters    []plugin.Plugin
-	outputs    []plugin.Plugin
-	observer   chan<- event.Event // optional observer for API /events
-	observerMu sync.RWMutex
-	wg         sync.WaitGroup
-	stopOnce   sync.Once
-	running    bool
-	runningMu  sync.RWMutex
+	filterChan  chan event.Event
+	outputChan  chan event.Event
+	errorChan   chan error
+	doneChan    chan bool
+	inputs      []plugin.Plugin
+	filters     []plugin.Plugin
+	outputs     []plugin.Plugin
+	observer    chan<- event.Event // optional observer for API /events
+	observerMu  sync.RWMutex
+	wg          sync.WaitGroup
+	stopOnce    sync.Once
+	lifecycleMu sync.Mutex
+	running     bool
+	runningMu   sync.RWMutex
 }
 
 func New() *Pipeline {
@@ -83,6 +84,11 @@ func (p *Pipeline) ErrorChan() <-chan error {
 // A stopped pipeline can be restarted by calling Start() again.
 // Note: After restart, consumers must re-obtain channels via ErrorChan() as the old channels are closed.
 func (p *Pipeline) Start() error {
+	p.lifecycleMu.Lock()
+	defer p.lifecycleMu.Unlock()
+	if p.IsRunning() {
+		return errors.New("pipeline is already running")
+	}
 	// Check if doneChan is already closed (pipeline was stopped)
 	// If so, recreate channels to allow restart
 	select {
@@ -96,11 +102,30 @@ func (p *Pipeline) Start() error {
 		// continue
 	}
 
+	var started []plugin.Plugin
+	rollback := func(startErr error) error {
+		var rollbackErrs []error
+		p.stopOnce.Do(func() {
+			close(p.doneChan)
+			for idx := len(started) - 1; idx >= 0; idx-- {
+				if err := started[idx].Stop(); err != nil {
+					rollbackErrs = append(rollbackErrs, err)
+				}
+			}
+			p.wg.Wait()
+			close(p.errorChan)
+			close(p.filterChan)
+			close(p.outputChan)
+		})
+		return errors.Join(startErr, errors.Join(rollbackErrs...))
+	}
+
 	// Start inputs
 	for _, input := range p.inputs {
 		if err := input.Start(); err != nil {
-			return fmt.Errorf("failed to start input: %w", err)
+			return rollback(fmt.Errorf("failed to start input: %w", err))
 		}
+		started = append(started, input)
 		// Start background process to send input events to combined filter channel
 		p.wg.Add(1)
 		go p.chanCopyLoop(input.OutputChan(), p.filterChan)
@@ -111,8 +136,9 @@ func (p *Pipeline) Start() error {
 	// Start filters
 	for idx, filter := range p.filters {
 		if err := filter.Start(); err != nil {
-			return fmt.Errorf("failed to start filter: %w", err)
+			return rollback(fmt.Errorf("failed to start filter: %w", err))
 		}
+		started = append(started, filter)
 		if idx == 0 {
 			// Start background process to send events from combined filter channel to first filter plugin
 			p.wg.Add(1)
@@ -140,8 +166,9 @@ func (p *Pipeline) Start() error {
 	// Start outputs
 	for _, output := range p.outputs {
 		if err := output.Start(); err != nil {
-			return fmt.Errorf("failed to start output: %w", err)
+			return rollback(fmt.Errorf("failed to start output: %w", err))
 		}
+		started = append(started, output)
 		// Start background error listener
 		p.wg.Add(1)
 		go p.errorChanWait(output.ErrorChan())
@@ -160,6 +187,8 @@ func (p *Pipeline) Start() error {
 // Stop is idempotent and safe to call multiple times
 // A stopped pipeline can be restarted by calling Start() again
 func (p *Pipeline) Stop() error {
+	p.lifecycleMu.Lock()
+	defer p.lifecycleMu.Unlock()
 	var stopErrors []error
 
 	p.stopOnce.Do(func() {

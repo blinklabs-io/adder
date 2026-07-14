@@ -57,6 +57,9 @@ func TestEngine_EmitsOnMatch(t *testing.T) {
 	assert.Equal(t, "block", req.RuleID)
 	assert.Equal(t, "Block deadbeef", req.Title)
 	assert.Equal(t, "minted", req.Body)
+	assert.Equal(t, EventTypeBlock, req.Event.Type)
+	assert.Equal(t, "deadbeef",
+		req.Event.Payload.(map[string]any)["blockHash"])
 }
 
 func TestEngine_NoMatchNoEmit(t *testing.T) {
@@ -216,20 +219,17 @@ func TestEngine_RateLimitResetsAfterQuietGap(t *testing.T) {
 	assert.Equal(t, 1, r3.Count)
 }
 
-// TestEngine_MultiTargetPlanORSemantics asserts OR semantics across
-// kinds: a plan with wallet + DRep + pool must fire on a pure event of
-// any one kind, with no cross-kind AND filtering.
-func TestEngine_MultiTargetPlanORSemantics(t *testing.T) {
+// TestEngine_SimpleTargetGroupsORSemantics asserts that target groups default
+// to OR. Users can narrow matching by selecting explicit AND connectors.
+func TestEngine_SimpleTargetGroupsORSemantics(t *testing.T) {
 	plan := setup.SetupPlan{
 		Filter: setup.FilterConfig{
 			Wallets: []string{"addr1xyz"},
-			DReps:   []string{"drep1abc"},
-			Pools:   []string{"pool1abc"},
+			Assets:  []string{"asset1abc"},
 		},
 		Notify: setup.NotificationPrefs{
-			setup.NotifyPrefIncomingTx:   true,
-			setup.NotifyPrefVotesCast:    true,
-			setup.NotifyPrefBlocksMinted: true,
+			setup.NotifyPrefIncomingTx:    true,
+			setup.NotifyPrefAssetActivity: true,
 		},
 	}
 	events := make(chan event.Event, 8)
@@ -237,39 +237,20 @@ func TestEngine_MultiTargetPlanORSemantics(t *testing.T) {
 	eng.Start()
 	defer eng.Stop()
 
-	cases := []struct {
-		name           string
-		evt            event.Event
-		wantRuleIDPart string
-	}{
-		{
-			name:           "pure wallet tx fires wallet rule",
-			evt:            txEventTo("addr1xyz"),
-			wantRuleIDPart: "wallet",
-		},
-		{
-			name:           "pure pool block fires pool rule",
-			evt:            blockEvent("h2"),
-			wantRuleIDPart: "pool",
-		},
-		{
-			name:           "pure governance event fires drep rule",
-			evt:            govEvent(),
-			wantRuleIDPart: "drep",
-		},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			events <- tc.evt
-			req, ok := recvRequest(t, eng.Requests())
-			require.True(t, ok,
-				"engine must emit a Request for %s under a "+
-					"multi-target plan (OR-semantics across kinds)",
-				tc.name)
-			assert.Contains(t, req.RuleID, tc.wantRuleIDPart,
-				"expected RuleID to indicate the kind that matched")
-		})
-	}
+	events <- txEventTo("addr1xyz")
+	req, ok := recvRequest(t, eng.Requests())
+	require.True(t, ok)
+	assert.Equal(t, "wallet-in", req.RuleID)
+
+	events <- txWithTokens([2]string{"polA", "asset1abc"})
+	req, ok = recvRequest(t, eng.Requests())
+	require.True(t, ok)
+	assert.Equal(t, "asset-activity", req.RuleID)
+
+	events <- txToWithTokens("addr1xyz", [2]string{"polA", "asset1abc"})
+	req, ok = recvRequest(t, eng.Requests())
+	require.True(t, ok)
+	assert.Contains(t, []string{"wallet-in", "asset-activity"}, req.RuleID)
 }
 
 // TestEngine_SetRulesDrainsStaleRequests guards the review finding

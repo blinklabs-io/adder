@@ -438,12 +438,18 @@ func pbPoolCertificatesToLedger(certs []*cardanopb.Certificate) []lcommon.Certif
 		}
 		switch c := cert.GetCertificate().(type) {
 		case *cardanopb.Certificate_StakeDelegation:
+			if c == nil || c.StakeDelegation == nil {
+				continue
+			}
 			d := c.StakeDelegation
 			poolHash := lcommon.NewBlake2b224(d.GetPoolKeyhash())
 			out = append(out, &lcommon.StakeDelegationCertificate{
 				PoolKeyHash: poolHash,
 			})
 		case *cardanopb.Certificate_PoolRetirement:
+			if c == nil || c.PoolRetirement == nil {
+				continue
+			}
 			d := c.PoolRetirement
 			poolHash := lcommon.NewBlake2b224(d.GetPoolKeyhash())
 			out = append(out, &lcommon.PoolRetirementCertificate{
@@ -451,6 +457,9 @@ func pbPoolCertificatesToLedger(certs []*cardanopb.Certificate) []lcommon.Certif
 				Epoch:       d.GetEpoch(),
 			})
 		case *cardanopb.Certificate_PoolRegistration:
+			if c == nil || c.PoolRegistration == nil {
+				continue
+			}
 			d := c.PoolRegistration
 			operatorHash := lcommon.NewBlake2b224(d.GetOperator())
 			out = append(out, &lcommon.PoolRegistrationCertificate{

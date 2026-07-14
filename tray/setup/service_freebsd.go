@@ -50,3 +50,7 @@ func startService() error {
 func stopService() error {
 	return errFreeBSDServiceUnsupported
 }
+
+func existingUnit() []byte {
+	return nil
+}

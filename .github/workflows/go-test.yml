@@ -17,7 +17,7 @@ jobs:
     strategy:
       matrix:
         go-version: [1.25.x, 1.26.x]
-        platform: [ubuntu-latest]
+        platform: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0 https://github.com/actions/checkout/releases/tag/v7.0.0
@@ -25,12 +25,21 @@ jobs:
         with:
           go-version: ${{ matrix.go-version }}
       - name: Install dependencies
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y libgl1-mesa-dev libegl1-mesa-dev libgles2-mesa-dev libx11-dev libxcursor-dev libxrandr-dev libxinerama-dev libxi-dev libxxf86vm-dev
       - name: Build binaries
+        if: runner.os == 'Linux'
         run: make build
       - name: go-test
+        if: runner.os == 'Linux'
         run: go test -v -timeout 10m ./...
         env:
           LANG: en_US.UTF-8
+      # Windows: test tray/setup only (registry autostart + engine lifecycle).
+      # No fyne/cgo deps, so no MSYS2 toolchain needed; other packages are
+      # platform-neutral and covered by the Linux job.
+      - name: go-test (windows)
+        if: runner.os == 'Windows'
+        run: go test -v -timeout 10m ./tray/setup/...

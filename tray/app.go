@@ -28,11 +28,14 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/driver/desktop"
 	"github.com/blinklabs-io/adder/event"
+	"github.com/blinklabs-io/adder/internal/explorer"
 	"github.com/blinklabs-io/adder/internal/ui/assets"
 	"github.com/blinklabs-io/adder/tray/notifications"
 	"github.com/blinklabs-io/adder/tray/setup"
@@ -70,16 +73,31 @@ type App struct {
 	uiMu sync.Mutex
 
 	// Recent events for the tray menu
-	recentEvents []event.Event
+	recentEvents []recentAlert
 	mRecent      *fyne.MenuItem
 	mMenu        *fyne.Menu
+	// recentKeys dedups engine events replayed by the API ring buffer on
+	// every reconnect (each Apply restart triggers a reconnect). Bounded
+	// FIFO (recentKeyOrder evicts oldest) sized to the ring buffer so a
+	// full replay cannot re-add a still-tracked event. Guarded by uiMu.
+	recentKeys     map[string]struct{}
+	recentKeyOrder []string
 
 	// intentionalStop records whether the user deliberately stopped the
 	// service, so a Stopped status is not reported as a lost connection.
 	// Written from menu handlers and read from the status observer
 	// goroutine, hence atomic.
 	intentionalStop atomic.Bool
-	quitChan        chan struct{}
+	// applyDeadline suppresses the transient connection alerts an Apply
+	// (wizard finish / reconfigure / notification-rules edit) emits when
+	// it restarts the engine. It holds a UnixNano deadline (0 = not
+	// applying): alerts are suppressed until the connection settles
+	// (StatusConnected/StatusError clears it) OR the deadline passes —
+	// the deadline guarantees a genuine, persistent loss still surfaces
+	// if the engine never reconnects after a restart. Written from
+	// applyPlan, read from the status observer goroutine, hence atomic.
+	applyDeadline atomic.Int64
+	quitChan      chan struct{}
 	// shutdownOnce guards Shutdown so multiple call sites (Quit menu,
 	// signal handler, test cleanup) cannot double-close quitChan.
 	shutdownOnce sync.Once
@@ -119,7 +137,11 @@ func NewApp(fyneApp fyne.App) (*App, error) {
 	// Prepare specialized icons for notifications
 	cacheDir, err := os.UserCacheDir()
 	if err != nil {
-		slog.Warn("failed to get user cache dir, falling back to temp", "error", err)
+		slog.Warn(
+			"failed to get user cache dir, falling back to temp",
+			"error",
+			err,
+		)
 		cacheDir = os.TempDir()
 	}
 	adderCache := filepath.Join(cacheDir, "adder")
@@ -135,13 +157,31 @@ func NewApp(fyneApp fyne.App) (*App, error) {
 
 	slog.Debug("preparing specialized icons", "cache", adderCache)
 	if err := os.WriteFile(blockPath, assets.GetBlockIcon(128).Content(), 0o600); err != nil {
-		slog.Error("failed to write block icon", "path", blockPath, "error", err)
+		slog.Error(
+			"failed to write block icon",
+			"path",
+			blockPath,
+			"error",
+			err,
+		)
 	}
 	if err := os.WriteFile(govPath, assets.GetGovernanceIcon(128).Content(), 0o600); err != nil {
-		slog.Error("failed to write governance icon", "path", govPath, "error", err)
+		slog.Error(
+			"failed to write governance icon",
+			"path",
+			govPath,
+			"error",
+			err,
+		)
 	}
 	if err := os.WriteFile(txPath, assets.GetTransactionIcon(128).Content(), 0o600); err != nil {
-		slog.Error("failed to write transaction icon", "path", txPath, "error", err)
+		slog.Error(
+			"failed to write transaction icon",
+			"path",
+			txPath,
+			"error",
+			err,
+		)
 	}
 
 	a := &App{
@@ -236,9 +276,23 @@ func (a *App) onWizardFinish(
 func (a *App) applyPlan(
 	ctx context.Context, plan setup.SetupPlan,
 ) (setup.ApplyResult, error) {
+	// Suppress the transient connection alerts the engine restart inside
+	// Apply would otherwise emit. runner.Apply reconnects synchronously,
+	// but the status observer fires asynchronously, so a plain
+	// clear-on-return would race that delivery and leak phantom alerts.
+	// Instead arm a deadline: the observer clears it on the settling
+	// StatusConnected/StatusError, and the deadline bounds suppression so
+	// a genuine, persistent loss still surfaces if the engine never
+	// reconnects after the restart.
+	a.applyDeadline.Store(time.Now().Add(applyGrace).UnixNano())
+
 	result, err := a.runner.Apply(ctx, plan)
 	if err != nil {
+		a.applyDeadline.Store(0)
 		return result, err
+	}
+	if ctx.Err() != nil {
+		a.applyDeadline.Store(0)
 	}
 	a.configMu.Lock()
 	a.config = result.TrayConfig
@@ -471,6 +525,8 @@ func (a *App) setupTray() {
 			a.uiMu.Lock()
 			defer a.uiMu.Unlock()
 			a.recentEvents = nil
+			a.recentKeys = nil
+			a.recentKeyOrder = nil
 			a.mRecent.ChildMenu = fyne.NewMenu("Recent")
 			if a.mMenu != nil {
 				a.mMenu.Refresh()
@@ -587,6 +643,7 @@ func (a *App) setupTray() {
 		a.fyneApp,
 		eng.CurrentEpoch,
 		eng.RecordDrop,
+		a.addRecentAlert,
 	)
 
 	// Log non-zero drop deltas every 30s so suppressed notifications
@@ -603,6 +660,7 @@ func (a *App) setupTray() {
 	// so rapid transitions can still deliver out-of-order.
 	var initialFire atomic.Bool
 	initialFire.Store(true)
+	var hasConnected atomic.Bool
 	a.conn.status.OnChange(func(s Status) {
 		icon := GetStatusIcon(s)
 		slog.Info("tray status changed",
@@ -626,6 +684,25 @@ func (a *App) setupTray() {
 			return
 		}
 
+		// During an Apply the engine restart cycles the connection
+		// (stopped → connected). Suppress the phantom Lost/Reconnected
+		// alerts, clearing the deadline once the connection settles.
+		if dl := a.applyDeadline.Load(); dl != 0 {
+			suppress, clear := applySuppress(dl, time.Now().UnixNano(), s)
+			if clear {
+				a.applyDeadline.Store(0)
+			}
+			if suppress {
+				// Mark a suppressed connect as seen so the first genuine
+				// reconnect after this Apply still notifies (otherwise it
+				// looks like the first-ever connect and is skipped).
+				if s == StatusConnected {
+					hasConnected.Store(true)
+				}
+				return
+			}
+		}
+
 		// Connection-status notifications go through the engine: the
 		// dispatcher is the single SendNotification path, the
 		// "connection issues" pref gates them, and they bypass the
@@ -641,9 +718,11 @@ func (a *App) setupTray() {
 				"Adder Connection",
 				"Lost connection to sidecar API. Reconnecting...")
 		case s == StatusConnected:
-			eng.NotifyConnection(
-				"Adder Connection",
-				"Reconnected to node.")
+			if hasConnected.Swap(true) {
+				eng.NotifyConnection(
+					"Adder Connection",
+					"Reconnected to node.")
+			}
 		}
 	})
 
@@ -698,10 +777,6 @@ func (a *App) setupTray() {
 					"type", evt.Type,
 					"count", eventCount)
 
-				// Recent-events menu update (UI state, separate from
-				// notification dispatch).
-				a.addRecentEvent(evt)
-
 				// Drop-rather-than-block on the engine queue so a slow
 				// engine cannot stall event processing. Warn-level
 				// because the drop is unrecoverable: the event never
@@ -724,20 +799,53 @@ func (a *App) setupTray() {
 
 	slog.Info("starting adder-tray")
 
-	if a.Config().AutoStart {
-		// Ensure engine is running if configured
-		status, _ := setup.ServiceStatusCheck()
-		if status == setup.ServiceRegistered {
-			_ = setup.StartService()
-		}
-
-		if err := a.conn.Connect(); err != nil {
-			slog.Error(
-				"failed to auto-connect to adder",
-				"error", err,
-			)
+	// Bring the engine to a monitorable state, then connect
+	// unconditionally so the tray always reflects the real engine state
+	// (the EventClient retries with backoff, so a down engine shows
+	// "reconnecting" rather than a permanent gray "stopped").
+	//
+	// If a config exists, assert the registration on every tray launch
+	// and restart only when the rendered command or config contents
+	// changed. This is the same lifecycle guarantee used by wizard
+	// Apply/Reconfigure, and repairs a deleted or stale login-startup
+	// artifact without requiring the user to open the wizard.
+	if ConfigExists() {
+		if err := a.ensureConfiguredService(); err != nil {
+			slog.Error("failed to ensure adder service", "error", err)
+			a.fyneApp.SendNotification(fyne.NewNotification(
+				"Adder setup incomplete",
+				"Could not ensure the adder service. Open the tray "+
+					"menu and choose Reconfigure… to finish setup.",
+			))
 		}
 	}
+
+	if err := a.conn.Connect(); err != nil {
+		slog.Error("failed to connect to adder", "error", err)
+	}
+}
+
+// ensureConfiguredService asserts registration and runtime state for the
+// saved engine config using the same two-step lifecycle as wizard Apply.
+func (a *App) ensureConfiguredService() error {
+	if a.runner == nil || a.runner.Finder == nil || a.runner.Service == nil {
+		return errors.New("service lifecycle dependencies are not configured")
+	}
+	binPath, err := a.runner.Finder.Find()
+	if err != nil {
+		return fmt.Errorf("finding adder binary: %w", err)
+	}
+	cfgPath := a.Config().AdderConfig
+	if cfgPath == "" {
+		cfgPath = filepath.Join(setup.ConfigDir(), "config.yaml")
+	}
+	if err := a.runner.Service.EnsureRegistered(binPath, cfgPath); err != nil {
+		return fmt.Errorf("registering service: %w", err)
+	}
+	if err := a.runner.Service.RestartIfConfigChanged(binPath, cfgPath); err != nil {
+		return fmt.Errorf("ensuring service is running: %w", err)
+	}
+	return nil
 }
 
 // Shutdown gracefully tears down the tray. Ordering: close quitChan,
@@ -746,6 +854,9 @@ func (a *App) setupTray() {
 func (a *App) Shutdown() {
 	a.shutdownOnce.Do(func() {
 		close(a.quitChan)
+		if a.conn != nil {
+			a.conn.Disconnect()
+		}
 		if a.producerDone != nil {
 			<-a.producerDone
 		}
@@ -862,12 +973,141 @@ func getEmojiForType(evtType string) string {
 	}
 }
 
-func (a *App) addRecentEvent(evt event.Event) {
+// recentEventKeyCap bounds the dedup set. Sized to the API ring buffer
+// (defaultRingSize) so a full history replay on reconnect cannot re-add
+// a still-tracked event.
+const recentEventKeyCap = 128
+
+// applyGrace bounds how long an Apply suppresses connection alerts. The
+// restart churn (stop → reconnect) settles well under this; if the
+// engine never reconnects within it, suppression lapses so a genuine
+// persistent loss still surfaces. Var (not const) so tests can shrink it.
+var applyGrace = 10 * time.Second
+
+// applySuppress decides, for a connection-status transition, whether to
+// suppress its notification and whether to clear the Apply deadline. It
+// is pure so the lifecycle is unit-testable without timers:
+//
+//   - deadline == 0 → not applying: never suppress, nothing to clear.
+//   - now >= deadline → suppression lapsed: surface the alert and clear
+//     the stale deadline (covers an engine that never reconnected).
+//   - StatusError → surface the error but clear (a failed Apply settled).
+//   - StatusConnected → suppress this restart connect and clear (settled).
+//   - anything else while in-flight → suppress (transient restart churn).
+func applySuppress(
+	deadlineNano, nowNano int64, s Status,
+) (suppress, clear bool) {
+	if deadlineNano == 0 {
+		return false, false
+	}
+	if nowNano >= deadlineNano {
+		return false, true
+	}
+	if s == StatusError {
+		return false, true
+	}
+	if s == StatusConnected {
+		return true, true
+	}
+	return true, false
+}
+
+// recentLabel builds a recent-events menu label. The notification title
+// already carries an emoji for chain events (rules.go), so prepend the
+// type emoji only when the title has none — otherwise it doubles up
+// (e.g. "🔄 🔄 Chain Rollback"). Connection alerts start with a letter
+// and get the getEmojiForType fallback.
+func recentLabel(title, evtType, eventTime string) string {
+	if titleHasLeadingEmoji(title) {
+		return fmt.Sprintf("%s (%s)", title, eventTime)
+	}
+	return fmt.Sprintf("%s %s (%s)",
+		getEmojiForType(evtType), title, eventTime)
+}
+
+// titleHasLeadingEmoji reports whether the first rune is a symbol/emoji
+// rather than a letter, digit or space — i.e. the title already begins
+// with its own icon.
+func titleHasLeadingEmoji(title string) bool {
+	r, sz := utf8.DecodeRuneInString(title)
+	if sz == 0 || r == utf8.RuneError {
+		return false
+	}
+	return !unicode.IsLetter(r) && !unicode.IsDigit(r) && !unicode.IsSpace(r)
+}
+
+// recentEventKey is a stable identity for dedup. explorerHash gives a
+// tx/block hash when present; Type+timestamp disambiguates events
+// without one (e.g. rollbacks).
+func recentEventKey(e event.Event) string {
+	return e.Type + "|" + explorerHash(e) + "|" +
+		e.Timestamp.Format(time.RFC3339Nano)
+}
+
+// recentEventSeen reports whether the event was already added. Caller
+// must hold uiMu.
+func (a *App) recentEventSeen(e event.Event) bool {
+	_, ok := a.recentKeys[recentEventKey(e)]
+	return ok
+}
+
+// markRecentEvent records the event key, evicting the oldest when the
+// bounded set is full. Caller must hold uiMu.
+func (a *App) markRecentEvent(e event.Event) {
+	key := recentEventKey(e)
+	if a.recentKeys == nil {
+		a.recentKeys = make(map[string]struct{}, recentEventKeyCap)
+	}
+	a.recentKeys[key] = struct{}{}
+	a.recentKeyOrder = append(a.recentKeyOrder, key)
+	if len(a.recentKeyOrder) > recentEventKeyCap {
+		oldest := a.recentKeyOrder[0]
+		a.recentKeyOrder = a.recentKeyOrder[1:]
+		delete(a.recentKeys, oldest)
+	}
+}
+
+type recentAlert struct {
+	Title     string
+	Timestamp time.Time
+	Event     event.Event
+}
+
+func (a *App) addRecentAlert(req notifications.Request) {
+	title := req.Title
+	if title == "" {
+		title = "Adder"
+	}
+	ts := req.Event.Timestamp
+	if ts.IsZero() {
+		ts = time.Now()
+	}
+	alert := recentAlert{
+		Title:     title,
+		Timestamp: ts,
+		Event:     req.Event,
+	}
+
 	fyne.Do(func() {
 		a.uiMu.Lock()
 		defer a.uiMu.Unlock()
-		// Keep last 10 events (LIFO order for "Recent" display)
-		a.recentEvents = append([]event.Event{evt}, a.recentEvents...)
+
+		// Drop events already shown: the API ring buffer replays its
+		// history to every reconnecting client, so an Apply restart
+		// would otherwise duplicate the same event. Connection alerts
+		// (empty Type) are intentionally repeatable and skip dedup.
+		if alert.Event.Type != "" {
+			if a.recentEventSeen(alert.Event) {
+				return
+			}
+			a.markRecentEvent(alert.Event)
+		}
+
+		// Keep the latest 10 matching alerts, newest first so the most recent
+		// transaction or chain event is immediately visible at the top.
+		a.recentEvents = append(a.recentEvents, recentAlert{})
+		copy(a.recentEvents[1:], a.recentEvents[:len(a.recentEvents)-1])
+		a.recentEvents[0] = alert
 		if len(a.recentEvents) > 10 {
 			a.recentEvents = a.recentEvents[:10]
 		}
@@ -876,28 +1116,21 @@ func (a *App) addRecentEvent(evt event.Event) {
 
 		// Update the child menu
 		items := make([]*fyne.MenuItem, 0, len(a.recentEvents))
-		for _, e := range a.recentEvents {
-			eventTime := e.Timestamp.Format("15:04:05")
-			if e.Timestamp.IsZero() {
-				eventTime = time.Now().Format("15:04:05")
-			}
-			emoji := getEmojiForType(e.Type)
-			cleanType := strings.TrimPrefix(e.Type, "input.")
-			label := fmt.Sprintf("%s %s (%s)", emoji, cleanType, eventTime)
+		for _, alert := range a.recentEvents {
+			eventTime := alert.Timestamp.Format("15:04:05")
+			label := recentLabel(alert.Title, alert.Event.Type, eventTime)
 
-			// Create action to "Show" the event in an explorer
-			hash := ""
-			if payload, ok := e.Payload.(map[string]any); ok {
-				if h, ok := payload["blockHash"].(string); ok {
-					hash = h
-				} else if h, ok := payload["transactionHash"].(string); ok {
-					hash = h
-				}
-			}
+			// Create action to "Show" the event in an explorer.
+			// Pick the hash by event type: a transaction's/governance
+			// action's hash lives in Context (transactionHash), a
+			// block's in Payload (blockHash). Both tx and gov payloads
+			// also carry blockHash, so reading the payload first would
+			// mislink them to the block.
+			hash := explorerHash(alert.Event)
 
 			item := fyne.NewMenuItem(label, func() {
 				if hash != "" {
-					url := getExplorerURL(e, hash)
+					url := getExplorerURL(alert.Event, hash)
 					openURL(url)
 				}
 			})
@@ -912,23 +1145,43 @@ func (a *App) addRecentEvent(evt event.Event) {
 }
 
 func getExplorerURL(e event.Event, hash string) string {
-	baseURL := "https://cexplorer.io"
-	// Inspect context for network info
+	// The event carries its own network magic in Context, so a link always
+	// resolves on the chain the event came from (JSON numbers decode as float64).
+	var magic uint32
 	if ctx, ok := e.Context.(map[string]any); ok {
-		if magic, ok := ctx["networkMagic"].(float64); ok {
-			switch uint32(magic) {
-			case 1:
-				baseURL = "https://preprod.cexplorer.io"
-			case 2:
-				baseURL = "https://preview.cexplorer.io"
-			}
+		if m, ok := ctx["networkMagic"].(float64); ok {
+			magic = uint32(m)
 		}
 	}
+	baseURL := explorer.BaseURL(magic)
 
-	if e.Type == "input.transaction" {
+	if e.Type == "input.transaction" || e.Type == "input.governance" {
 		return fmt.Sprintf("%s/tx/%s", baseURL, hash)
 	}
 	return fmt.Sprintf("%s/block/%s", baseURL, hash)
+}
+
+// explorerHash returns the chain hash to link for an event, chosen by
+// event type: transactions and governance actions are identified by
+// their transactionHash in Context; blocks by blockHash in Payload.
+// Reading the payload first would be wrong because tx and governance
+// payloads also carry blockHash.
+func explorerHash(e event.Event) string {
+	switch e.Type {
+	case "input.transaction", "input.governance":
+		if ctx, ok := e.Context.(map[string]any); ok {
+			if h, ok := ctx["transactionHash"].(string); ok {
+				return h
+			}
+		}
+	default:
+		if p, ok := e.Payload.(map[string]any); ok {
+			if h, ok := p["blockHash"].(string); ok {
+				return h
+			}
+		}
+	}
+	return ""
 }
 
 // openFolder opens the given directory in the platform file manager.
@@ -940,7 +1193,13 @@ func openFolder(dir string) {
 
 	// Ensure directory exists so 'open' doesn't fail or open script editor
 	if err := os.MkdirAll(dir, 0o700); err != nil {
-		slog.Error("failed to create directory before opening", "dir", dir, "error", err)
+		slog.Error(
+			"failed to create directory before opening",
+			"dir",
+			dir,
+			"error",
+			err,
+		)
 	}
 
 	var cmd string
@@ -953,7 +1212,10 @@ func openFolder(dir string) {
 		cmd = "xdg-open"
 	}
 	slog.Debug("opening folder", "cmd", cmd, "dir", dir)
-	p := exec.Command(cmd, dir) //nolint:gosec // directory path from internal config
+	p := exec.Command(
+		cmd,
+		dir,
+	) //nolint:gosec // directory path from internal config
 	if err := p.Start(); err != nil {
 		slog.Error("failed to open folder", "dir", dir, "error", err)
 		return

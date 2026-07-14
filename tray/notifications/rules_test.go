@@ -77,10 +77,54 @@ func blockEvent(hash string) event.Event {
 	}
 }
 
-func govEvent() event.Event {
+func poolBlockEvent(hash, pool string) event.Event {
 	return event.Event{
-		Type:    EventTypeGovernance,
-		Payload: map[string]any{},
+		Type: EventTypeBlock,
+		Payload: map[string]any{
+			"blockHash":  hash,
+			"issuerVkey": pool,
+		},
+	}
+}
+
+func govEvent() event.Event {
+	return govEventForDRep("drep1abc")
+}
+
+func govEventForDRep(drep string) event.Event {
+	return event.Event{
+		Type: EventTypeGovernance,
+		Payload: map[string]any{
+			"votingProcedures": []any{
+				map[string]any{
+					"voterId":        drep,
+					"vote":           "yes",
+					"govActionIndex": float64(1),
+				},
+			},
+		},
+	}
+}
+
+func govProposal() event.Event {
+	return event.Event{
+		Type: EventTypeGovernance,
+		Payload: map[string]any{
+			"proposalProcedures": []any{
+				map[string]any{"deposit": float64(1)},
+			},
+		},
+	}
+}
+
+func govDRepCert(drep string) event.Event {
+	return event.Event{
+		Type: EventTypeGovernance,
+		Payload: map[string]any{
+			"drepCertificates": []any{
+				map[string]any{"drepId": drep},
+			},
+		},
 	}
 }
 
@@ -208,6 +252,35 @@ func TestRulesFromPlan_WatchWallet(t *testing.T) {
 		"wallet plan must not match block events")
 }
 
+func TestRulesFromPlan_StandardPoolAssetConnector(t *testing.T) {
+	plan := setup.SetupPlan{
+		Filter: setup.FilterConfig{
+			Pools:      []string{"pool-hash"},
+			Assets:     []string{"asset1wanted"},
+			AssetMatch: setup.AdvancedMatchAll,
+		},
+		Notify: setup.NotificationPrefs{
+			setup.NotifyPrefBlocksMinted:  true,
+			setup.NotifyPrefAssetActivity: true,
+		},
+	}
+	poolBlock := poolBlockEvent("block-hash", "pool-hash")
+	assetTx := txWithTokens([2]string{"other", "asset1wanted"})
+
+	andRules := RulesFromPlan(plan)
+	require.False(t, anyRuleMatches(andRules, poolBlock),
+		"Pool AND Asset cannot match a block event")
+	require.False(t, anyRuleMatches(andRules, assetTx),
+		"Pool AND Asset cannot match a transaction without issuer data")
+
+	plan.Filter.AssetMatch = setup.AdvancedMatchAny
+	orRules := RulesFromPlan(plan)
+	require.True(t, anyRuleMatches(orRules, poolBlock),
+		"Pool OR Asset should match a followed pool block")
+	require.True(t, anyRuleMatches(orRules, assetTx),
+		"Pool OR Asset should match followed asset activity")
+}
+
 // TestWalletRules_DirectionFiltering pins the three wallet matchers'
 // per-direction behaviour: a pure-ADA incoming tx fires Incoming
 // (not Outgoing, not TokenTransfer); a pure-ADA outgoing tx fires
@@ -321,23 +394,34 @@ func TestRulesFromPlan_TrackDRep(t *testing.T) {
 		Notify: setup.NotificationPrefs{
 			setup.NotifyPrefGovProposals: true,
 			setup.NotifyPrefVotesCast:    true,
-			setup.NotifyPrefRegChanges:   false,
+			setup.NotifyPrefRegChanges:   true,
 		},
 	}
 	rules := RulesFromPlan(plan)
 
-	// Positive: governance matches.
-	require.True(t, anyRuleMatches(rules, govEvent()),
-		"drep gov rule should match a governance event")
+	// Positive: a proposal matches the target-independent proposals rule.
+	require.True(t, anyRuleMatches(rules, govProposal()),
+		"proposals rule should match a proposal event")
+	// Positive: governance for the selected DRep matches.
+	require.True(t, anyRuleMatches(rules, govEventForDRep("drep1abc")),
+		"drep gov rule should match a governance event for the selected DRep")
+	require.True(t, anyRuleMatches(rules, govDRepCert("drep1abc")),
+		"drep reg rule should match a certificate for the selected DRep")
+	// Negative: a governance event for a different DRep must NOT match.
+	require.False(t, anyRuleMatches(rules, govEventForDRep("drep1other")),
+		"drep gov rule must not match a governance event for another DRep")
+	require.False(t, anyRuleMatches(rules, govDRepCert("drep1other")),
+		"drep reg rule must not match a certificate for another DRep")
 	// Negative: a transaction must NOT match a DRep plan.
 	require.False(t, anyRuleMatches(rules, txEvent("h", 1)),
 		"drep plan must not match transaction events")
 }
 
 func TestRulesFromPlan_MonitorPool(t *testing.T) {
+	const poolHex = "aabbccddeeff00112233"
 	plan := setup.SetupPlan{
 		Filter: setup.FilterConfig{
-			Pools: []string{"pool1abc"},
+			Pools: []string{poolHex},
 		},
 		Notify: setup.NotificationPrefs{
 			setup.NotifyPrefBlocksMinted: true,
@@ -346,12 +430,33 @@ func TestRulesFromPlan_MonitorPool(t *testing.T) {
 	}
 	rules := RulesFromPlan(plan)
 
-	// Positive: block matches.
-	require.True(t, anyRuleMatches(rules, blockEvent("h")),
-		"pool block rule should match a block event")
+	// Positive: block from the selected pool matches.
+	require.True(t, anyRuleMatches(rules, poolBlockEvent("h", poolHex)),
+		"pool block rule should match a block event from the selected pool")
+	// Negative: a block from a different pool must NOT match.
+	require.False(t, anyRuleMatches(rules, poolBlockEvent("h", "ffffffffffffffffffff")),
+		"pool block rule must not match a block event from another pool")
 	// Negative: governance must NOT match a pool plan.
 	require.False(t, anyRuleMatches(rules, govEvent()),
 		"pool plan must not match governance events")
+}
+
+func TestRulesFromPlan_PoolBech32MatchesOnlyOwnBlocks(t *testing.T) {
+	const (
+		poolBech32 = "pool16cdtqyk0fvxzfkhjg3esjcuty4tnlpds5lj0lkmqmwdjyzaj7p8"
+		poolHash   = "d61ab012cf4b0c24daf2447309638b25573f85b0a7e4ffdb60db9b22"
+	)
+	plan := setup.SetupPlan{
+		Filter: setup.FilterConfig{Pools: []string{poolBech32}},
+		Notify: setup.NotificationPrefs{setup.NotifyPrefBlocksMinted: true},
+	}
+	rules := RulesFromPlan(plan)
+
+	require.True(t, anyRuleMatches(rules, poolBlockEvent("h", poolHash)),
+		"a block minted by the followed pool must match")
+	require.False(t, anyRuleMatches(rules, poolBlockEvent("h",
+		"0000000000000000000000000000000000000000000000000000000000")),
+		"a block minted by any other pool must NOT match")
 }
 
 func TestRulesFromPlan_AllDisabled(t *testing.T) {
@@ -621,6 +726,13 @@ func txWithTokens(tokens ...[2]string) event.Event {
 	}
 }
 
+func txToWithTokens(outputAddr string, tokens ...[2]string) event.Event {
+	evt := txWithTokens(tokens...)
+	outputs := evt.Payload.(map[string]any)["outputs"].([]any)
+	outputs[0].(map[string]any)["address"] = outputAddr
+	return evt
+}
+
 func TestRulesFromPlan_FollowAsset(t *testing.T) {
 	plan := setup.SetupPlan{
 		Filter: setup.FilterConfig{
@@ -662,6 +774,30 @@ func TestRulesFromPlan_FollowPolicy(t *testing.T) {
 	require.False(t,
 		anyRuleMatches(rules, txWithTokens([2]string{"polB", "asset1xyz"})),
 		"policy rule must not match unrelated policy ID")
+}
+
+// TestRulesFromPlan_FollowPolicy_CaseInsensitive guards the fix for the
+// uppercase-policy silent no-match: ValidatePolicyID accepts mixed-case
+// hex (hex.DecodeString is case-insensitive), but the ledger emits the
+// policy field lowercase. The matcher must fold case on both sides, as it
+// does for pool/DRep IDs — otherwise a validly-entered uppercase policy
+// ID would never match anything, with no error.
+func TestRulesFromPlan_FollowPolicy_CaseInsensitive(t *testing.T) {
+	const upper = "ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF01"
+	const lower = "abcdef0123456789abcdef0123456789abcdef0123456789abcdef01"
+	plan := setup.SetupPlan{
+		Filter: setup.FilterConfig{
+			Policies: []string{upper},
+		},
+		Notify: setup.NotificationPrefs{
+			setup.NotifyPrefPolicyActivity: true,
+		},
+	}
+	rules := RulesFromPlan(plan)
+
+	require.True(t,
+		anyRuleMatches(rules, txWithTokens([2]string{lower, "asset1abc"})),
+		"uppercase-configured policy must match lowercase chain policy")
 }
 
 // TestMatchAnyAsset_PayloadEdgeCases locks in the documented
@@ -715,44 +851,65 @@ func TestMatchAnyAsset_PayloadEdgeCases(t *testing.T) {
 	}
 }
 
-// TestRulesFromPlan_MultiKindORSemantics is the regression guard for
-// the AND-bug rationale described in codec.go: a user watching one of
-// each kind must receive notifications for any event matching any
-// kind, with no AND-style cross-filtering between them.
-func TestRulesFromPlan_MultiKindORSemantics(t *testing.T) {
+// TestRulesFromPlan_SimpleTargetGroupsORSemantics guards the default UI
+// promise: independent target sections OR together. Users opt into compound
+// AND behavior by creating an advanced rule.
+func TestRulesFromPlan_SimpleTargetGroupsORSemantics(t *testing.T) {
 	plan := setup.SetupPlan{
 		Filter: setup.FilterConfig{
-			Wallets:  []string{"addr1qxy"},
-			DReps:    []string{"drep1abc"},
-			Pools:    []string{"pool1xyz"},
-			Assets:   []string{"asset1abc"},
-			Policies: []string{"polA"},
+			Wallets: []string{"addr1watch"},
+			Assets:  []string{"asset1abc"},
 		},
 		Notify: setup.NotificationPrefs{
-			setup.NotifyPrefBlocksMinted:    true,
-			setup.NotifyPrefIncomingTx:      true,
-			setup.NotifyPrefVotesCast:       true,
-			setup.NotifyPrefAssetActivity:   true,
-			setup.NotifyPrefPolicyActivity:  true,
+			setup.NotifyPrefIncomingTx:    true,
+			setup.NotifyPrefAssetActivity: true,
 		},
 	}
 	rules := RulesFromPlan(plan)
 
-	// Wallet-only tx (incoming to the watched address) still fires.
-	require.True(t, anyRuleMatches(rules, txEventTo("addr1qxy")),
-		"wallet rule fires on a tx sending to the watched address")
-	// Block-only event (no tx, no gov, no assets) still fires.
-	require.True(t, anyRuleMatches(rules, blockEvent("h")),
-		"pool block rule fires on a block event")
-	// Governance event still fires.
-	require.True(t, anyRuleMatches(rules, govEvent()),
-		"governance rule fires on a governance event")
-	// Asset-only tx (no wallet match in particular) still fires —
-	// proves the asset rule does not require the tx to also match
-	// another kind.
+	require.True(t, anyRuleMatches(rules, txEventTo("addr1watch")),
+		"wallet-only tx should match its independent target")
 	require.True(t,
 		anyRuleMatches(rules, txWithTokens([2]string{"polA", "asset1abc"})),
-		"asset rule fires independent of other kinds")
+		"asset-only tx should match its independent target")
+	require.True(t,
+		anyRuleMatches(
+			rules,
+			txToWithTokens("addr1watch", [2]string{"polA", "asset1abc"}),
+		),
+		"tx carrying a configured wallet and asset should match")
+}
+
+func TestRulesFromPlan_StakeTargetDoesNotBlockAssetActivity(t *testing.T) {
+	plan := setup.SetupPlan{
+		Filter: setup.FilterConfig{
+			Wallets: []string{"stake1uwatched"},
+			Assets:  []string{"asset1abc"},
+		},
+		Notify: setup.NotificationPrefs{
+			setup.NotifyPrefAssetActivity: true,
+		},
+	}
+
+	require.True(t,
+		anyRuleMatches(
+			RulesFromPlan(plan),
+			txWithTokens([2]string{"polA", "asset1abc"}),
+		),
+		"stake credentials are not present in transaction payment addresses")
+}
+
+func TestRulesFromPlan_StakeTargetDoesNotMatchEveryWalletTransaction(t *testing.T) {
+	plan := setup.SetupPlan{
+		Filter: setup.FilterConfig{Wallets: []string{"stake1uwatched"}},
+		Notify: setup.NotificationPrefs{
+			setup.NotifyPrefIncomingTx: true,
+		},
+	}
+
+	require.False(t,
+		anyRuleMatches(RulesFromPlan(plan), txEventTo("addr1unrelated")),
+		"an unsupported stake target must not turn wallet rules into catch-all rules")
 }
 
 // TestAllNotifyPrefsHaveEngineRule pins setup.AllNotifyPrefs to the
@@ -774,6 +931,9 @@ func TestAllNotifyPrefsHaveEngineRule(t *testing.T) {
 	}
 	for _, pref := range setup.AllNotifyPrefs() {
 		t.Run(pref, func(t *testing.T) {
+			if pref == setup.NotifyPrefPoolParams {
+				t.Skip("adder does not emit a pool-parameter event yet")
+			}
 			plan := setup.SetupPlan{
 				Filter: baseFilter,
 				Notify: setup.NotificationPrefs{pref: true},

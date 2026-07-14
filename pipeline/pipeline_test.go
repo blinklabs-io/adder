@@ -1,6 +1,7 @@
 package pipeline
 
 import (
+	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -32,6 +33,46 @@ func (p *panicPlugin) OutputChan() <-chan event.Event { return nil }
 type noopPlugin struct {
 	errChanOnce sync.Once
 	errChan     chan error
+}
+
+type lifecyclePlugin struct {
+	mu         sync.Mutex
+	startErr   error
+	starts     int
+	stops      int
+	errChan    chan error
+	inputChan  chan event.Event
+	outputChan chan event.Event
+}
+
+func (p *lifecyclePlugin) Start() error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.starts++
+	if p.startErr != nil {
+		return p.startErr
+	}
+	p.errChan = make(chan error)
+	p.inputChan = make(chan event.Event)
+	p.outputChan = make(chan event.Event)
+	return nil
+}
+
+func (p *lifecyclePlugin) Stop() error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.stops++
+	return nil
+}
+
+func (p *lifecyclePlugin) ErrorChan() <-chan error        { return p.errChan }
+func (p *lifecyclePlugin) InputChan() chan<- event.Event  { return p.inputChan }
+func (p *lifecyclePlugin) OutputChan() <-chan event.Event { return p.outputChan }
+
+func (p *lifecyclePlugin) counts() (int, int) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.starts, p.stops
 }
 
 func (n *noopPlugin) Start() error { return nil }
@@ -72,6 +113,57 @@ func TestStopIdempotent(t *testing.T) {
 	}
 	if err := p.Stop(); err != nil {
 		t.Fatalf("unexpected error on second Stop (idempotent): %v", err)
+	}
+}
+
+func TestStartFailureRollsBackStartedPlugins(t *testing.T) {
+	p := New()
+	input := &lifecyclePlugin{}
+	failing := &lifecyclePlugin{startErr: errors.New("start failed")}
+	later := &lifecyclePlugin{}
+	p.AddInput(input)
+	p.AddFilter(failing)
+	p.AddOutput(later)
+
+	if err := p.Start(); err == nil {
+		t.Fatal("expected startup failure")
+	}
+	inputStarts, inputStops := input.counts()
+	failingStarts, failingStops := failing.counts()
+	laterStarts, laterStops := later.counts()
+	if inputStarts != 1 || inputStops != 1 {
+		t.Fatalf("input starts/stops = %d/%d, want 1/1", inputStarts, inputStops)
+	}
+	if failingStarts != 1 || failingStops != 0 {
+		t.Fatalf("failing filter starts/stops = %d/%d, want 1/0", failingStarts, failingStops)
+	}
+	if laterStarts != 0 || laterStops != 0 {
+		t.Fatalf("later output starts/stops = %d/%d, want 0/0", laterStarts, laterStops)
+	}
+	if p.IsRunning() {
+		t.Fatal("pipeline reported running after failed startup")
+	}
+	if err := p.Stop(); err != nil {
+		t.Fatalf("Stop after failed startup: %v", err)
+	}
+}
+
+func TestPipelineDoubleStartRejected(t *testing.T) {
+	p := New()
+	input := &lifecyclePlugin{}
+	p.AddInput(input)
+	if err := p.Start(); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.Start(); err == nil {
+		t.Fatal("expected second Start to fail")
+	}
+	starts, _ := input.counts()
+	if starts != 1 {
+		t.Fatalf("plugin started %d times, want 1", starts)
+	}
+	if err := p.Stop(); err != nil {
+		t.Fatal(err)
 	}
 }
 

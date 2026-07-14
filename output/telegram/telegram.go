@@ -24,6 +24,7 @@ import (
 
 	"github.com/blinklabs-io/adder/event"
 	"github.com/blinklabs-io/adder/internal/cardanofmt"
+	"github.com/blinklabs-io/adder/internal/explorer"
 	"github.com/blinklabs-io/adder/internal/logging"
 	"github.com/blinklabs-io/adder/plugin"
 	"github.com/go-telegram/bot"
@@ -31,10 +32,6 @@ import (
 )
 
 const (
-	mainnetNetworkMagic uint32 = 764824073
-	previewNetworkMagic uint32 = 2
-	preprodNetworkMagic uint32 = 1
-
 	// Default retry configuration
 	defaultMaxRetries     = 3
 	defaultInitialBackoff = 1 * time.Second
@@ -523,16 +520,7 @@ func formatLovelace(lovelace uint64) string {
 
 // getBaseURL returns the block explorer URL based on network magic
 func getBaseURL(networkMagic uint32) string {
-	switch networkMagic {
-	case mainnetNetworkMagic:
-		return "https://cexplorer.io"
-	case preprodNetworkMagic:
-		return "https://preprod.cexplorer.io"
-	case previewNetworkMagic:
-		return "https://preview.cexplorer.io"
-	default:
-		return "https://cexplorer.io"
-	}
+	return explorer.BaseURL(networkMagic)
 }
 
 // SendMessage sends a message to the configured Telegram chat

@@ -260,21 +260,21 @@ func TestSummarizeFilter(t *testing.T) {
 		filter FilterConfig
 		want   string
 	}{
-		{"empty", FilterConfig{}, "nothing configured"},
+		{"empty", FilterConfig{}, "No monitoring targets configured"},
 		{
 			"everything",
 			FilterConfig{MonitorEverything: true},
-			"everything",
+			"Monitor everything",
 		},
 		{
 			"single wallet",
 			FilterConfig{Wallets: []string{"addr1"}},
-			"1 wallet",
+			"Standard: 1 wallet",
 		},
 		{
 			"two wallets",
 			FilterConfig{Wallets: []string{"a", "b"}},
-			"2 wallets",
+			"Standard: 2 wallets",
 		},
 		{
 			"combined",
@@ -283,17 +283,17 @@ func TestSummarizeFilter(t *testing.T) {
 				DReps:   []string{"d"},
 				Pools:   []string{"p1", "p2", "p3"},
 			},
-			"2 wallets, 1 DRep, 3 pools",
+			"Standard: 2 wallets OR 1 DRep OR 3 pools",
 		},
 		{
 			"single asset",
 			FilterConfig{Assets: []string{"asset1"}},
-			"1 asset",
+			"Standard: 1 asset",
 		},
 		{
 			"two policies",
 			FilterConfig{Policies: []string{"a", "b"}},
-			"2 policies",
+			"Standard: 2 policies",
 		},
 		{
 			// All five kinds populated — the order is wallet → DRep
@@ -307,12 +307,114 @@ func TestSummarizeFilter(t *testing.T) {
 				Assets:   []string{"x", "y"},
 				Policies: []string{"q"},
 			},
-			"1 wallet, 1 DRep, 1 pool, 2 assets, 1 policy",
+			"Standard: 1 wallet OR 1 DRep OR 1 pool OR 2 assets OR 1 policy",
+		},
+		{
+			"mixed target connectors",
+			FilterConfig{
+				Wallets:     []string{"addr1"},
+				DReps:       []string{"drep1"},
+				Pools:       []string{"pool1"},
+				Assets:      []string{"asset1"},
+				Policies:    []string{"policy1"},
+				DRepMatch:   AdvancedMatchAll,
+				PoolMatch:   AdvancedMatchAny,
+				AssetMatch:  AdvancedMatchAll,
+				PolicyMatch: AdvancedMatchAll,
+			},
+			"Standard: 1 wallet AND 1 DRep OR 1 pool AND 1 asset AND 1 policy",
 		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			assert.Equal(t, tc.want, SummarizeFilter(tc.filter))
+		})
+	}
+}
+
+// TestMatchesNothing locks in the never-match guard: the standard filter
+// expression is an OR of AND-terms (see standardFilterMatcher), and an
+// AND-term joining groups from different event families (tx / block / gov)
+// can never match a single event. The whole expression is dead only when
+// every term is dead; a live single-family term reachable via OR rescues
+// it.
+func TestMatchesNothing(t *testing.T) {
+	const all = AdvancedMatchAll
+	const any = AdvancedMatchAny
+	cases := []struct {
+		name string
+		f    FilterConfig
+		want bool
+	}{
+		{"empty", FilterConfig{}, false},
+		{
+			"monitor everything",
+			FilterConfig{MonitorEverything: true},
+			false,
+		},
+		{"single wallet", FilterConfig{Wallets: []string{"a"}}, false},
+		{
+			"wallet OR pool (default OR)",
+			FilterConfig{Wallets: []string{"a"}, Pools: []string{"p"}},
+			false,
+		},
+		{
+			"wallet AND pool (cross-family, dead)",
+			FilterConfig{
+				Wallets:   []string{"a"},
+				Pools:     []string{"p"},
+				PoolMatch: all,
+			},
+			true,
+		},
+		{
+			"wallet AND asset (same tx family, live)",
+			FilterConfig{
+				Wallets:    []string{"a"},
+				Assets:     []string{"x"},
+				AssetMatch: all,
+			},
+			false,
+		},
+		{
+			"wallet AND DRep (cross-family, dead)",
+			FilterConfig{
+				Wallets:   []string{"a"},
+				DReps:     []string{"d"},
+				DRepMatch: all,
+			},
+			true,
+		},
+		{
+			"dead AND-term rescued by OR to a live term",
+			FilterConfig{
+				Wallets:    []string{"a"}, // tx
+				DReps:      []string{"d"}, // gov, AND -> dead term
+				Assets:     []string{"x"}, // tx, OR -> live single term
+				DRepMatch:  all,
+				AssetMatch: any,
+			},
+			false,
+		},
+		{
+			"every term cross-family (all dead)",
+			FilterConfig{
+				Wallets:     []string{"a"},
+				DReps:       []string{"d"},
+				Pools:       []string{"p"},
+				Assets:      []string{"x"},
+				Policies:    []string{"q"},
+				DRepMatch:   all,
+				PoolMatch:   any,
+				AssetMatch:  all,
+				PolicyMatch: all,
+			},
+			true,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, tc.f.MatchesNothing())
 		})
 	}
 }
@@ -328,6 +430,8 @@ func TestPathsUseOverridesAndExpandTilde(t *testing.T) {
 
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	// os.UserHomeDir reads USERPROFILE on Windows, HOME elsewhere.
+	t.Setenv("USERPROFILE", home)
 
 	got, err := ExpandTildePath("~/adder.log")
 	require.NoError(t, err)
@@ -431,7 +535,7 @@ func TestServiceRenderingAndSafeStatusPaths(t *testing.T) {
 		ConfigPath: "/tmp/config <one>.yaml",
 		LogDir:     "/tmp/logs",
 	}
-	rendered, err := renderServiceUnit(cfg)
+	rendered, err := renderUnit(cfg)
 	require.NoError(t, err)
 	text := string(rendered)
 	switch runtime.GOOS {
@@ -446,7 +550,7 @@ func TestServiceRenderingAndSafeStatusPaths(t *testing.T) {
 		assert.Empty(t, text)
 	}
 
-	assert.NotEmpty(t, serviceUnitFilePath())
+	assert.NotEmpty(t, serviceUnitPath())
 
 	status, err := ServiceStatusCheck()
 	require.NoError(t, err)
@@ -533,7 +637,7 @@ func TestServiceLifecycleWithFakePlatformCommand(t *testing.T) {
 
 	require.NoError(
 		t,
-		os.WriteFile(serviceUnitFilePath(), []byte("stale"), 0o644),
+		os.WriteFile(serviceUnitPath(), []byte("stale"), 0o644),
 	)
 	require.NoError(
 		t,

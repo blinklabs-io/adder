@@ -157,6 +157,31 @@ func TestRenderTemplates_RealPhrasings(t *testing.T) {
 			},
 			want: "DRep drep1abc…wxyz voted Yes on proposal #42.",
 		},
+		{
+			// Regression: an event carrying several votes must render
+			// the FOLLOWED DRep's vote, not whichever is first.
+			name:   "drep vote picks followed drep among many",
+			tmpl:   tmplGovVote,
+			params: []string{"drep1followedAAAAwxyz"},
+			evt: event.Event{
+				Type: EventTypeGovernance,
+				Payload: map[string]any{
+					"votingProcedures": []any{
+						map[string]any{
+							"voterId":        "drep1otherCCCCDDDDzzzz",
+							"vote":           "No",
+							"govActionIndex": float64(7),
+						},
+						map[string]any{
+							"voterId":        "drep1followedAAAAwxyz",
+							"vote":           "Yes",
+							"govActionIndex": float64(42),
+						},
+					},
+				},
+			},
+			want: "DRep drep1fol…wxyz voted Yes on proposal #42.",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

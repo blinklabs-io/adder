@@ -146,15 +146,17 @@ func (c *Cardano) filterTransactionEvent(te event.TransactionEvent) bool {
 		}
 	}
 
-	// Check pool filter
-	if c.filterSet.hasPoolFilter {
+	// Pool and DRep IDs identify independent actors. When both are configured,
+	// pass transactions involving either followed identity.
+	if c.filterSet.hasPoolFilter && c.filterSet.hasDRepFilter {
+		if !c.matchPoolFilterTx(te) && !c.matchDRepFilterTx(te) {
+			return false
+		}
+	} else if c.filterSet.hasPoolFilter {
 		if !c.matchPoolFilterTx(te) {
 			return false
 		}
-	}
-
-	// Check DRep filter
-	if c.filterSet.hasDRepFilter {
+	} else if c.filterSet.hasDRepFilter {
 		if !c.matchDRepFilterTx(te) {
 			return false
 		}
@@ -348,16 +350,19 @@ func (c *Cardano) filterGovernanceEvent(ge event.GovernanceEvent) bool {
 		}
 	}
 
-	// Check DRep filter
-	if c.filterSet.hasDRepFilter {
-		if !c.matchDRepFilterGovernance(ge) {
+	// Pool and DRep IDs identify independent actors. When both are configured,
+	// pass governance events involving either followed identity.
+	if c.filterSet.hasPoolFilter && c.filterSet.hasDRepFilter {
+		if !c.matchPoolFilterGovernance(ge) &&
+			!c.matchDRepFilterGovernance(ge) {
 			return false
 		}
-	}
-
-	// Check pool filter
-	if c.filterSet.hasPoolFilter {
+	} else if c.filterSet.hasPoolFilter {
 		if !c.matchPoolFilterGovernance(ge) {
+			return false
+		}
+	} else if c.filterSet.hasDRepFilter {
+		if !c.matchDRepFilterGovernance(ge) {
 			return false
 		}
 	}

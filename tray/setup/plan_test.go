@@ -36,12 +36,14 @@ func TestClonePlanIsDeep(t *testing.T) {
 	clone := ClonePlan(orig)
 	clone.Filter.Wallets = append(clone.Filter.Wallets, "addr1b")
 	clone.Filter.DReps[0] = "drep1z"
+	clone.Filter.Assets[0] = "asset1z"
 	clone.Notify[NotifyPrefIncomingTx] = false
 	clone.Notify[NotifyPrefOutgoingTx] = true
 	clone.Output.Config["k"] = "other"
 
 	assert.Equal(t, []string{"addr1a"}, orig.Filter.Wallets)
 	assert.Equal(t, "drep1a", orig.Filter.DReps[0])
+	assert.Equal(t, "asset1a", orig.Filter.Assets[0])
 	assert.True(t, orig.Notify[NotifyPrefIncomingTx])
 	_, hasOutgoing := orig.Notify[NotifyPrefOutgoingTx]
 	assert.False(t, hasOutgoing)

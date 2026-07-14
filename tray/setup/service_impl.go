@@ -63,7 +63,7 @@ func (c ServiceConfig) Validate() error {
 
 // RegisterService installs adder as a system service using the
 // platform-specific mechanism (systemd user unit, launchd plist,
-// or Windows Task Scheduler).
+// or Windows HKCU Run).
 func RegisterService(cfg ServiceConfig) error {
 	if err := cfg.Validate(); err != nil {
 		return err

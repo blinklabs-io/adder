@@ -26,8 +26,8 @@ import (
 
 // TrayConfig holds the configuration for the adder-tray application.
 // Filter is the authoritative source of monitoring targets — the
-// sidecar engine config carries no per-target lists, because the
-// cardano filter would AND-combine them on transaction events.
+// sidecar engine config carries no per-target lists because the tray
+// notification engine owns target matching semantics.
 type TrayConfig struct {
 	APIAddress  string          `yaml:"api_address"`
 	APIPort     uint            `yaml:"api_port"`

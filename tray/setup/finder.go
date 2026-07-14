@@ -25,7 +25,7 @@ import (
 
 // AppBinaryFinder locates a trusted `adder` binary to register and run as a
 // system service. The resolved path is embedded into the OS service
-// definition (systemd ExecStart, launchd ProgramArguments, schtasks /TR) and
+// definition (systemd ExecStart, launchd ProgramArguments, Windows command) and
 // executed, so resolution must never trust an attacker-influenceable location.
 type AppBinaryFinder struct {
 	// DevLookup, when true, lets Find() fall back to the current working
@@ -80,7 +80,10 @@ func (f *AppBinaryFinder) Find() (string, error) {
 		}
 	}
 
-	return "", fmt.Errorf("could not find a trusted %s next to the executable", name)
+	return "", fmt.Errorf(
+		"could not find a trusted %s next to the executable",
+		name,
+	)
 }
 
 // validateTrustedBinary verifies that path is safe to register as a service

@@ -33,8 +33,9 @@ const (
 	launchAgentFile  = "io.blinklabs.adder.plist"
 )
 
-const plistTemplate = `<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+const plistTemplate = `<?xml version="1.0" encoding="UTF-8"?>` + "\n" +
+	`<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" ` +
+	`"http://www.apple.com/DTDs/PropertyList-1.0.dtd">` + `
 <plist version="1.0">
 <dict>
     <key>Label</key>
@@ -113,20 +114,31 @@ func registerService(cfg ServiceConfig) error {
 		return err
 	}
 
-	if err := os.WriteFile(serviceUnitPath(), data, 0o644); err != nil { //nolint:gosec // plist files need 0644 permissions
+	//nolint:gosec // plist files need 0644 permissions
+	if err := os.WriteFile(serviceUnitPath(), data, 0o644); err != nil {
 		return fmt.Errorf("writing plist file: %w", err)
 	}
 
+	// launchctl bootstrap can transiently fail with "Bootstrap failed: 5:
+	// Input/output error" when it races a just-completed bootout (launchd is
+	// still tearing down the old job). Retry that specific case a few times.
 	target := fmt.Sprintf("gui/%d", os.Getuid())
-	if out, err := exec.Command( //nolint:gosec // paths are generated internally
-		"launchctl", "bootstrap", target, serviceUnitPath(),
-	).CombinedOutput(); err != nil {
-		if !strings.Contains(string(out), "service already bootstrapped") {
-			return fmt.Errorf("loading launch agent: %s: %w", strings.TrimSpace(string(out)), err)
+	var out []byte
+	for attempt := range 3 {
+		out, err = exec.Command( //nolint:gosec // paths are generated internally
+			"launchctl", "bootstrap", target, serviceUnitPath(),
+		).CombinedOutput()
+		if err == nil ||
+			strings.Contains(string(out), "service already bootstrapped") {
+			return nil
 		}
+		if !strings.Contains(string(out), "Bootstrap failed: 5") {
+			break
+		}
+		time.Sleep(time.Duration(attempt+1) * 300 * time.Millisecond)
 	}
-
-	return nil
+	return fmt.Errorf("loading launch agent: %s: %w",
+		strings.TrimSpace(string(out)), err)
 }
 
 func unregisterService() error {
@@ -135,7 +147,8 @@ func unregisterService() error {
 		"launchctl", "bootout", target,
 	).CombinedOutput(); err != nil {
 		if !strings.Contains(string(out), "Could not find service") {
-			return fmt.Errorf("unloading launch agent: %s: %w", strings.TrimSpace(string(out)), err)
+			return fmt.Errorf("unloading launch agent: %s: %w",
+				strings.TrimSpace(string(out)), err)
 		}
 	}
 
@@ -151,7 +164,9 @@ func serviceStatusCheck() (ServiceStatus, error) {
 		return ServiceNotRegistered, nil
 	}
 
-	if err := exec.Command("launchctl", "list", launchAgentLabel).Run(); err == nil {
+	if err := exec.Command(
+		"launchctl", "list", launchAgentLabel,
+	).Run(); err == nil {
 		return ServiceRunning, nil
 	}
 
@@ -170,7 +185,9 @@ func startService() error {
 	}
 
 	// Check if already running to avoid "Bootstrap failed: 5" errors
-	if err := exec.Command("launchctl", "list", launchAgentLabel).Run(); err == nil {
+	if err := exec.Command(
+		"launchctl", "list", launchAgentLabel,
+	).Run(); err == nil {
 		return nil // Already running
 	}
 
@@ -211,4 +228,9 @@ func stopService() error {
 		return fmt.Errorf("stopping launch agent: %s: %w", output, err)
 	}
 	return nil
+}
+
+func existingUnit() []byte {
+	data, _ := os.ReadFile(serviceUnitPath())
+	return data
 }

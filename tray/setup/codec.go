@@ -53,11 +53,10 @@ func (p SetupPlan) ToEngineConfig(base config.Config) config.Config {
 		delete(c.Plugin["input"]["chainsync"], "address")
 	}
 
-	// 3. Filter Configuration — the cardano filter applies AND
-	// semantics across its address/drep/pool/asset/policy knobs on
-	// transaction events. The tray's engine matches per-rule (OR) on
-	// the firehose, so none of those knobs may be written. Delete any
-	// stale ones (hand-edited configs, older tray versions).
+	// 3. Filter Configuration — the tray owns filter semantics and
+	// persists them on TrayConfig, so none of the UI target lists may
+	// be written into the sidecar config. Delete any stale sidecar
+	// knobs from hand-edited configs or older tray versions.
 	if cardano, ok := c.Plugin["filter"]["cardano"]; ok {
 		delete(cardano, "address")
 		delete(cardano, "drep")
@@ -126,11 +125,10 @@ func SetupPlanFromEngineConfig(c config.Config, tray TrayConfig) SetupPlan {
 		}
 	}
 
-	// Filter lives on the tray config (engine side carries no
-	// per-target lists — that would AND-combine kinds in the cardano
-	// filter). Empty tray config → MonitorEverything so the wizard
-	// advances. CloneFilter detaches the slices so plan mutations
-	// don't leak into tray.Filter.
+	// Filter lives on the tray config so the tray notification engine
+	// owns target matching semantics. Empty tray config →
+	// MonitorEverything so the wizard advances. CloneFilter detaches
+	// the slices so plan mutations don't leak into tray.Filter.
 	plan.Filter = CloneFilter(tray.Filter)
 	if !plan.Filter.MonitorEverything &&
 		len(plan.Filter.Wallets) == 0 &&

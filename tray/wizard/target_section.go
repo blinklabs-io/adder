@@ -15,6 +15,7 @@
 package wizard
 
 import (
+	"fmt"
 	"strings"
 
 	"fyne.io/fyne/v2"
@@ -33,12 +34,14 @@ type targetSection struct {
 	placeholder string
 	validate    func(string) error // ValidateWalletAddr etc.
 
-	entry    *widget.Entry
-	addBtn   *widget.Button
-	errLabel *widget.Label
-	list     *fyne.Container // VBox of entry rows
-	values   []string
-	rowBtns  []*widget.Button // trash buttons parallel to values
+	entry      *widget.Entry
+	addBtn     *widget.Button
+	errLabel   *widget.Label
+	matchHint  *widget.Label
+	countLabel *widget.Label
+	list       *fyne.Container // VBox of entry rows
+	values     []string
+	rowBtns    []*widget.Button // trash buttons parallel to values
 
 	// onChange is invoked after every add/remove so the parent surface
 	// can update derived UI (summary line, rule list rebuild).
@@ -72,6 +75,12 @@ func newTargetSection(
 	sec.errLabel = widget.NewLabel("")
 	sec.errLabel.Wrapping = fyne.TextWrapWord
 	sec.errLabel.Hide()
+	sec.matchHint = widget.NewLabel(
+		"Any " + targetNoun(label) + " saved here can match.",
+	)
+	sec.matchHint.Importance = widget.LowImportance
+	sec.countLabel = widget.NewLabel("")
+	sec.countLabel.Importance = widget.LowImportance
 	sec.list = container.NewVBox()
 	sec.addBtn = widget.NewButtonWithIcon(
 		"Add",
@@ -79,7 +88,34 @@ func newTargetSection(
 		func() { sec.add(sec.entry.Text) },
 	)
 	sec.entry.OnSubmitted = func(string) { sec.add(sec.entry.Text) }
+	sec.refreshCount()
 	return sec
+}
+
+func targetNoun(label string) string {
+	switch label {
+	case "Wallets":
+		return "wallet"
+	case "DReps":
+		return "DRep"
+	case "Pools":
+		return "pool"
+	case "Assets":
+		return "asset"
+	case "Policies":
+		return "policy"
+	default:
+		return "item"
+	}
+}
+
+func (sec *targetSection) refreshCount() {
+	if len(sec.values) == 0 {
+		sec.countLabel.Hide()
+		return
+	}
+	sec.countLabel.SetText(fmt.Sprintf("%d saved", len(sec.values)))
+	sec.countLabel.Show()
 }
 
 // add validates v (splitting on commas first so pasted CSV produces
@@ -133,6 +169,7 @@ func (sec *targetSection) add(v string) {
 	for _, p := range parts {
 		sec.appendRow(p)
 	}
+	sec.refreshCount()
 	sec.entry.SetText("")
 	if sec.onChange != nil {
 		sec.onChange()
@@ -197,6 +234,7 @@ func (sec *targetSection) removeValue(v string, row fyne.CanvasObject) {
 		}
 	}
 	sec.list.Remove(row)
+	sec.refreshCount()
 	if sec.onChange != nil {
 		sec.onChange()
 	}
@@ -218,6 +256,7 @@ func (sec *targetSection) setValues(vs []string) {
 		seen[k] = struct{}{}
 		sec.appendRow(v)
 	}
+	sec.refreshCount()
 }
 
 // setEnabled toggles every input the user can interact with on this
@@ -242,10 +281,14 @@ func (sec *targetSection) setEnabled(enabled bool) {
 
 func (sec *targetSection) canvasObject() fyne.CanvasObject {
 	return container.NewVBox(
-		widget.NewLabelWithStyle(
-			sec.label, fyne.TextAlignLeading,
-			fyne.TextStyle{Bold: true},
+		container.NewBorder(
+			nil, nil, nil, sec.countLabel,
+			widget.NewLabelWithStyle(
+				sec.label, fyne.TextAlignLeading,
+				fyne.TextStyle{Bold: true},
+			),
 		),
+		sec.matchHint,
 		container.NewBorder(
 			nil, nil, nil, sec.addBtn, sec.entry,
 		),

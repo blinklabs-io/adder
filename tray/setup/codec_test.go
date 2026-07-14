@@ -154,7 +154,7 @@ func TestSetupPlanRoundTrip(t *testing.T) {
 			assert.Equal(t, tc.plan.App.AutoStart, got.App.AutoStart)
 			assert.Equal(t, tc.plan.Notify, got.Notify)
 			// Engine config must NOT carry the per-target filter
-			// knobs — that's the AND-bug guard.
+			// knobs; tray config is the matching authority.
 			if cardano, ok := engine.Plugin["filter"]["cardano"]; ok {
 				assert.NotContains(t, cardano, "address",
 					"engine filter must not carry address knob")
@@ -257,14 +257,11 @@ func TestSetupPlanFromEngineConfigHandlesSparseConfig(t *testing.T) {
 }
 
 // TestToEngineConfigClearsCardanoFilterKnobs is the regression guard
-// for the AND-bug: writing wallet/DRep/pool into the sidecar's
-// cardano-filter block makes them mutually restrictive on
-// TransactionEvent (the filter ANDs across knobs), silently dropping
-// events that match one configured kind but not the others. The
-// engine now does per-rule OR matching at dispatch time, so
-// ToEngineConfig must defensively scrub any stale knobs left over
-// from earlier tray versions and must NOT write the plan's Filter
-// into the engine config.
+// for keeping UI targets out of the sidecar's cardano-filter block.
+// The tray notification engine owns target matching semantics, so
+// ToEngineConfig must defensively scrub any stale knobs left over from
+// earlier tray versions and must NOT write the plan's Filter into the
+// engine config.
 func TestToEngineConfigClearsCardanoFilterKnobs(t *testing.T) {
 	base := config.Config{
 		Plugin: map[string]map[string]map[any]any{
@@ -299,7 +296,7 @@ func TestToEngineConfigClearsCardanoFilterKnobs(t *testing.T) {
 
 	// All five legacy knobs must be gone — regardless of whether
 	// the plan has matching targets. Writing any of them back would
-	// re-introduce the AND bug on transaction events.
+	// split target semantics between the tray and sidecar configs.
 	assert.NotContains(t, cardano, "address",
 		"address knob must not be written by ToEngineConfig")
 	assert.NotContains(t, cardano, "drep",
@@ -313,14 +310,11 @@ func TestToEngineConfigClearsCardanoFilterKnobs(t *testing.T) {
 }
 
 // TestToEngineConfig_CombinedWalletDRepPoolNeverWritesFilterKnobs is
-// the regression guard for the reviewer-flagged "looks like a bug"
-// scenario: a user who configures wallet + DRep + pool together must
-// NOT have those values written into the sidecar's cardano filter
-// (which AND-combines them on transaction events, silently dropping
-// normal wallet txs that don't also match the DRep + pool filters).
-// After the fix, ToEngineConfig leaves the filter knobs unset
-// regardless of plan content; OR-style matching happens at the tray
-// engine layer.
+// the regression guard for keeping a multi-section filter in one
+// authority: a user who configures wallet + DRep + pool together must
+// NOT have those values written into the sidecar's cardano filter.
+// ToEngineConfig leaves the filter knobs unset regardless of plan
+// content; target matching happens at the tray engine layer.
 func TestToEngineConfig_CombinedWalletDRepPoolNeverWritesFilterKnobs(
 	t *testing.T,
 ) {
@@ -449,6 +443,8 @@ func TestSetupPlanFromEngineConfigDoesNotAliasFilterSlices(t *testing.T) {
 		"Assets backing array must be detached")
 	assert.Equal(t, "pol1", got.Filter.Policies[0],
 		"Policies backing array must be detached")
+	assert.False(t, got.Filter.MonitorEverything,
+		"configured targets must prevent fallback to MonitorEverything")
 }
 
 func TestToEngineConfigWritesCustomNodeAddress(t *testing.T) {

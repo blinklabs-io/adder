@@ -128,9 +128,9 @@ func (s *notificationsStep) createLayout() fyne.CanvasObject {
 		}),
 		widget.NewButton("No, it didn't show", func() {
 			s.verified = false
-			s.verifyResult.SetText("⚠️ Please check 'System Settings > " +
-				"Notifications > AdderTray' and ensure 'Allow " +
-				"Notifications' is enabled.")
+			s.verifyResult.SetText("⚠️ Check your system's notification " +
+				"settings and ensure notifications are enabled for " +
+				"AdderTray.")
 		}),
 	)
 	s.verifyBox.Hide()
@@ -161,7 +161,8 @@ func (s *notificationsStep) createLayout() fyne.CanvasObject {
 			fyne.TextStyle{Bold: true},
 		),
 		widget.NewLabel(
-			"macOS requires explicit permission for notifications.",
+			"Send a test notification to confirm alerts appear. "+
+				"Grant permission if your system prompts you.",
 		),
 		permBtn,
 		s.verifyResult,

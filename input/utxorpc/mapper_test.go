@@ -68,6 +68,7 @@ func TestFollowTipApplyCBORRealProviderBlock(t *testing.T) {
 	blockCtx := evts[0].Context.(event.BlockContext)
 	assert.Equal(t, uint64(13380271), blockCtx.BlockNumber)
 	assert.Equal(t, uint64(186435630), blockCtx.SlotNumber)
+	assert.Equal(t, uint32(764824073), blockCtx.NetworkMagic)
 
 	blockEvt := evts[0].Payload.(event.BlockEvent)
 	assert.Equal(t, uint64(25), blockEvt.TransactionCount)
@@ -208,6 +209,9 @@ func TestFollowTipApplyProtobufFansOut(t *testing.T) {
 
 	blockEvt := evts[0].Payload.(event.BlockEvent)
 	assert.Equal(t, uint64(1), blockEvt.TransactionCount)
+
+	blockCtx := evts[0].Context.(event.BlockContext)
+	assert.Equal(t, uint32(764824073), blockCtx.NetworkMagic)
 
 	txCtx := evts[1].Context.(event.TransactionContext)
 	assert.Equal(t, hex.EncodeToString(txHash), txCtx.TransactionHash)

@@ -1,9 +1,13 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
+	"log/slog"
+	"net"
 	"net/http"
 	"sync"
 	"time"
@@ -21,6 +25,7 @@ type HealthChecker interface {
 
 type API interface {
 	Start() error
+	Shutdown(context.Context) error
 	AddRoute(method, path string, handler gin.HandlerFunc)
 }
 
@@ -29,6 +34,9 @@ type APIv1 struct {
 	ApiGroup *gin.RouterGroup
 	Host     string
 	Port     uint
+	server   *http.Server
+	listener net.Listener
+	mu       sync.Mutex
 }
 
 type APIRouteRegistrar interface {
@@ -122,22 +130,51 @@ func (a *APIv1) Engine() *gin.Engine {
 // @license.name	Apache 2.0
 // @license.url	http://www.apache.org/licenses/LICENSE-2.0.html
 func (a *APIv1) Start() error {
-	address := fmt.Sprintf("%s:%d", a.Host, a.Port)
-	// Use buffered channel to not block goroutine
-	errChan := make(chan error, 1)
-
-	go func() {
-		// Capture the error returned by Run
-		errChan <- a.engine.Run(address)
-	}()
-
-	select {
-	case err := <-errChan:
-		return err
-	default:
-		// No starting errors, start server
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.listener != nil {
+		return errors.New("API server is already running")
 	}
+	address := fmt.Sprintf("%s:%d", a.Host, a.Port)
+	listener, err := net.Listen("tcp", address)
+	if err != nil {
+		return fmt.Errorf("listening on %s: %w", address, err)
+	}
+	a.listener = listener
+	a.server = &http.Server{
+		Handler:           a.engine,
+		ReadHeaderTimeout: 60 * time.Second,
+	}
+	server := a.server
+	go func() {
+		if err := server.Serve(listener); err != nil &&
+			!errors.Is(err, http.ErrServerClosed) {
+			slog.Error("API server stopped unexpectedly", "error", err)
+		}
+	}()
+	return nil
+}
 
+func (a *APIv1) Shutdown(ctx context.Context) error {
+	a.mu.Lock()
+	server := a.server
+	listener := a.listener
+	a.mu.Unlock()
+	if server == nil {
+		return nil
+	}
+	if listener != nil {
+		if err := listener.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
+			return fmt.Errorf("closing API listener: %w", err)
+		}
+	}
+	if err := server.Shutdown(ctx); err != nil && !errors.Is(err, net.ErrClosed) {
+		return fmt.Errorf("shutting down API server: %w", err)
+	}
+	a.mu.Lock()
+	a.server = nil
+	a.listener = nil
+	a.mu.Unlock()
 	return nil
 }
 

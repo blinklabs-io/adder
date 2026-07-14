@@ -48,19 +48,57 @@ func (s Status) String() string {
 	}
 }
 
+// statusQueueSize bounds the pending-transition buffer. Transitions are
+// infrequent (a handful per apply/reconnect) but the observer can sleep
+// between deliveries, so buffer generously to keep Set non-blocking.
+const statusQueueSize = 64
+
 // StatusTracker provides thread-safe status tracking with change
 // notification. It notifies an optional observer when the status
-// changes.
+// changes. Transitions are delivered to the observer by a single
+// long-lived worker goroutine, so the observer always sees them in the
+// order they occurred (rapid flips can no longer race).
 type StatusTracker struct {
 	mu       sync.RWMutex
 	status   Status
 	observer func(Status)
+	queue    chan Status
 }
 
 // NewStatusTracker creates a StatusTracker with initial status
-// StatusStopped.
+// StatusStopped and starts its ordered-delivery worker.
 func NewStatusTracker() *StatusTracker {
-	return &StatusTracker{}
+	t := &StatusTracker{queue: make(chan Status, statusQueueSize)}
+	go t.deliverLoop()
+	return t
+}
+
+// deliverLoop drains queued transitions in order, invoking the current
+// observer for each. One goroutine owns delivery, so observer calls are
+// serialized and ordered.
+func (t *StatusTracker) deliverLoop() {
+	for s := range t.queue {
+		t.mu.RLock()
+		obs := t.observer
+		t.mu.RUnlock()
+		if obs != nil {
+			t.invoke(obs, s)
+		}
+	}
+}
+
+// invoke calls the observer with panic recovery so a misbehaving
+// observer cannot kill the delivery worker.
+func (t *StatusTracker) invoke(obs func(Status), s Status) {
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Error("status observer panicked",
+				"status", s,
+				"panic", r,
+			)
+		}
+	}()
+	obs(s)
 }
 
 // Status returns the current status.
@@ -70,8 +108,8 @@ func (t *StatusTracker) Status() Status {
 	return t.status
 }
 
-// Set updates the status and notifies the observer asynchronously if
-// the status changed.
+// Set updates the status and enqueues an ordered observer notification
+// if the status changed.
 func (t *StatusTracker) Set(s Status) {
 	t.mu.Lock()
 	if t.status == s {
@@ -79,22 +117,11 @@ func (t *StatusTracker) Set(s Status) {
 		return
 	}
 	t.status = s
-	obs := t.observer
 	t.mu.Unlock()
 
-	if obs != nil {
-		go func() {
-			defer func() {
-				if r := recover(); r != nil {
-					slog.Error("status observer panicked",
-						"status", s,
-						"panic", r,
-					)
-				}
-			}()
-			obs(s)
-		}()
-	}
+	// Enqueue for ordered delivery. Buffered so this stays non-blocking
+	// for realistic transition rates.
+	t.queue <- s
 }
 
 // OnChange registers a callback that is invoked whenever the status
@@ -107,14 +134,6 @@ func (t *StatusTracker) OnChange(fn func(Status)) {
 	t.mu.Unlock()
 
 	if fn != nil {
-		defer func() {
-			if r := recover(); r != nil {
-				slog.Error("status observer panicked on initial call",
-					"status", s,
-					"panic", r,
-				)
-			}
-		}()
-		fn(s)
+		t.invoke(fn, s)
 	}
 }

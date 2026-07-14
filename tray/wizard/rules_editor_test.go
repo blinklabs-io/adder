@@ -163,6 +163,22 @@ func TestRulesEditorAddTargetSnapshotsFilter(t *testing.T) {
 		"pool1ws7gpqkw4wpdj33lf3hcjy9zk5pxr8htnnxkxepe49p5gp3srcg")
 }
 
+func TestRulesEditorHydratesAndSnapshotsTargetConnectors(t *testing.T) {
+	test.NewApp()
+	plan := samplePlan()
+	plan.Filter.DRepMatch = setup.AdvancedMatchAll
+	plan.Filter.AssetMatch = setup.AdvancedMatchAll
+
+	e := NewRulesEditor(plan, nil)
+	assert.Equal(t, connectorAndLabel, e.drepConnector.Selected)
+	assert.Equal(t, connectorOrLabel, e.poolConnector.Selected)
+	assert.Equal(t, connectorAndLabel, e.assetConnector.Selected)
+
+	e.policyConnector.SetSelected(connectorAndLabel)
+	assert.Equal(t, setup.AdvancedMatchAll,
+		e.working.Filter.PolicyMatch)
+}
+
 func TestRulesEditorOnApplyDisablesButtonAndPassesWorking(t *testing.T) {
 	test.NewApp()
 	var gotPlan setup.SetupPlan
@@ -409,6 +425,21 @@ func TestTargetSectionAddRejectsDuplicate(t *testing.T) {
 			"addr1q8j55h0kfan5dxkj57nu9zkv0w2c8py6gvgct69wxptevh89kxh4rln29df4q2pnfcc4y58pjjrev0qfvxv5j93s5e7sx2g78c",
 	)
 	assert.Len(t, sec.values, 1)
+}
+
+func TestTargetSectionExplainsAnyMatchAndUpdatesCount(t *testing.T) {
+	test.NewApp()
+	sec := newTargetSection("Wallets", "addr",
+		setup.ValidateWalletAddr, nil)
+
+	assert.Equal(t, "Any wallet saved here can match.", sec.matchHint.Text)
+	assert.False(t, sec.countLabel.Visible())
+
+	sec.setValues([]string{"addr1first", "addr1second"})
+	assert.Equal(t, "2 saved", sec.countLabel.Text)
+
+	sec.removeValue("addr1first", sec.list.Objects[0])
+	assert.Equal(t, "1 saved", sec.countLabel.Text)
 }
 
 // TestTargetSectionAddDedupIsCaseInsensitive guards that two hex IDs

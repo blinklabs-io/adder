@@ -11,12 +11,18 @@ BINARIES=$(shell cd $(ROOT_DIR)/cmd && ls -1 | grep -v ^common | grep -v ^adder-
 GOMODULE=$(shell grep ^module $(ROOT_DIR)/go.mod | awk '{ print $$2 }')
 
 # Set version strings based on git tag and current ref
-GO_LDFLAGS=-ldflags "-s -w -X '$(GOMODULE)/internal/version.Version=$(shell git describe --tags --exact-match 2>/dev/null)' -X '$(GOMODULE)/internal/version.CommitHash=$(shell git rev-parse --short HEAD)'"
+GO_LDFLAGS_CONTENT=-s -w -X '$(GOMODULE)/internal/version.Version=$(shell git describe --tags --exact-match 2>/dev/null)' -X '$(GOMODULE)/internal/version.CommitHash=$(shell git rev-parse --short HEAD)'
+GO_LDFLAGS=-ldflags "$(GO_LDFLAGS_CONTENT)"
+
+# adder-tray must link against the Windows GUI subsystem so launching it
+# does not spawn a console window. -H=windowsgui is only valid for
+# GOOS=windows, so it is appended conditionally.
+TRAY_LDFLAGS=-ldflags "$(GO_LDFLAGS_CONTENT)$(if $(filter windows,$(GOOS)), -H=windowsgui,)"
 
 GO_CGO_CFLAGS=$(shell go env CGO_CFLAGS)
 TRAY_CGO_CFLAGS=$(strip $(GO_CGO_CFLAGS) $(if $(filter windows/arm64,$(GOOS)/$(GOARCH)),-DWINBOOL=BOOL,))
 
-.PHONY: build build-tray mod-tidy clean test bundle-macos pkg-macos pkg-macos-adhoc
+.PHONY: build build-tray mod-tidy clean test wizard-screenshots bundle-macos pkg-macos pkg-macos-adhoc
 
 # Alias for building program binary
 build: $(BINARIES)
@@ -58,11 +64,17 @@ swagger:
 test: mod-tidy
 	go test -v -race ./...
 
+# Render each setup-wizard step to /tmp/wizard_step{N}.png for visual
+# review (override dir with WIZARD_CAPTURE_DIR). Dev-only; the underlying
+# test is skipped in normal runs unless WIZARD_CAPTURE=1.
+wizard-screenshots:
+	WIZARD_CAPTURE=1 go test ./tray/wizard/ -run TestCaptureSteps -count=1 -v
+
 # Build adder-tray binary
 # CGO is required on all platforms for Fyne UI support.
 build-tray: mod-tidy $(GO_FILES)
 	CGO_CFLAGS="$(TRAY_CGO_CFLAGS)" CGO_ENABLED=1 go build \
-		$(GO_LDFLAGS) \
+		$(TRAY_LDFLAGS) \
 		-o adder-tray$(if $(filter windows,$(GOOS)),.exe,) \
 		./cmd/adder-tray
 
