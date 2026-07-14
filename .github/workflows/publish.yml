@@ -606,8 +606,12 @@ jobs:
             type=semver,pattern={{version}}
       - name: manifest-create
         shell: bash
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
         run: |
-          for t in ${{ steps.meta.outputs.tags }}; do
+          # Split multi-line TAGS on IFS at runtime; avoids a newline in the script.
+          # shellcheck disable=SC2086
+          for t in ${TAGS}; do
             # Extract the underlying manifests from each manifests list and create a new single manifest list.
             # Word-splitting of the two command substitutions below is intentional:
             # each digest line becomes a separate argument to `docker manifest create`.
