@@ -46,6 +46,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 	"unsafe"
@@ -76,6 +77,7 @@ func serviceUnitPath() string {
 var (
 	runKeyRegistryHive = registry.CURRENT_USER
 	runKeyRegistryPath = runKeyPath
+	enginePIDMu        sync.Mutex
 )
 
 // existingUnit reads and verifies both the registry autostart value pointing
@@ -215,8 +217,22 @@ func unregisterService() error {
 }
 
 func serviceStatusCheck() (ServiceStatus, error) {
-	if pid, ok := readEnginePID(); ok && processAlive(pid) {
-		return ServiceRunning, nil
+	if pid, ok := readEnginePID(); ok {
+		expected, expectedErr := registeredEnginePath()
+		actual, alive, actualErr := runningProcessPath(pid)
+		if expectedErr == nil && actualErr == nil &&
+			alive && sameExecutablePath(expected, actual) {
+			return ServiceRunning, nil
+		}
+		slog.Warn(
+			"ignoring stale engine pid",
+			"pid", pid,
+			"expected", expected,
+			"actual", actual,
+			"expected_error", expectedErr,
+			"actual_error", actualErr,
+		)
+		removeEnginePIDIf(pid)
 	}
 	if serviceRegistered() {
 		return ServiceRegistered, nil
@@ -315,10 +331,7 @@ func stopTrackedEngine(
 	if err := terminate(pid, expectedEngineImage()); err != nil {
 		return err
 	}
-	if rmErr := os.Remove(enginePIDFile()); rmErr != nil &&
-		!errors.Is(rmErr, os.ErrNotExist) {
-		slog.Warn("could not remove engine pid file", "error", rmErr)
-	}
+	removeEnginePID()
 	return nil
 }
 
@@ -346,6 +359,8 @@ func serviceRegistered() bool {
 }
 
 func writeEnginePID(pid int) error {
+	enginePIDMu.Lock()
+	defer enginePIDMu.Unlock()
 	if err := os.MkdirAll(filepath.Dir(enginePIDFile()), 0o755); err != nil {
 		return fmt.Errorf("creating engine pid directory: %w", err)
 	}
@@ -367,6 +382,29 @@ func readEnginePID() (uint32, bool) {
 		return 0, false
 	}
 	return uint32(n), true
+}
+
+func removeEnginePID() {
+	enginePIDMu.Lock()
+	defer enginePIDMu.Unlock()
+	removeEnginePIDUnlocked()
+}
+
+func removeEnginePIDUnlocked() {
+	if err := os.Remove(enginePIDFile()); err != nil &&
+		!errors.Is(err, os.ErrNotExist) {
+		slog.Warn("could not remove engine pid file", "error", err)
+	}
+}
+
+func removeEnginePIDIf(pid uint32) {
+	enginePIDMu.Lock()
+	defer enginePIDMu.Unlock()
+	current, ok := readEnginePID()
+	if !ok || current != pid {
+		return
+	}
+	removeEnginePIDUnlocked()
 }
 
 // terminatePID terminates a single process and waits (bounded) for it to exit.
@@ -451,15 +489,33 @@ func isOurEngine(expectImage, actual string, known bool) bool {
 // expectedEngineImage returns the base name of the engine executable recorded
 // by registerService (e.g. "adder.exe"), or "" if it cannot be determined.
 func expectedEngineImage() string {
-	command, err := registeredCommand()
+	path, err := registeredEnginePath()
 	if err != nil {
 		return ""
 	}
-	argv, err := windows.DecomposeCommandLine(command)
-	if err != nil || len(argv) == 0 {
-		return ""
+	return filepath.Base(path)
+}
+
+func registeredEnginePath() (string, error) {
+	command, err := registeredCommand()
+	if err != nil {
+		return "", err
 	}
-	return filepath.Base(argv[0])
+	argv, err := windows.DecomposeCommandLine(command)
+	if err != nil {
+		return "", fmt.Errorf("parsing engine command %q: %w", command, err)
+	}
+	if len(argv) == 0 || strings.TrimSpace(argv[0]) == "" {
+		return "", errors.New("recorded engine command has no executable")
+	}
+	return argv[0], nil
+}
+
+func sameExecutablePath(expected, actual string) bool {
+	if strings.TrimSpace(expected) == "" || strings.TrimSpace(actual) == "" {
+		return false
+	}
+	return strings.EqualFold(filepath.Clean(expected), filepath.Clean(actual))
 }
 
 // terminateUntrackedEngines recovers from a missing PID file by terminating
@@ -523,6 +579,30 @@ func fullProcessPath(pid uint32) (string, error) {
 		return "", err
 	}
 	defer func() { _ = windows.CloseHandle(handle) }()
+	return processPath(handle)
+}
+
+func runningProcessPath(pid uint32) (string, bool, error) {
+	handle, err := windows.OpenProcess(
+		windows.PROCESS_QUERY_LIMITED_INFORMATION, false, pid,
+	)
+	if err != nil {
+		return "", false, err
+	}
+	defer func() { _ = windows.CloseHandle(handle) }()
+	path, err := processPath(handle)
+	if err != nil {
+		return "", false, err
+	}
+	var code uint32
+	if err := windows.GetExitCodeProcess(handle, &code); err != nil {
+		return "", false, err
+	}
+	const stillActive = 259 // STILL_ACTIVE
+	return path, code == stillActive, nil
+}
+
+func processPath(handle windows.Handle) (string, error) {
 	buf := make([]uint16, 1024)
 	size := uint32(len(buf))
 	if err := windows.QueryFullProcessImageName(
