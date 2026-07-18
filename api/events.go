@@ -16,6 +16,7 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -23,7 +24,6 @@ import (
 	"sync"
 
 	"github.com/blinklabs-io/adder/event"
-	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 )
 
@@ -181,23 +181,31 @@ var wsUpgrader = websocket.Upgrader{
 	},
 }
 
-// HandleEvents is the Gin handler for GET /events. It upgrades to
+// HandleEvents is the net/http handler for GET /events. It upgrades to
 // WebSocket if possible, otherwise falls back to SSE.
-func (h *EventHub) HandleEvents(c *gin.Context) {
-	typeFilter := parseTypeFilter(c.Query("types"))
+//
+//	@Summary		Stream Blockchain Events
+//	@Description	Real-time pipeline event streaming. Automatically upgrades to WebSocket if requested by the client, otherwise falls back to Server-Sent Events (SSE). Supports filtering on event types.
+//	@Param			types	query	string	false	"Comma-separated list of event types to filter (e.g., input.block,input.transaction)"
+//	@Param			replay	query	boolean	false	"Whether to replay recent events from the ring buffer on connection"	default(true)
+//	@Produce		text/event-stream,application/json
+//	@Success		200	{string}	string	"Event Stream (SSE) or WebSocket Session"
+//	@Router			/events [get]
+func (h *EventHub) HandleEvents(w http.ResponseWriter, r *http.Request) {
+	typeFilter := parseTypeFilter(r.URL.Query().Get("types"))
 	replay := true
-	if value := c.Query("replay"); value != "" {
+	if value := r.URL.Query().Get("replay"); value != "" {
 		if parsed, err := strconv.ParseBool(value); err == nil {
 			replay = parsed
 		}
 	}
 
-	if websocket.IsWebSocketUpgrade(c.Request) {
-		h.handleWebSocket(c.Writer, c.Request, typeFilter, replay)
+	if websocket.IsWebSocketUpgrade(r) {
+		h.handleWebSocket(w, r, typeFilter, replay)
 		return
 	}
 
-	h.handleSSE(c, typeFilter, replay)
+	h.handleSSE(w, r, typeFilter, replay)
 }
 
 // parseTypeFilter parses a comma-separated list of event types into a
@@ -304,13 +312,20 @@ func (h *EventHub) handleWebSocket(
 }
 
 func (h *EventHub) handleSSE(
-	c *gin.Context,
+	w http.ResponseWriter,
+	r *http.Request,
 	typeFilter map[string]bool,
 	replayEnabled bool,
 ) {
-	c.Header("Content-Type", "text/event-stream")
-	c.Header("Cache-Control", "no-cache")
-	c.Header("Connection", "keep-alive")
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
 
 	client := &eventClient{
 		send:       make(chan []byte, clientSendBuffer),
@@ -342,19 +357,19 @@ func (h *EventHub) handleSSE(
 		if err != nil {
 			continue
 		}
-		_, _ = c.Writer.WriteString("data: " + string(data) + "\n\n")
+		_, _ = fmt.Fprintf(w, "data: %s\n\n", data)
 	}
-	c.Writer.Flush()
+	flusher.Flush()
 
-	clientGone := c.Request.Context().Done()
+	clientGone := r.Context().Done()
 	for {
 		select {
 		case msg, ok := <-client.send:
 			if !ok {
 				return
 			}
-			_, _ = c.Writer.WriteString("data: " + string(msg) + "\n\n")
-			c.Writer.Flush()
+			_, _ = fmt.Fprintf(w, "data: %s\n\n", msg)
+			flusher.Flush()
 		case <-clientGone:
 			return
 		case <-h.done:

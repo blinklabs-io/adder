@@ -1,4 +1,4 @@
-basePath: /v1
+basePath: /
 definitions:
   push.ErrorResponse:
     properties:
@@ -29,7 +29,61 @@ info:
   title: Adder API
   version: v1
 paths:
-  /fcm:
+  /events:
+    get:
+      description: Real-time pipeline event streaming. Automatically upgrades to WebSocket
+        if requested by the client, otherwise falls back to Server-Sent Events (SSE).
+        Supports filtering on event types.
+      parameters:
+      - description: Comma-separated list of event types to filter (e.g., input.block,input.transaction)
+        in: query
+        name: types
+        type: string
+      - default: true
+        description: Whether to replay recent events from the ring buffer on connection
+        in: query
+        name: replay
+        type: boolean
+      produces:
+      - text/event-stream
+      - application/json
+      responses:
+        "200":
+          description: Event Stream (SSE) or WebSocket Session
+          schema:
+            type: string
+      summary: Stream Blockchain Events
+  /healthcheck:
+    get:
+      description: Reports the health status of the running pipeline and registered
+        checkers. Returns 503 if any registered checker is unhealthy.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Healthy status response
+          schema:
+            additionalProperties: true
+            type: object
+        "503":
+          description: Service Unavailable response
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Healthcheck Endpoint
+  /ping:
+    get:
+      description: Returns a simple "pong" response to verify the API server is alive
+        and reachable.
+      produces:
+      - text/plain
+      responses:
+        "200":
+          description: pong
+          schema:
+            type: string
+      summary: Ping Endpoint
+  /v1/fcm:
     post:
       consumes:
       - application/json
@@ -53,7 +107,7 @@ paths:
           schema:
             $ref: '#/definitions/push.ErrorResponse'
       summary: Store FCM Token
-  /fcm/{token}:
+  /v1/fcm/{token}:
     delete:
       consumes:
       - application/json
@@ -98,6 +152,19 @@ paths:
           schema:
             $ref: '#/definitions/push.ErrorResponse'
       summary: Get FCM Token
+  /v1/qrcode:
+    get:
+      description: Generates an interactive HTML page containing a QR code representing
+        the local API FCM endpoint. Used by the Adder Tray desktop application during
+        onboarding setup.
+      produces:
+      - text/html
+      responses:
+        "200":
+          description: Interactive HTML Onboarding Page
+          schema:
+            type: string
+      summary: Generate QR Setup Page
 schemes:
 - http
 swagger: "2.0"

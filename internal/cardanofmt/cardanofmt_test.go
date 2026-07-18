@@ -47,11 +47,11 @@ func TestLovelaceToADA(t *testing.T) {
 
 func TestTruncateMiddle(t *testing.T) {
 	cases := []struct {
-		name           string
-		s              string
-		head, tail     int
-		sep            string
-		want           string
+		name       string
+		s          string
+		head, tail int
+		sep        string
+		want       string
 	}{
 		{
 			name: "short input untouched",

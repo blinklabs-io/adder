@@ -6,14 +6,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/blinklabs-io/adder/api"
 	"github.com/blinklabs-io/adder/output/push"
 )
 
-func setupRouter() *gin.Engine {
+func setupRouter() http.Handler {
 	apiInstance := api.New(false)
 	p := &push.PushOutput{}
 	p.RegisterRoutes()
@@ -69,6 +68,17 @@ func TestStoreFCMToken(t *testing.T) {
 
 		assert.Equal(t, http.StatusBadRequest, w.Code)
 	})
+
+	t.Run("Trailing slash accepted", func(t *testing.T) {
+		jsonStr := `{"FCMToken": "trailing1"}`
+		req, _ := http.NewRequest("POST", "/fcm/", strings.NewReader(jsonStr))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusCreated, w.Code)
+		assert.Contains(t, push.GetFcmTokens(), "trailing1")
+	})
 }
 
 func TestReadFCMToken(t *testing.T) {
@@ -92,6 +102,15 @@ func TestReadFCMToken(t *testing.T) {
 		router.ServeHTTP(w, req)
 
 		assert.Equal(t, http.StatusNotFound, w.Code)
+	})
+
+	t.Run("Trailing slash accepted", func(t *testing.T) {
+		req, _ := http.NewRequest("GET", "/fcm/abcd1234/", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		assert.Contains(t, w.Body.String(), "abcd1234")
 	})
 }
 

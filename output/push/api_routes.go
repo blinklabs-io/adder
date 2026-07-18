@@ -26,22 +26,13 @@ func (p *PushOutput) RegisterRoutes() {
 	}
 
 	apiInstance := api.GetInstance()
-	var apiEndpoint string
-	if apiInstance.ApiGroup != nil {
-		apiEndpoint = apiInstance.ApiGroup.BasePath() + "/fcm"
-	} else {
-		apiEndpoint = "/fcm"
-	}
+	apiEndpoint := apiInstance.BasePath() + "/fcm"
 
+	// AddRoute registers each path with and without a trailing slash, so
+	// clients that append one keep working.
 	apiInstance.AddRoute("POST", "/fcm", storeFCMToken)
-	apiInstance.AddRoute("POST", "/fcm/", storeFCMToken)
-
-	apiInstance.AddRoute("GET", "/fcm/:token", readFCMToken)
-	apiInstance.AddRoute("GET", "/fcm/:token/", readFCMToken)
-
-	apiInstance.AddRoute("DELETE", "/fcm/:token", deleteFCMToken)
-	apiInstance.AddRoute("DELETE", "/fcm/:token/", deleteFCMToken)
-
+	apiInstance.AddRoute("GET", "/fcm/{token}", readFCMToken)
+	apiInstance.AddRoute("DELETE", "/fcm/{token}", deleteFCMToken)
 	apiInstance.AddRoute("GET", "/qrcode", generateQRPage(apiEndpoint))
 
 	routesRegistered = true
