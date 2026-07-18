@@ -128,7 +128,7 @@ func (t *TelegramOutput) log() plugin.Logger {
 	if t.logger != nil {
 		return t.logger
 	}
-	return logging.GetLogger()
+	return logging.GetLoggerForComponent("output.telegram")
 }
 
 // Start the Telegram output
@@ -555,7 +555,7 @@ func (t *TelegramOutput) SendMessage(message string) error {
 		return fmt.Errorf("failed to send message: %w", err)
 	}
 
-	logger.Debug(fmt.Sprintf("Sent message to chat %d", t.chatID))
+	logger.Debug("Sent message to chat", "chat_id", t.chatID)
 	return nil
 }
 
@@ -568,14 +568,17 @@ func (t *TelegramOutput) sendMessageWithRetry(message string) {
 	for attempt := 0; attempt <= t.maxRetries; attempt++ {
 		if attempt > 0 {
 			logger.Warn(
-				fmt.Sprintf(
-					"Telegram delivery failed, retrying (attempt %d/%d) after %v",
-					attempt,
-					t.maxRetries,
-					backoff,
-				),
-				"chat_id", t.chatID,
-				"error", lastErr,
+				"Telegram delivery failed, retrying",
+				"attempt",
+				attempt,
+				"max_retries",
+				t.maxRetries,
+				"delay",
+				backoff,
+				"chat_id",
+				t.chatID,
+				"error",
+				lastErr,
 			)
 			time.Sleep(backoff)
 
@@ -590,8 +593,11 @@ func (t *TelegramOutput) sendMessageWithRetry(message string) {
 		if err == nil {
 			if attempt > 0 {
 				logger.Info(
-					fmt.Sprintf("Telegram delivery succeeded after %d retries", attempt),
-					"chat_id", t.chatID,
+					"Telegram delivery succeeded",
+					"retries",
+					attempt,
+					"chat_id",
+					t.chatID,
 				)
 			}
 			return
@@ -601,12 +607,13 @@ func (t *TelegramOutput) sendMessageWithRetry(message string) {
 
 	// All retries exhausted
 	logger.Error(
-		fmt.Sprintf(
-			"Telegram delivery failed after %d retries, giving up",
-			t.maxRetries,
-		),
-		"chat_id", t.chatID,
-		"error", lastErr,
+		"Telegram delivery failed, giving up",
+		"max_retries",
+		t.maxRetries,
+		"chat_id",
+		t.chatID,
+		"error",
+		lastErr,
 	)
 
 	// Send error to error channel for monitoring (non-blocking)

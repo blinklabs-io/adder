@@ -63,7 +63,11 @@ Events are also available via the /events WebSocket/SSE API endpoint.`,
 )
 
 func slogPrintf(format string, v ...any) {
-	slog.Info(fmt.Sprintf(format, v...))
+	logging.GetLoggerForComponent("maxprocs").Info(
+		"maxprocs status",
+		"message",
+		fmt.Sprintf(format, v...),
+	)
 }
 
 func init() {
@@ -147,11 +151,13 @@ func run(cmd *cobra.Command) error {
 
 	// Start debug listener
 	if cfg.Debug.ListenPort > 0 {
-		logger.Info(fmt.Sprintf(
-			"starting debug listener on %s:%d",
+		logger.Info(
+			"starting debug listener",
+			"address",
 			cfg.Debug.ListenAddress,
+			"port",
 			cfg.Debug.ListenPort,
-		))
+		)
 		go func() {
 			debugger := &http.Server{
 				Addr: fmt.Sprintf(
@@ -163,9 +169,7 @@ func run(cmd *cobra.Command) error {
 			}
 			err := debugger.ListenAndServe()
 			if err != nil {
-				logger.Error(
-					fmt.Sprintf("failed to start debug listener: %s", err),
-				)
+				logger.Error("failed to start debug listener", "error", err)
 				os.Exit(1)
 			}
 		}()
@@ -218,7 +222,7 @@ func run(cmd *cobra.Command) error {
 
 	// Start API after plugins are configured
 	if err := apiInstance.Start(); err != nil {
-		logger.Error(fmt.Sprintf("failed to start API: %s", err))
+		logger.Error("failed to start API", "error", err)
 		return fmt.Errorf("failed to start API: %w", err)
 	}
 	defer func() {
@@ -227,13 +231,13 @@ func run(cmd *cobra.Command) error {
 		)
 		defer cancel()
 		if err := apiInstance.Shutdown(shutdownCtx); err != nil {
-			logger.Error(fmt.Sprintf("failed to stop API: %s", err))
+			logger.Error("failed to stop API", "error", err)
 		}
 	}()
 
 	// Start pipeline and wait for error
 	if err := pipe.Start(); err != nil {
-		logger.Error(fmt.Sprintf("failed to start pipeline: %s", err))
+		logger.Error("failed to start pipeline", "error", err)
 		return fmt.Errorf("failed to start pipeline: %w", err)
 	}
 
@@ -246,7 +250,7 @@ func run(cmd *cobra.Command) error {
 	go func() {
 		for err := range pipe.ErrorChan() {
 			// Log error but keep running
-			logger.Error(fmt.Sprintf("pipeline error: %s", err))
+			logger.Error("pipeline error", "error", err)
 		}
 		logger.Info("Error channel closed")
 	}()
@@ -257,13 +261,13 @@ func run(cmd *cobra.Command) error {
 
 	// Graceful shutdown using Stop() method
 	if err := pipe.Stop(); err != nil {
-		logger.Error(fmt.Sprintf("failed to stop pipeline: %s", err))
+		logger.Error("failed to stop pipeline", "error", err)
 		return fmt.Errorf("failed to stop pipeline: %w", err)
 	}
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := apiInstance.Shutdown(shutdownCtx); err != nil {
-		logger.Error(fmt.Sprintf("failed to stop API: %s", err))
+		logger.Error("failed to stop API", "error", err)
 		return fmt.Errorf("failed to stop API: %w", err)
 	}
 

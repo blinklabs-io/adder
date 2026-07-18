@@ -314,18 +314,23 @@ func (c *ChainSync) setupConnection() error {
 			if c.autoReconnect {
 				c.autoReconnectDelay = 0
 				if c.logger != nil {
-					c.logger.Error(fmt.Sprintf(
-						"reconnecting to %s due to error: %s",
+					c.logger.Error(
+						"reconnecting due to error",
+						"address",
 						c.dialAddress,
+						"error",
 						err,
-					))
+					)
 				}
 				for {
 					if c.autoReconnectDelay > 0 {
-						c.logger.Info(fmt.Sprintf(
-							"waiting %s to reconnect",
-							c.autoReconnectDelay,
-						))
+						if c.logger != nil {
+							c.logger.Info(
+								"waiting to reconnect",
+								"delay",
+								c.autoReconnectDelay,
+							)
+						}
 						time.Sleep(c.autoReconnectDelay)
 						// Double current reconnect delay up to maximum
 						c.autoReconnectDelay = min(
@@ -339,10 +344,11 @@ func (c *ChainSync) setupConnection() error {
 					// Shutdown current connection
 					if err := c.oConn.Close(); err != nil {
 						if c.logger != nil {
-							c.logger.Warn(fmt.Sprintf(
-								"failed to properly close connection: %s",
+							c.logger.Warn(
+								"failed to properly close connection",
+								"error",
 								err,
-							))
+							)
 						}
 					}
 					// Set the intersect points from the cursor cache
@@ -356,11 +362,13 @@ func (c *ChainSync) setupConnection() error {
 					// Restart the connection
 					if err := c.Start(); err != nil {
 						if c.logger != nil {
-							c.logger.Error(fmt.Sprintf(
-								"reconnecting to %s due to error: %s",
+							c.logger.Error(
+								"reconnecting due to error",
+								"address",
 								c.dialAddress,
+								"error",
 								err,
-							))
+							)
 						}
 						// Re-increment since we need to try again in this goroutine
 						c.wg.Add(1)
@@ -388,10 +396,11 @@ func (c *ChainSync) setupConnection() error {
 						case c.errorChan <- err:
 						}
 					} else if c.logger != nil {
-						c.logger.Warn(fmt.Sprintf(
-							"error occurred but no error channel set: %s",
+						c.logger.Warn(
+							"error occurred but no error channel set",
+							"error",
 							err,
-						))
+						)
 					}
 				}
 			}
@@ -853,8 +862,9 @@ func resolveTransactionInputs(
 				)
 			}
 
+			logger := logging.GetLoggerForComponent("input.chainsync")
 			if len(matches) == 0 {
-				slog.Warn(
+				logger.Warn(
 					"no matches found for input, could be due to Kupo not in sync.",
 					"txId",
 					txId,
@@ -862,9 +872,21 @@ func resolveTransactionInputs(
 					txIndex,
 				)
 			} else {
-				slog.Debug(fmt.Sprintf("found matches %d for input TxId: %s, Index: %d", len(matches), txId, txIndex))
+				logger.Debug(
+					"found matches for input",
+					"count",
+					len(matches),
+					"txId",
+					txId,
+					"txIndex",
+					txIndex,
+				)
 				for _, match := range matches {
-					slog.Debug(fmt.Sprintf("Match: %#v", match))
+					logger.Debug(
+						"resolved match detail",
+						"match",
+						match,
+					)
 					transactionOutput, err := NewResolvedTransactionOutput(match)
 					if err != nil {
 						return nil, err

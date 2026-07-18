@@ -17,10 +17,10 @@ package chainsync
 import (
 	"encoding/hex"
 	"fmt"
-	"log/slog"
 	"math/big"
 
 	"github.com/SundaeSwap-finance/kugo"
+	"github.com/blinklabs-io/adder/internal/logging"
 	"github.com/blinklabs-io/gouroboros/cbor"
 	"github.com/blinklabs-io/gouroboros/ledger"
 	"github.com/blinklabs-io/gouroboros/ledger/common"
@@ -38,6 +38,7 @@ type ResolvedTransactionOutput struct {
 func ExtractAssetDetailsFromMatch(
 	match kugo.Match,
 ) (common.MultiAsset[common.MultiAssetTypeOutput], uint64, error) {
+	logger := logging.GetLoggerForComponent("input.chainsync")
 	// Initialize the map that will store the assets
 	assetsMap := map[common.Blake2b224]map[cbor.ByteString]common.MultiAssetTypeOutput{}
 	totalLovelace := uint64(0)
@@ -47,11 +48,10 @@ func ExtractAssetDetailsFromMatch(
 		// Decode policyId if not ADA
 		policyIdBytes, err := hex.DecodeString(policyId)
 		if err != nil {
-			slog.Debug(
-				fmt.Sprintf(
-					"PolicyId %s is not a valid hex string\n",
-					policyId,
-				),
+			logger.Debug(
+				"PolicyId is not a valid hex string",
+				"policy_id",
+				policyId,
 			)
 			policyIdBytes = []byte(policyId)
 		}
@@ -65,9 +65,7 @@ func ExtractAssetDetailsFromMatch(
 			// Check if this is the ADA (lovelace) asset
 			if policyId == "ada" && assetName == "lovelace" {
 				totalLovelace = amount.Uint64()
-				slog.Debug(
-					fmt.Sprintf("Found ADA (lovelace): %d\n", totalLovelace),
-				)
+				logger.Debug("Found ADA (lovelace)", "amount", totalLovelace)
 				continue // Skip adding "lovelace" to assetsMap, as it is handled separately
 			}
 
@@ -78,14 +76,14 @@ func ExtractAssetDetailsFromMatch(
 			}
 			byteStringAssetName := cbor.NewByteString(assetNameBytes)
 			policyAssets[byteStringAssetName] = amount.BigInt()
-			slog.Debug("Get policyId, assetName, assetAmount from match.Value")
-			slog.Debug(
-				fmt.Sprintf(
-					"policyId: %s, assetName: %s, amount: %v\n",
-					policyId,
-					assetName,
-					amount,
-				),
+			logger.Debug(
+				"Get policyId, assetName, assetAmount from match.Value",
+				"policy_id",
+				policyId,
+				"asset_name",
+				assetName,
+				"amount",
+				amount,
 			)
 		}
 
@@ -102,6 +100,7 @@ func ExtractAssetDetailsFromMatch(
 func NewResolvedTransactionOutput(
 	match kugo.Match,
 ) (ledger.TransactionOutput, error) {
+	logger := logging.GetLoggerForComponent("input.chainsync")
 	// Get common.Address from base58 or bech32 string
 	addr, err := common.NewAddress(match.Address)
 	if err != nil {
@@ -116,13 +115,14 @@ func NewResolvedTransactionOutput(
 		)
 	}
 
-	slog.Debug(
-		fmt.Sprintf(
-			"ResolvedTransactionOutput: address: %s, amount: %d, assets: %#v\n",
-			addr,
-			amount,
-			assets,
-		),
+	logger.Debug(
+		"ResolvedTransactionOutput",
+		"address",
+		addr,
+		"amount",
+		amount,
+		"assets",
+		assets,
 	)
 	return &ResolvedTransactionOutput{
 		AddressField: addr,
