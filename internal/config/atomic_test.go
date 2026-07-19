@@ -283,4 +283,3 @@ func TestSaveAtomicSerializesDifferentPathsConcurrent(t *testing.T) {
 		assert.Equal(t, i, got["i"])
 	}
 }
-

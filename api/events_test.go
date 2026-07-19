@@ -27,22 +27,17 @@ import (
 
 	"github.com/blinklabs-io/adder/api"
 	"github.com/blinklabs-io/adder/event"
-	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func init() {
-	gin.SetMode(gin.TestMode)
-}
-
-// newTestRouter creates a fresh gin engine with the /events route for testing.
+// newTestRouter creates a fresh mux with the /events route for testing.
 // This avoids the singleton API instance used in production.
-func newTestRouter(hub *api.EventHub) *gin.Engine {
-	g := gin.New()
-	g.GET("/events", hub.HandleEvents)
-	return g
+func newTestRouter(hub *api.EventHub) *http.ServeMux {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /events", hub.HandleEvents)
+	return mux
 }
 
 func TestEventHub_WebSocketConnectReceive(t *testing.T) {

@@ -214,7 +214,7 @@ func run(cmd *cobra.Command) error {
 	defer eventHub.Close()
 	observerCh := eventHub.InputChan()
 	pipe.RegisterObserver(observerCh)
-	apiInstance.Engine().GET("/events", eventHub.HandleEvents)
+	apiInstance.HandleFunc("GET /events", eventHub.HandleEvents)
 
 	// Start API after plugins are configured
 	if err := apiInstance.Start(); err != nil {

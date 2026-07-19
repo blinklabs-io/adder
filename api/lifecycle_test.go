@@ -28,10 +28,12 @@ func TestAPIStartReturnsBindError(t *testing.T) {
 	}
 	defer occupied.Close()
 	port := uint(occupied.Addr().(*net.TCPAddr).Port)
+	mux := ConfigureRouter()
 	server := &APIv1{
-		engine: ConfigureRouter(false),
-		Host:   "127.0.0.1",
-		Port:   port,
+		mux:     mux,
+		handler: withMiddleware(mux),
+		Host:    "127.0.0.1",
+		Port:    port,
 	}
 
 	if err := server.Start(); err == nil {
@@ -40,10 +42,12 @@ func TestAPIStartReturnsBindError(t *testing.T) {
 }
 
 func TestAPIShutdownReleasesListener(t *testing.T) {
+	mux := ConfigureRouter()
 	server := &APIv1{
-		engine: ConfigureRouter(false),
-		Host:   "127.0.0.1",
-		Port:   0,
+		mux:     mux,
+		handler: withMiddleware(mux),
+		Host:    "127.0.0.1",
+		Port:    0,
 	}
 	if err := server.Start(); err != nil {
 		t.Fatal(err)

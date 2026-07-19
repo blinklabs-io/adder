@@ -20,9 +20,9 @@ import (
 	"os"
 	"sync"
 
+	"github.com/blinklabs-io/adder/api"
 	_ "github.com/blinklabs-io/adder/docs"
 	"github.com/blinklabs-io/adder/internal/logging"
-	"github.com/gin-gonic/gin"
 )
 
 type TokenStore struct {
@@ -33,8 +33,11 @@ type TokenStore struct {
 }
 
 // TokenRequest represents a request containing an FCM token.
+// FCMToken is required; enforced explicitly in storeFCMToken. The
+// validate:"required" tag carries no runtime validation (no validator is
+// wired) — it exists so swag emits the field as required in the OpenAPI docs.
 type TokenRequest struct {
-	FCMToken string `json:"fcmToken" binding:"required"`
+	FCMToken string `json:"fcmToken" validate:"required"`
 }
 
 // Token represents an FCM token object.
@@ -165,20 +168,34 @@ func (s *TokenStore) saveTokens() {
 // @Param			body	body		TokenRequest	true	"FCM Token Request"
 // @Success		201		{string}	string			"Created"
 // @Failure		400		{object}	ErrorResponse
-// @Router			/fcm [post]
-func storeFCMToken(c *gin.Context) {
+// @Router			/v1/fcm [post]
+func storeFCMToken(w http.ResponseWriter, r *http.Request) {
 	var req TokenRequest
 
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		api.WriteJSON(
+			w,
+			http.StatusBadRequest,
+			ErrorResponse{Error: err.Error()},
+		)
+		return
+	}
+	// FCMToken is required
+	if req.FCMToken == "" {
+		api.WriteJSON(
+			w,
+			http.StatusBadRequest,
+			ErrorResponse{Error: "fcmToken is required"},
+		)
 		return
 	}
 
 	store := getTokenStore()
 	if store == nil {
-		c.JSON(
+		api.WriteJSON(
+			w,
 			http.StatusInternalServerError,
-			gin.H{"error": "failed getting token store"},
+			ErrorResponse{Error: "failed getting token store"},
 		)
 		return
 	}
@@ -186,7 +203,7 @@ func storeFCMToken(c *gin.Context) {
 	store.FCMTokens[req.FCMToken] = req.FCMToken
 	store.mu.Unlock()
 	store.saveTokens()
-	c.Status(http.StatusCreated)
+	w.WriteHeader(http.StatusCreated)
 }
 
 // @Summary		Get FCM Token
@@ -196,14 +213,15 @@ func storeFCMToken(c *gin.Context) {
 // @Param			token	path		string	true	"FCM Token"
 // @Success		200		{object}	TokenResponse
 // @Failure		404		{object}	ErrorResponse
-// @Router			/fcm/{token} [get]
-func readFCMToken(c *gin.Context) {
-	token := c.Param("token")
+// @Router			/v1/fcm/{token} [get]
+func readFCMToken(w http.ResponseWriter, r *http.Request) {
+	token := r.PathValue("token")
 	store := getTokenStore()
 	if store == nil {
-		c.JSON(
+		api.WriteJSON(
+			w,
 			http.StatusInternalServerError,
-			gin.H{"error": "failed getting token store"},
+			ErrorResponse{Error: "failed getting token store"},
 		)
 		return
 	}
@@ -211,10 +229,10 @@ func readFCMToken(c *gin.Context) {
 	storedToken, exists := store.FCMTokens[token]
 	store.mu.RUnlock()
 	if !exists {
-		c.Status(http.StatusNotFound)
+		w.WriteHeader(http.StatusNotFound)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"fcmToken": storedToken})
+	api.WriteJSON(w, http.StatusOK, TokenResponse{FCMToken: storedToken})
 }
 
 // @Summary		Delete FCM Token
@@ -224,14 +242,15 @@ func readFCMToken(c *gin.Context) {
 // @Param			token	path		string	true	"FCM Token"
 // @Success		204		{string}	string	"No Content"
 // @Failure		404		{object}	ErrorResponse
-// @Router			/fcm/{token} [delete]
-func deleteFCMToken(c *gin.Context) {
-	token := c.Param("token")
+// @Router			/v1/fcm/{token} [delete]
+func deleteFCMToken(w http.ResponseWriter, r *http.Request) {
+	token := r.PathValue("token")
 	store := getTokenStore()
 	if store == nil {
-		c.JSON(
+		api.WriteJSON(
+			w,
 			http.StatusInternalServerError,
-			gin.H{"error": "failed getting token store"},
+			ErrorResponse{Error: "failed getting token store"},
 		)
 		return
 	}
@@ -243,9 +262,9 @@ func deleteFCMToken(c *gin.Context) {
 	store.mu.Unlock()
 	if exists {
 		store.saveTokens()
-		c.Status(http.StatusNoContent)
+		w.WriteHeader(http.StatusNoContent)
 	} else {
-		c.Status(http.StatusNotFound)
+		w.WriteHeader(http.StatusNotFound)
 	}
 }
 

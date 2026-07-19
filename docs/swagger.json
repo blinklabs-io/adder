@@ -17,9 +17,84 @@
         },
         "version": "v1"
     },
-    "basePath": "/v1",
+    "basePath": "/",
     "paths": {
-        "/fcm": {
+        "/events": {
+            "get": {
+                "description": "Real-time pipeline event streaming. Automatically upgrades to WebSocket if requested by the client, otherwise falls back to Server-Sent Events (SSE). Supports filtering on event types.",
+                "produces": [
+                    "text/event-stream",
+                    "application/json"
+                ],
+                "summary": "Stream Blockchain Events",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Comma-separated list of event types to filter (e.g., input.block,input.transaction)",
+                        "name": "types",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "default": true,
+                        "description": "Whether to replay recent events from the ring buffer on connection",
+                        "name": "replay",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Event Stream (SSE) or WebSocket Session",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/healthcheck": {
+            "get": {
+                "description": "Reports the health status of the running pipeline and registered checkers. Returns 503 if any registered checker is unhealthy.",
+                "produces": [
+                    "application/json"
+                ],
+                "summary": "Healthcheck Endpoint",
+                "responses": {
+                    "200": {
+                        "description": "Healthy status response",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable response",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/ping": {
+            "get": {
+                "description": "Returns a simple \"pong\" response to verify the API server is alive and reachable.",
+                "produces": [
+                    "text/plain"
+                ],
+                "summary": "Ping Endpoint",
+                "responses": {
+                    "200": {
+                        "description": "pong",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/fcm": {
             "post": {
                 "description": "Store a new FCM token",
                 "consumes": [
@@ -56,7 +131,7 @@
                 }
             }
         },
-        "/fcm/{token}": {
+        "/v1/fcm/{token}": {
             "get": {
                 "description": "Get an FCM token by its value",
                 "consumes": [
@@ -119,6 +194,23 @@
                         "description": "Not Found",
                         "schema": {
                             "$ref": "#/definitions/push.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/qrcode": {
+            "get": {
+                "description": "Generates an interactive HTML page containing a QR code representing the local API FCM endpoint. Used by the Adder Tray desktop application during onboarding setup.",
+                "produces": [
+                    "text/html"
+                ],
+                "summary": "Generate QR Setup Page",
+                "responses": {
+                    "200": {
+                        "description": "Interactive HTML Onboarding Page",
+                        "schema": {
+                            "type": "string"
                         }
                     }
                 }
