@@ -16,126 +16,18 @@ package cardano
 import (
 	"bytes"
 	"encoding/hex"
-	"math/big"
 	"testing"
 	"time"
 
-	"github.com/blinklabs-io/gouroboros/cbor"
 	"github.com/blinklabs-io/gouroboros/ledger"
 	"github.com/blinklabs-io/gouroboros/ledger/common"
-	"github.com/blinklabs-io/plutigo/data"
+	mockledger "github.com/blinklabs-io/ouroboros-mock/ledger"
 	"github.com/btcsuite/btcd/btcutil/bech32"
 	"github.com/stretchr/testify/assert"
-	"github.com/utxorpc/go-codegen/utxorpc/v1alpha/cardano"
+	"github.com/stretchr/testify/require"
 
 	"github.com/blinklabs-io/adder/event"
 )
-
-// MockAddress is a mock implementation of the ledger.Address interface
-type MockAddress struct {
-	common.Address // Embed the common.Address struct
-}
-
-func (m MockAddress) ByronAttr() common.ByronAddressAttributes {
-	return common.ByronAddressAttributes{}
-}
-
-func (m MockAddress) ByronType() uint64 {
-	return 0
-}
-
-func (m MockAddress) Bytes() []byte {
-	return []byte("mockAddressBytes")
-}
-
-func (m *MockAddress) MarshalCBOR() ([]byte, error) {
-	return []byte{}, nil
-}
-
-func (m MockAddress) MarshalJSON() ([]byte, error) {
-	return []byte("{}"), nil
-}
-
-func (m MockAddress) NetworkId() uint {
-	return 1
-}
-
-func (m MockAddress) PaymentAddress() *common.Address {
-	return &common.Address{}
-}
-
-func (m *MockAddress) PaymentKeyHash() common.Blake2b224 {
-	return common.Blake2b224Hash([]byte("paymentKeyHash"))
-}
-
-func (m MockAddress) StakeAddress() *common.Address {
-	return &common.Address{}
-}
-
-func (m *MockAddress) StakeKeyHash() common.Blake2b224 {
-	return common.Blake2b224Hash([]byte("stakeKeyHash"))
-}
-
-func (m MockAddress) String() string {
-	return hex.EncodeToString(m.Bytes())
-}
-
-func (m MockAddress) Type() uint8 {
-	return 0
-}
-
-func (m *MockAddress) UnmarshalCBOR(_ []byte) error {
-	return nil
-}
-
-// MockOutput is a mock implementation of the TransactionOutput interface
-type MockOutput struct {
-	address   ledger.Address
-	scriptRef common.Script
-	assets    *common.MultiAsset[common.MultiAssetTypeOutput]
-	datum     *common.Datum
-	amount    uint64
-}
-
-func (m MockOutput) Address() ledger.Address {
-	return m.address
-}
-
-func (m MockOutput) Amount() *big.Int {
-	return big.NewInt(int64(m.amount))
-}
-
-func (m MockOutput) Assets() *common.MultiAsset[common.MultiAssetTypeOutput] {
-	return m.assets
-}
-
-func (m MockOutput) Datum() *common.Datum {
-	return m.datum
-}
-
-func (m MockOutput) DatumHash() *common.Blake2b256 {
-	return nil
-}
-
-func (m MockOutput) ScriptRef() common.Script {
-	return m.scriptRef
-}
-
-func (m MockOutput) Cbor() []byte {
-	return []byte{}
-}
-
-func (m MockOutput) Utxorpc() (*cardano.TxOutput, error) {
-	return nil, nil
-}
-
-func (m MockOutput) ToPlutusData() data.PlutusData {
-	return nil
-}
-
-func (m MockOutput) String() string {
-	return "mockOutput"
-}
 
 func TestNewCardano(t *testing.T) {
 	c := New()
@@ -189,21 +81,6 @@ func TestCardano_OutputChan(t *testing.T) {
 	}
 }
 
-// Mock certificate implementations
-type mockStakeDelegationCert struct {
-	cborData []byte
-	common.StakeDelegationCertificate
-}
-
-func (m *mockStakeDelegationCert) Cbor() []byte { return m.cborData }
-
-type mockStakeDeregistrationCert struct {
-	cborData []byte
-	common.StakeDeregistrationCertificate
-}
-
-func (m *mockStakeDeregistrationCert) Cbor() []byte { return m.cborData }
-
 func mockStakeCredentialValue(
 	credType uint,
 	hashBytes []byte,
@@ -216,18 +93,29 @@ func mockStakeCredentialValue(
 	}
 }
 
-func mockAddress(_ string) common.Address {
-	return common.Address{}
-}
-
 func TestFilterByAddress(t *testing.T) {
 	cred := mockStakeCredentialValue(0, bytes.Repeat([]byte{1}, 28))
 	credHash := cred.Hash()
 	convData, _ := bech32.ConvertBits(credHash[:], 8, 5, true)
 	testStakeAddress, _ := bech32.Encode("stake", convData)
 
+	// matchAddress is a real testnet base address.
+	const matchAddress = "addr_test1qz2fxv2umyhttkxyxp8x0dlpdt3k6cwng5pxj3jhsydzer3jcu5d8ps7zex2k2xt3uqxgjqnnj83ws8lhrn648jjxtwq2ytjqp"
+	matchOutput, err := mockledger.NewTransactionOutputBuilder().
+		WithLovelace(1000000).
+		WithAddress(matchAddress).
+		Build()
+	require.NoError(t, err, "building mock output with match address")
+
+	// placeholderOutput carries a default/empty address. These cases match (or
+	// not) via certificate or filter mismatch, so the address is not asserted.
+	placeholderOutput, err := mockledger.NewTransactionOutputBuilder().
+		WithLovelace(1000000).
+		Build()
+	require.NoError(t, err, "building placeholder mock output")
+
 	tests := []struct {
-		outputAddr    common.Address
+		output        ledger.TransactionOutput
 		cert          ledger.Certificate
 		name          string
 		filterAddress string
@@ -235,15 +123,14 @@ func TestFilterByAddress(t *testing.T) {
 	}{
 		{
 			name:          "Basic address match",
-			filterAddress: "addr_test1qqjwq357",
-			outputAddr:    mockAddress("addr_test1qqjwq357"),
+			filterAddress: matchAddress,
+			output:        matchOutput,
 			shouldMatch:   true,
 		},
-
 		{
 			name:          "StakeDelegationCertificate match",
 			filterAddress: testStakeAddress,
-			outputAddr:    mockAddress("addr_doesnt_match"),
+			output:        placeholderOutput,
 			cert: &common.StakeDelegationCertificate{
 				StakeCredential: &cred,
 			},
@@ -252,7 +139,7 @@ func TestFilterByAddress(t *testing.T) {
 		{
 			name:          "StakeDeregistrationCertificate match",
 			filterAddress: testStakeAddress,
-			outputAddr:    mockAddress("addr_doesnt_match"),
+			output:        placeholderOutput,
 			cert: &common.StakeDeregistrationCertificate{
 				StakeCredential: cred,
 			},
@@ -261,7 +148,7 @@ func TestFilterByAddress(t *testing.T) {
 		{
 			name:          "No match",
 			filterAddress: "stake_test1uzw2x9z6y3q4y5z6x7y8z9",
-			outputAddr:    mockAddress("addr_doesnt_match"),
+			output:        placeholderOutput,
 			shouldMatch:   false,
 		},
 	}
@@ -271,16 +158,9 @@ func TestFilterByAddress(t *testing.T) {
 			// Create cardano instance with address filter
 			cs := New(WithAddresses([]string{tt.filterAddress}))
 
-			output := MockOutput{
-				address: tt.outputAddr,
-				amount:  1000000,
-				assets:  nil,
-				datum:   nil,
-			}
-
 			txEvent := event.TransactionEvent{
-				Outputs:        []ledger.TransactionOutput{output},
-				ResolvedInputs: []ledger.TransactionOutput{output},
+				Outputs:        []ledger.TransactionOutput{tt.output},
+				ResolvedInputs: []ledger.TransactionOutput{tt.output},
 			}
 
 			if tt.cert != nil {
@@ -320,25 +200,19 @@ func TestFilterByPolicyId(t *testing.T) {
 	policyIdHash := common.Blake2b224Hash([]byte(filterPolicyId))
 	cs := New(WithPolicies([]string{policyIdHash.String()}))
 
-	// Mock transaction event
+	// Build a transaction output carrying the matching policy ID using the
+	// shared ouroboros-mock builder.
 	policyId := policyIdHash // Use the same hash as the filter
+	output, err := mockledger.NewTransactionOutputBuilder().
+		WithLovelace(1000000).
+		WithAssets(mockledger.Asset{
+			PolicyId:  policyId[:],
+			AssetName: []byte("asset1"),
+			Amount:    1,
+		}).
+		Build()
+	require.NoError(t, err, "building mock transaction output")
 
-	// Create a new MultiAsset with pre-populated data
-	assetsData := make(
-		map[common.Blake2b224]map[cbor.ByteString]common.MultiAssetTypeOutput,
-	)
-	assetName := cbor.NewByteString([]byte("asset1"))
-	assetsData[policyId] = map[cbor.ByteString]common.MultiAssetTypeOutput{
-		assetName: big.NewInt(1), // Add asset with quantity 1
-	}
-	assets := common.NewMultiAsset(assetsData)
-
-	output := MockOutput{
-		address: ledger.Address{},
-		amount:  1000000,
-		assets:  &assets,
-		datum:   nil,
-	}
 	evt := event.Event{
 		Payload: event.TransactionEvent{
 			Outputs:        []ledger.TransactionOutput{output},
@@ -347,7 +221,7 @@ func TestFilterByPolicyId(t *testing.T) {
 	}
 
 	// Start the filter
-	err := cs.Start()
+	err = cs.Start()
 	assert.NoError(t, err, "Cardano filter should start without error")
 	defer cs.Stop()
 
@@ -373,25 +247,19 @@ func TestFilterByAssetFingerprint(t *testing.T) {
 	filterAssetFingerprint := "asset1e58wmplshqdkkq97tz02chq980456wgt35tfjr"
 	cs := New(WithAssetFingerprints([]string{filterAssetFingerprint}))
 
-	// Mock transaction event
+	// Build a transaction output whose asset fingerprint matches the filter
+	// using the shared ouroboros-mock builder.
 	policyId := common.Blake2b224Hash([]byte("policy1"))
+	output, err := mockledger.NewTransactionOutputBuilder().
+		WithLovelace(1000000).
+		WithAssets(mockledger.Asset{
+			PolicyId:  policyId[:],
+			AssetName: []byte("asset1"),
+			Amount:    1,
+		}).
+		Build()
+	require.NoError(t, err, "building mock transaction output")
 
-	// Create a new MultiAsset with pre-populated data
-	assetsData := make(
-		map[common.Blake2b224]map[cbor.ByteString]common.MultiAssetTypeOutput,
-	)
-	assetName := cbor.NewByteString([]byte("asset1"))
-	assetsData[policyId] = map[cbor.ByteString]common.MultiAssetTypeOutput{
-		assetName: big.NewInt(1), // Add asset with quantity 1
-	}
-	assets := common.NewMultiAsset(assetsData)
-
-	output := MockOutput{
-		address: ledger.Address{},
-		amount:  1000000,
-		assets:  &assets,
-		datum:   nil,
-	}
 	evt := event.Event{
 		Payload: event.TransactionEvent{
 			Outputs:        []ledger.TransactionOutput{output},
@@ -400,7 +268,7 @@ func TestFilterByAssetFingerprint(t *testing.T) {
 	}
 
 	// Start the filter
-	err := cs.Start()
+	err = cs.Start()
 	assert.NoError(t, err, "Cardano filter should start without error")
 	defer cs.Stop()
 
@@ -438,10 +306,10 @@ func TestFilterByDRepIdTransactionEvent(t *testing.T) {
 			},
 		}
 
-		output := MockOutput{
-			address: ledger.Address{},
-			amount:  1000000,
-		}
+		output, err := mockledger.NewTransactionOutputBuilder().
+			WithLovelace(1000000).
+			Build()
+		require.NoError(t, err, "building mock transaction output")
 
 		evt := event.Event{
 			Payload: event.TransactionEvent{
@@ -450,7 +318,7 @@ func TestFilterByDRepIdTransactionEvent(t *testing.T) {
 			},
 		}
 
-		err := cs.Start()
+		err = cs.Start()
 		assert.NoError(t, err)
 		defer cs.Stop()
 
@@ -475,10 +343,10 @@ func TestFilterByDRepIdTransactionEvent(t *testing.T) {
 			},
 		}
 
-		output := MockOutput{
-			address: ledger.Address{},
-			amount:  1000000,
-		}
+		output, err := mockledger.NewTransactionOutputBuilder().
+			WithLovelace(1000000).
+			Build()
+		require.NoError(t, err, "building mock transaction output")
 
 		evt := event.Event{
 			Payload: event.TransactionEvent{
@@ -487,7 +355,7 @@ func TestFilterByDRepIdTransactionEvent(t *testing.T) {
 			},
 		}
 
-		err := cs.Start()
+		err = cs.Start()
 		assert.NoError(t, err)
 		defer cs.Stop()
 
@@ -501,34 +369,39 @@ func TestFilterByDRepIdTransactionEvent(t *testing.T) {
 		}
 	})
 
-	t.Run("does not match when no DRep certificates present", func(t *testing.T) {
-		cs := New(WithDRepIds([]string{drepHex}))
+	t.Run(
+		"does not match when no DRep certificates present",
+		func(t *testing.T) {
+			cs := New(WithDRepIds([]string{drepHex}))
 
-		output := MockOutput{
-			address: ledger.Address{},
-			amount:  1000000,
-		}
+			output, err := mockledger.NewTransactionOutputBuilder().
+				WithLovelace(1000000).
+				Build()
+			require.NoError(t, err, "building mock transaction output")
 
-		evt := event.Event{
-			Payload: event.TransactionEvent{
-				Outputs: []ledger.TransactionOutput{output},
-				// No certificates
-			},
-		}
+			evt := event.Event{
+				Payload: event.TransactionEvent{
+					Outputs: []ledger.TransactionOutput{output},
+					// No certificates
+				},
+			}
 
-		err := cs.Start()
-		assert.NoError(t, err)
-		defer cs.Stop()
+			err = cs.Start()
+			assert.NoError(t, err)
+			defer cs.Stop()
 
-		cs.InputChan() <- evt
+			cs.InputChan() <- evt
 
-		select {
-		case <-cs.OutputChan():
-			t.Error("Expected event to be filtered out but it passed through")
-		case <-time.After(100 * time.Millisecond):
-			// Expected no event
-		}
-	})
+			select {
+			case <-cs.OutputChan():
+				t.Error(
+					"Expected event to be filtered out but it passed through",
+				)
+			case <-time.After(100 * time.Millisecond):
+				// Expected no event
+			}
+		},
+	)
 }
 
 func TestFilterByPoolOrDRepIdTransactionEvent(t *testing.T) {
@@ -783,18 +656,28 @@ func TestWithDRepIds(t *testing.T) {
 		assert.True(t, hasHex, "should compute and store hex drep ID")
 	})
 
-	t.Run("stores hex drep ID and computes bech32 variants", func(t *testing.T) {
-		drepHex := "abcd1234567890abcdef1234567890abcdef1234567890abcdef1234"
+	t.Run(
+		"stores hex drep ID and computes bech32 variants",
+		func(t *testing.T) {
+			drepHex := "abcd1234567890abcdef1234567890abcdef1234567890abcdef1234"
+			hexBytes, _ := hex.DecodeString(drepHex)
+			convData, _ := bech32.ConvertBits(hexBytes, 8, 5, true)
+			expectedDrep, _ := bech32.Encode("drep", convData)
+			expectedDrepScript, _ := bech32.Encode("drep_script", convData)
 
-		cs := New(WithDRepIds([]string{drepHex}))
+			cs := New(WithDRepIds([]string{drepHex}))
 
-		assert.True(t, cs.filterSet.hasDRepFilter)
-		// Should have the hex version stored
-		_, hasHex := cs.filterSet.dreps.hexDRepIds[drepHex]
-		assert.True(t, hasHex, "should store hex drep ID")
-		// Should have computed both bech32 variants (drep and drep_script)
-		assert.True(t, len(cs.filterSet.dreps.bech32DRepIds) >= 1, "should compute bech32 variants")
-	})
+			assert.True(t, cs.filterSet.hasDRepFilter)
+			// Should have the hex version stored
+			_, hasHex := cs.filterSet.dreps.hexDRepIds[drepHex]
+			assert.True(t, hasHex, "should store hex drep ID")
+			// Should have computed both bech32 variants (drep and drep_script)
+			_, hasDrep := cs.filterSet.dreps.bech32DRepIds[expectedDrep]
+			assert.True(t, hasDrep, "should compute bech32 drep variant")
+			_, hasDrepScript := cs.filterSet.dreps.bech32DRepIds[expectedDrepScript]
+			assert.True(t, hasDrepScript, "should compute bech32 drep_script variant")
+		},
+	)
 
 	t.Run("handles drep_script bech32 prefix", func(t *testing.T) {
 		drepHex := "abcd1234567890abcdef1234567890abcdef1234567890abcdef1234"
@@ -810,72 +693,99 @@ func TestWithDRepIds(t *testing.T) {
 		assert.True(t, hasBech32, "should store drep_script bech32 ID")
 		// Should have computed hex version
 		_, hasHex := cs.filterSet.dreps.hexDRepIds[drepHex]
-		assert.True(t, hasHex, "should compute and store hex drep ID from drep_script")
+		assert.True(
+			t,
+			hasHex,
+			"should compute and store hex drep ID from drep_script",
+		)
 	})
 
-	t.Run("handles CIP-0129 bech32 drep ID with header byte", func(t *testing.T) {
-		// CIP-0129 bech32 dRep addresses include a 1-byte header before the 28-byte hash.
-		// The header for a key hash dRep is 0x22.
-		drepHex := "abcd1234567890abcdef1234567890abcdef1234567890abcdef1234"
-		hexBytes, _ := hex.DecodeString(drepHex)
-		// Build CIP-0129 payload: header (0x22) + 28-byte hash
-		cip129Payload := append([]byte{0x22}, hexBytes...)
-		convData, _ := bech32.ConvertBits(cip129Payload, 8, 5, true)
-		cip129Bech32, _ := bech32.Encode("drep", convData)
+	t.Run(
+		"handles CIP-0129 bech32 drep ID with header byte",
+		func(t *testing.T) {
+			// CIP-0129 bech32 dRep addresses include a 1-byte header before the 28-byte hash.
+			// The header for a key hash dRep is 0x22.
+			drepHex := "abcd1234567890abcdef1234567890abcdef1234567890abcdef1234"
+			hexBytes, _ := hex.DecodeString(drepHex)
+			// Build CIP-0129 payload: header (0x22) + 28-byte hash
+			cip129Payload := append([]byte{0x22}, hexBytes...)
+			convData, _ := bech32.ConvertBits(cip129Payload, 8, 5, true)
+			cip129Bech32, _ := bech32.Encode("drep", convData)
 
-		cs := New(WithDRepIds([]string{cip129Bech32}))
+			cs := New(WithDRepIds([]string{cip129Bech32}))
 
-		assert.True(t, cs.filterSet.hasDRepFilter)
-		// Must store the raw 28-byte hex (without the CIP-0129 header) so it
-		// matches voter.Hash and DRepHash event fields.
-		_, hasHex := cs.filterSet.dreps.hexDRepIds[drepHex]
-		assert.True(t, hasHex, "should strip CIP-0129 header and store 28-byte hex")
-	})
+			assert.True(t, cs.filterSet.hasDRepFilter)
+			// Must store the raw 28-byte hex (without the CIP-0129 header) so it
+			// matches voter.Hash and DRepHash event fields.
+			_, hasHex := cs.filterSet.dreps.hexDRepIds[drepHex]
+			assert.True(
+				t,
+				hasHex,
+				"should strip CIP-0129 header and store 28-byte hex",
+			)
+		},
+	)
 
-	t.Run("CIP-0129 bech32 drep matches governance voting procedure", func(t *testing.T) {
-		drepHex := "abcd1234567890abcdef1234567890abcdef1234567890abcdef1234"
-		hexBytes, _ := hex.DecodeString(drepHex)
-		// Build CIP-0129 bech32 (header 0x22 + 28-byte hash)
-		cip129Payload := append([]byte{0x22}, hexBytes...)
-		convData, _ := bech32.ConvertBits(cip129Payload, 8, 5, true)
-		cip129Bech32, _ := bech32.Encode("drep", convData)
+	t.Run(
+		"CIP-0129 bech32 drep matches governance voting procedure",
+		func(t *testing.T) {
+			drepHex := "abcd1234567890abcdef1234567890abcdef1234567890abcdef1234"
+			hexBytes, _ := hex.DecodeString(drepHex)
+			// Build CIP-0129 bech32 (header 0x22 + 28-byte hash)
+			cip129Payload := append([]byte{0x22}, hexBytes...)
+			convData, _ := bech32.ConvertBits(cip129Payload, 8, 5, true)
+			cip129Bech32, _ := bech32.Encode("drep", convData)
 
-		cs := New(WithDRepIds([]string{cip129Bech32}))
+			cs := New(WithDRepIds([]string{cip129Bech32}))
 
-		// Simulate a governance event where VoterHash is the raw 28-byte hex
-		// (as produced by hex.EncodeToString(voter.Hash[:]) in the event layer)
-		ge := event.GovernanceEvent{
-			VotingProcedures: []event.VotingProcedureData{
-				{
-					VoterType: "DRep",
-					VoterHash: drepHex,
+			// Simulate a governance event where VoterHash is the raw 28-byte hex
+			// (as produced by hex.EncodeToString(voter.Hash[:]) in the event layer)
+			ge := event.GovernanceEvent{
+				VotingProcedures: []event.VotingProcedureData{
+					{
+						VoterType: "DRep",
+						VoterHash: drepHex,
+					},
 				},
-			},
-		}
-		assert.True(t, cs.filterGovernanceEvent(ge),
-			"CIP-0129 bech32 input should match governance voting procedure")
-	})
+			}
+			assert.True(
+				t,
+				cs.filterGovernanceEvent(ge),
+				"CIP-0129 bech32 input should match governance voting procedure",
+			)
+		},
+	)
 
-	t.Run("real-world CIP-0129 drep address matches governance vote", func(t *testing.T) {
-		// drep1yg8vjs7ute7z7vyd8yez5tgjey6043djjfh8d3n7sjev35g064xxc is a real
-		// CIP-0129 bech32 dRep address; its raw 28-byte hash is the hex below.
-		cip129Bech32 := "drep1yg8vjs7ute7z7vyd8yez5tgjey6043djjfh8d3n7sjev35g064xxc"
-		expectedHex := "0ec943dc5e7c2f308d39322a2d12c934fac5b2926e76c67e84b2c8d1"
+	t.Run(
+		"real-world CIP-0129 drep address matches governance vote",
+		func(t *testing.T) {
+			// drep1yg8vjs7ute7z7vyd8yez5tgjey6043djjfh8d3n7sjev35g064xxc is a real
+			// CIP-0129 bech32 dRep address; its raw 28-byte hash is the hex below.
+			cip129Bech32 := "drep1yg8vjs7ute7z7vyd8yez5tgjey6043djjfh8d3n7sjev35g064xxc"
+			expectedHex := "0ec943dc5e7c2f308d39322a2d12c934fac5b2926e76c67e84b2c8d1"
 
-		cs := New(WithDRepIds([]string{cip129Bech32}))
+			cs := New(WithDRepIds([]string{cip129Bech32}))
 
-		assert.True(t, cs.filterSet.hasDRepFilter)
-		_, hasHex := cs.filterSet.dreps.hexDRepIds[expectedHex]
-		assert.True(t, hasHex, "should decode CIP-0129 address to 28-byte hex")
+			assert.True(t, cs.filterSet.hasDRepFilter)
+			_, hasHex := cs.filterSet.dreps.hexDRepIds[expectedHex]
+			assert.True(
+				t,
+				hasHex,
+				"should decode CIP-0129 address to 28-byte hex",
+			)
 
-		ge := event.GovernanceEvent{
-			VotingProcedures: []event.VotingProcedureData{
-				{VoterType: "DRep", VoterHash: expectedHex},
-			},
-		}
-		assert.True(t, cs.filterGovernanceEvent(ge),
-			"real-world CIP-0129 drep address should match its governance vote")
-	})
+			ge := event.GovernanceEvent{
+				VotingProcedures: []event.VotingProcedureData{
+					{VoterType: "DRep", VoterHash: expectedHex},
+				},
+			}
+			assert.True(
+				t,
+				cs.filterGovernanceEvent(ge),
+				"real-world CIP-0129 drep address should match its governance vote",
+			)
+		},
+	)
 
 	t.Run("skips invalid input without crashing", func(t *testing.T) {
 		cs := New(WithDRepIds([]string{"invalid_bech32", "", "xyz"}))
@@ -953,33 +863,36 @@ func TestFilterByPoolIdGovernanceEvent(t *testing.T) {
 		}
 	})
 
-	t.Run("matches vote delegation certificate with PoolKeyHash", func(t *testing.T) {
-		cs := New(WithPoolIds([]string{poolHex}))
+	t.Run(
+		"matches vote delegation certificate with PoolKeyHash",
+		func(t *testing.T) {
+			cs := New(WithPoolIds([]string{poolHex}))
 
-		evt := event.Event{
-			Payload: event.GovernanceEvent{
-				VoteDelegationCertificates: []event.VoteDelegationCertificateData{
-					{
-						CertificateType: "StakeVoteDelegation",
-						PoolKeyHash:     poolHex,
+			evt := event.Event{
+				Payload: event.GovernanceEvent{
+					VoteDelegationCertificates: []event.VoteDelegationCertificateData{
+						{
+							CertificateType: "StakeVoteDelegation",
+							PoolKeyHash:     poolHex,
+						},
 					},
 				},
-			},
-		}
+			}
 
-		err := cs.Start()
-		assert.NoError(t, err)
-		defer cs.Stop()
+			err := cs.Start()
+			assert.NoError(t, err)
+			defer cs.Stop()
 
-		cs.InputChan() <- evt
+			cs.InputChan() <- evt
 
-		select {
-		case filteredEvt := <-cs.OutputChan():
-			assert.Equal(t, evt, filteredEvt)
-		case <-time.After(1 * time.Second):
-			t.Error("Expected event to pass filter but it didn't")
-		}
-	})
+			select {
+			case filteredEvt := <-cs.OutputChan():
+				assert.Equal(t, evt, filteredEvt)
+			case <-time.After(1 * time.Second):
+				t.Error("Expected event to pass filter but it didn't")
+			}
+		},
+	)
 
 	t.Run("does not match when pool not in filter", func(t *testing.T) {
 		cs := New(WithPoolIds([]string{poolHex}))
@@ -1207,33 +1120,38 @@ func TestFilterByAddressGovernanceEvent(t *testing.T) {
 		}
 	})
 
-	t.Run("does not match governance event with no address data", func(t *testing.T) {
-		cs := New(WithAddresses([]string{stakeAddr}))
+	t.Run(
+		"does not match governance event with no address data",
+		func(t *testing.T) {
+			cs := New(WithAddresses([]string{stakeAddr}))
 
-		evt := event.Event{
-			Payload: event.GovernanceEvent{
-				// Only voting procedures, no addresses
-				VotingProcedures: []event.VotingProcedureData{
-					{
-						VoterType: "DRep",
-						VoterHash: stakeCredHex,
-						Vote:      "Yes",
+			evt := event.Event{
+				Payload: event.GovernanceEvent{
+					// Only voting procedures, no addresses
+					VotingProcedures: []event.VotingProcedureData{
+						{
+							VoterType: "DRep",
+							VoterHash: stakeCredHex,
+							Vote:      "Yes",
+						},
 					},
 				},
-			},
-		}
+			}
 
-		err := cs.Start()
-		assert.NoError(t, err)
-		defer cs.Stop()
+			err := cs.Start()
+			assert.NoError(t, err)
+			defer cs.Stop()
 
-		cs.InputChan() <- evt
+			cs.InputChan() <- evt
 
-		select {
-		case <-cs.OutputChan():
-			t.Error("Expected event to be filtered out but it passed through")
-		case <-time.After(100 * time.Millisecond):
-			// Expected no event
-		}
-	})
+			select {
+			case <-cs.OutputChan():
+				t.Error(
+					"Expected event to be filtered out but it passed through",
+				)
+			case <-time.After(100 * time.Millisecond):
+				// Expected no event
+			}
+		},
+	)
 }
