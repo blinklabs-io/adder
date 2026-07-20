@@ -7,7 +7,7 @@ require (
 	fyne.io/fyne/v2 v2.7.4
 	github.com/SundaeSwap-finance/kugo v1.3.1
 	github.com/SundaeSwap-finance/ogmigo/v6 v6.2.1
-	github.com/blinklabs-io/gouroboros v0.187.3
+	github.com/blinklabs-io/gouroboros v0.188.0
 	github.com/blinklabs-io/plutigo v0.1.16
 	github.com/btcsuite/btcd/btcutil v1.2.0
 	github.com/gen2brain/beeep v0.11.2
@@ -103,7 +103,7 @@ require (
 	github.com/x448/float16 v0.8.4 // indirect
 	github.com/yuin/goldmark v1.8.2 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
-	golang.org/x/crypto v0.53.0 // indirect
+	golang.org/x/crypto v0.54.0 // indirect
 	golang.org/x/mod v0.37.0 // indirect
 	golang.org/x/net v0.56.0 // indirect
 	golang.org/x/sync v0.22.0 // indirect
