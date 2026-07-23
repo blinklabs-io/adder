@@ -65,11 +65,11 @@ jobs:
           - runner: ubuntu-latest
             os: freebsd
             arch: amd64
-            tray: true
+            tray: false
           - runner: ubuntu-latest
             os: freebsd
             arch: arm64
-            tray: true
+            tray: false
           - runner: ubuntu-latest
             os: linux
             arch: amd64
