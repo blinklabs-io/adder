@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"errors"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -269,9 +270,7 @@ func (r *restartablePlugin) OutputChan() <-chan event.Event { return r.outputCha
 func (r *restartablePlugin) getReceived() []event.Event {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	result := make([]event.Event, len(r.received))
-	copy(result, r.received)
-	return result
+	return slices.Clone(r.received)
 }
 
 // TestPipelineRestartWithEvents tests the full start -> process events -> stop -> start -> process events -> stop cycle

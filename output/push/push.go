@@ -23,6 +23,8 @@ import (
 	"log/slog"
 	"math/big"
 	"os"
+	"sync"
+	"time"
 
 	"github.com/blinklabs-io/adder/event"
 	"github.com/blinklabs-io/adder/internal/logging"
@@ -33,6 +35,7 @@ import (
 )
 
 type PushOutput struct {
+	wg                     sync.WaitGroup
 	errorChan              chan error
 	eventChan              chan event.Event
 	logger                 plugin.Logger
@@ -67,19 +70,28 @@ func New(options ...PushOptionFunc) (*PushOutput, error) {
 
 func (p *PushOutput) Start() error {
 	p.eventChan = make(chan event.Event, 10)
-	p.errorChan = make(chan error)
+	p.errorChan = make(chan error, 16)
 	logger := logging.GetLogger()
 	logger.Info("starting push notification server")
-	go func() {
+	eventChan := p.eventChan
+	errorChan := p.errorChan
+	p.wg.Add(1)
+	go func(eventChan <-chan event.Event, errorChan chan<- error) {
+		defer p.wg.Done()
 		for {
-			evt, ok := <-p.eventChan
+			evt, ok := <-eventChan
 			// Channel has been closed, which means we're shutting down
 			if !ok {
 				return
 			}
 			// Get access token per each event
 			if err := p.GetAccessToken(); err != nil {
-				slog.Error("failed to get access token", "error", err)
+				err = fmt.Errorf("failed to get access token: %w", err)
+				slog.Error(err.Error())
+				select {
+				case errorChan <- err:
+				default:
+				}
 				continue
 			}
 
@@ -194,7 +206,7 @@ func (p *PushOutput) Start() error {
 				fmt.Printf("New Event!\nEvent: %v", evt)
 			}
 		}
-	}()
+	}(eventChan, errorChan)
 	return nil
 }
 
@@ -225,14 +237,22 @@ func (p *PushOutput) processFcmNotifications(title, body string) {
 			fcm.WithNotification(title, body),
 		)
 		if err != nil {
-			logging.GetLogger().
-				Error(fmt.Sprintf("Failed to create message for token %s: %v", fcmToken, err))
+			err = fmt.Errorf("failed to create message for token %s: %w", fcmToken, err)
+			logging.GetLogger().Error(err.Error())
+			select {
+			case p.errorChan <- err:
+			default:
+			}
 			continue
 		}
 
 		if err := fcm.Send(p.accessToken, p.projectID, msg); err != nil {
-			logging.GetLogger().
-				Error(fmt.Sprintf("Failed to send message to token %s: %v", fcmToken, err))
+			err = fmt.Errorf("failed to send message to token %s: %w", fcmToken, err)
+			logging.GetLogger().Error(err.Error())
+			select {
+			case p.errorChan <- err:
+			default:
+			}
 			continue
 		}
 		logging.GetLogger().
@@ -241,6 +261,9 @@ func (p *PushOutput) processFcmNotifications(title, body string) {
 }
 
 func (p *PushOutput) GetAccessToken() error {
+	if p.serviceAccountFilePath == "" {
+		return nil
+	}
 	data, err := os.ReadFile(p.serviceAccountFilePath)
 	if err != nil {
 		return fmt.Errorf("failed to read credential file: %w", err)
@@ -263,6 +286,9 @@ func (p *PushOutput) GetAccessToken() error {
 
 // GetProjectId gets project ID from file
 func (p *PushOutput) GetProjectId() error {
+	if p.serviceAccountFilePath == "" {
+		return nil
+	}
 	data, err := os.ReadFile(p.serviceAccountFilePath)
 	if err != nil {
 		return fmt.Errorf("failed to read credential file: %w", err)
@@ -282,6 +308,18 @@ func (p *PushOutput) GetProjectId() error {
 func (p *PushOutput) Stop() error {
 	if p.eventChan != nil {
 		close(p.eventChan)
+		// Wait for goroutine to exit with a bounded 5-second timeout
+		waitChan := make(chan struct{})
+		go func() {
+			p.wg.Wait()
+			close(waitChan)
+		}()
+		select {
+		case <-waitChan:
+			// Clean exit
+		case <-time.After(5 * time.Second):
+			logging.GetLogger().Warn("Stop() timed out waiting for worker goroutine to exit")
+		}
 		p.eventChan = nil
 	}
 	if p.errorChan != nil {

@@ -24,6 +24,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -481,8 +482,7 @@ func handlePing(w http.ResponseWriter, _ *http.Request) {
 func handleHealthcheck(w http.ResponseWriter, _ *http.Request) {
 	healthCheckersMu.RLock()
 	// Make a copy of the slice to avoid races with concurrent RegisterHealthChecker calls
-	checkers := make([]HealthChecker, len(healthCheckers))
-	copy(checkers, healthCheckers)
+	checkers := slices.Clone(healthCheckers)
 	healthCheckersMu.RUnlock()
 
 	// If no health checkers are registered, report as healthy

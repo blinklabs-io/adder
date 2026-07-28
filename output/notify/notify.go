@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"sync"
 
 	"github.com/blinklabs-io/adder/event"
 	"github.com/blinklabs-io/adder/plugin"
@@ -29,6 +30,7 @@ import (
 var icon []byte
 
 type NotifyOutput struct {
+	wg        sync.WaitGroup
 	errorChan chan error
 	eventChan chan event.Event
 	logger    plugin.Logger
@@ -69,9 +71,12 @@ func (n *NotifyOutput) Start() error {
 	if err := os.WriteFile(filename, icon, 0o600); err != nil {
 		return fmt.Errorf("failed to write icon file: %w", err)
 	}
-	go func() {
+	eventChan := n.eventChan
+	n.wg.Add(1)
+	go func(eventChan <-chan event.Event) {
+		defer n.wg.Done()
 		for {
-			evt, ok := <-n.eventChan
+			evt, ok := <-eventChan
 			// Channel has been closed, which means we're shutting down
 			if !ok {
 				return
@@ -169,7 +174,7 @@ func (n *NotifyOutput) Start() error {
 				}
 			}
 		}
-	}()
+	}(eventChan)
 	return nil
 }
 
@@ -177,6 +182,7 @@ func (n *NotifyOutput) Start() error {
 func (n *NotifyOutput) Stop() error {
 	if n.eventChan != nil {
 		close(n.eventChan)
+		n.wg.Wait()
 		n.eventChan = nil
 	}
 	if n.errorChan != nil {

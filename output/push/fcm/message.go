@@ -23,6 +23,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"time"
 )
 
 type Message struct {
@@ -86,8 +87,9 @@ func Send(accessToken string, projectId string, msg *Message) error {
 		return err
 	}
 
-	// Create a new HTTP request
-	ctx := context.Background()
+	// Create a new HTTP request with a 10-second timeout context
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 	req, err := http.NewRequestWithContext(
 		ctx,
 		http.MethodPost,
@@ -102,8 +104,10 @@ func Send(accessToken string, projectId string, msg *Message) error {
 	req.Header.Set("Authorization", "Bearer "+accessToken)
 	req.Header.Set("Content-Type", "application/json")
 
-	// Execute the request
-	client := &http.Client{}
+	// Execute the request with a bounded 10-second timeout client
+	client := &http.Client{
+		Timeout: 10 * time.Second,
+	}
 	// #nosec G704 -- Request targets the fixed FCM host with a validated path.
 	resp, err := client.Do(req)
 	if err != nil {
