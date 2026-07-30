@@ -1,39 +1,20 @@
-name: Docker CI
+# Generated automatically by org-governance-bot. Do not edit manually.
+name: "Docker CI"
 
 on:
   pull_request:
-    branches: ['main']
-    paths: ['Dockerfile','cmd/**','docs/**','internal/**','go.*','.github/workflows/ci-docker.yml']
-
-env:
-  GHCR_IMAGE_NAME: ghcr.io/blinklabs-io/adder
-
-permissions:
-  contents: read
+    branches:
+      - main
+    paths:
+      - Dockerfile
+      - cmd/**
+      - docs/**
+      - internal/**
+      - go.*
+      - .github/workflows/ci-docker.yml
 
 jobs:
-  docker:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-latest
-            arch: amd64
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 https://github.com/actions/checkout/releases/tag/v7.0.1
-        with:
-          fetch-depth: '0'
-      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0 https://github.com/docker/setup-buildx-action/releases/tag/v4.2.0
-      - id: meta
-        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0 https://github.com/docker/metadata-action/releases/tag/v6.2.0
-        with:
-          images: ${{ env.GHCR_IMAGE_NAME }}
-      - name: build
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0 https://github.com/docker/build-push-action/releases/tag/v7.3.0
-        with:
-          context: .
-          push: false
-          platforms: linux/${{ matrix.arch }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+  orchestrate:
+    uses: blinklabs-io/actions/.github/workflows/reuseable-ci-docker-multiarch.yml@main
+    with:
+      image-name: blinklabs-io/adder
