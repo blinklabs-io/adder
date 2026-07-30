@@ -1,45 +1,22 @@
-name: go-test
+# Generated automatically by org-governance-bot. Do not edit manually.
+name: "go-test"
 
 on:
+  pull_request:
   push:
-    tags:
-      - v*
     branches:
       - main
-  pull_request:
-
-permissions:
-  contents: read
+    tags:
+      - v*
 
 jobs:
-  go-test:
-    name: go-test
-    strategy:
-      matrix:
-        go-version: [1.26.x]
-        platform: [ubuntu-latest, windows-latest]
-    runs-on: ${{ matrix.platform }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 https://github.com/actions/checkout/releases/tag/v7.0.1
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0 https://github.com/actions/setup-go/releases/tag/v7.0.0
-        with:
-          go-version: ${{ matrix.go-version }}
-      - name: Install dependencies
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libgl1-mesa-dev xorg-dev libwayland-dev libxkbcommon-dev wayland-protocols
-      - name: Build binaries
-        if: runner.os == 'Linux'
-        run: make build
-      - name: go-test
-        if: runner.os == 'Linux'
-        run: go test -v -timeout 10m ./...
-        env:
-          LANG: en_US.UTF-8
-      # Windows: test tray/setup only (registry autostart + engine lifecycle).
-      # No fyne/cgo deps, so no MSYS2 toolchain needed; other packages are
-      # platform-neutral and covered by the Linux job.
-      - name: go-test (windows)
-        if: runner.os == 'Windows'
-        run: go test -v -timeout 10m ./tray/setup/...
+  orchestrate:
+    uses: blinklabs-io/actions/.github/workflows/reuseable-go-test.yml@main
+    with:
+      go-versions: '["1.26.x"]'
+      platforms: '["ubuntu-latest","windows-latest"]'
+      pre-test-command: make build
+      system-dependencies: libgl1-mesa-dev xorg-dev libwayland-dev libxkbcommon-dev wayland-protocols
+      test-env: LANG=en_US.UTF-8
+      test-flags: -v -timeout 10m
+      windows-test-packages: ./tray/setup/...
