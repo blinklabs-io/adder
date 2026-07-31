@@ -286,13 +286,15 @@ func TestStartDeliveryFailureSurfacesError(t *testing.T) {
 	require.NoError(t, w.Stop())
 }
 
-func TestStartUnknownEventTypeNoError(t *testing.T) {
-	// Unknown types are logged and skipped, not panicked or errored.
+func TestStartUnknownEventTypeSurfacesError(t *testing.T) {
+	// Unknown types are now reported as errors.
 	w := New(fastRetry())
 	require.NoError(t, w.Start())
+	wait := drainErr(t, w)
 	w.InputChan() <- event.New("input.bogus", time.Now(), nil, "x")
-	// Give the goroutine a moment, then ensure Stop is clean.
-	time.Sleep(20 * time.Millisecond)
+	err := wait()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unknown event type")
 	require.NoError(t, w.Stop())
 }
 
@@ -423,3 +425,36 @@ func TestWebhookOutput_BasicAuth(t *testing.T) {
 		t.Fatal("timed out waiting for auth")
 	}
 }
+
+func TestWebhookOutput_ShutdownDuringInFlightRequest(t *testing.T) {
+	// 1. Slow server (stalls for 100ms)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(100 * time.Millisecond)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	w := New(
+		WithUrl(srv.URL, false),
+		WithRetryConfig(0, time.Millisecond, time.Millisecond),
+	)
+
+	require.NoError(t, w.Start())
+
+	// 2. Send an event
+	evt := event.Event{
+		Type:    "input.rollback",
+		Payload: event.RollbackEvent{},
+	}
+	w.InputChan() <- evt
+
+	// 3. Wait briefly for worker to pick up the event and enter SendWebhook
+	time.Sleep(10 * time.Millisecond)
+
+	// 4. Stop concurrently while request is in flight
+	require.NoError(t, w.Stop())
+
+	// Sleep slightly to let mock finish and make sure no races or panics happen
+	time.Sleep(150 * time.Millisecond)
+}
+
