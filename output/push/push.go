@@ -24,7 +24,6 @@ import (
 	"math/big"
 	"os"
 	"sync"
-	"time"
 
 	"github.com/blinklabs-io/adder/event"
 	"github.com/blinklabs-io/adder/internal/logging"
@@ -34,7 +33,35 @@ import (
 	"golang.org/x/oauth2/google"
 )
 
+type tokenProvider interface {
+	GetToken() (string, error)
+}
+
+type googleTokenProvider struct {
+	serviceAccountFilePath string
+	accessTokenUrl         string
+}
+
+func (g *googleTokenProvider) GetToken() (string, error) {
+	data, err := os.ReadFile(g.serviceAccountFilePath)
+	if err != nil {
+		return "", fmt.Errorf("failed to read credential file: %w", err)
+	}
+
+	conf, err := google.JWTConfigFromJSON(data, g.accessTokenUrl)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse credential file: %w", err)
+	}
+
+	token, err := conf.TokenSource(context.Background()).Token()
+	if err != nil {
+		return "", fmt.Errorf("failed to get token: %w", err)
+	}
+	return token.AccessToken, nil
+}
+
 type PushOutput struct {
+	mu                     sync.Mutex
 	wg                     sync.WaitGroup
 	errorChan              chan error
 	eventChan              chan event.Event
@@ -44,6 +71,7 @@ type PushOutput struct {
 	projectID              string
 	serviceAccountFilePath string
 	fcmTokens              []string
+	tokenProvider          tokenProvider
 }
 
 type Notification struct {
@@ -62,6 +90,17 @@ func New(options ...PushOptionFunc) (*PushOutput, error) {
 		option(p)
 	}
 
+	if p.serviceAccountFilePath == "" {
+		return nil, errors.New("service account file path is required")
+	}
+
+	if p.tokenProvider == nil {
+		p.tokenProvider = &googleTokenProvider{
+			serviceAccountFilePath: p.serviceAccountFilePath,
+			accessTokenUrl:         p.accessTokenUrl,
+		}
+	}
+
 	if err := p.GetProjectId(); err != nil {
 		return nil, fmt.Errorf("failed to get project ID: %w", err)
 	}
@@ -69,6 +108,11 @@ func New(options ...PushOptionFunc) (*PushOutput, error) {
 }
 
 func (p *PushOutput) Start() error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.eventChan != nil {
+		return nil
+	}
 	p.eventChan = make(chan event.Event, 10)
 	p.errorChan = make(chan error, 16)
 	logger := logging.GetLogger()
@@ -128,7 +172,7 @@ func (p *PushOutput) Start() error {
 				)
 
 				// Send notification
-				p.processFcmNotifications(title, body)
+				p.processFcmNotifications(errorChan, title, body)
 
 			case "input.rollback":
 				payload := evt.Payload
@@ -199,7 +243,7 @@ func (p *PushOutput) Start() error {
 					)
 				}
 				// Send notification
-				p.processFcmNotifications(title, body)
+				p.processFcmNotifications(errorChan, title, body)
 
 			default:
 				fmt.Println("Adder")
@@ -220,7 +264,7 @@ func (p *PushOutput) refreshFcmTokens() {
 	}
 }
 
-func (p *PushOutput) processFcmNotifications(title, body string) {
+func (p *PushOutput) processFcmNotifications(errorChan chan<- error, title, body string) {
 	// Fetch new FCM tokens and add to p.fcmTokens
 	p.refreshFcmTokens()
 
@@ -240,7 +284,7 @@ func (p *PushOutput) processFcmNotifications(title, body string) {
 			err = fmt.Errorf("failed to create message for token %s: %w", fcmToken, err)
 			logging.GetLogger().Error(err.Error())
 			select {
-			case p.errorChan <- err:
+			case errorChan <- err:
 			default:
 			}
 			continue
@@ -250,7 +294,7 @@ func (p *PushOutput) processFcmNotifications(title, body string) {
 			err = fmt.Errorf("failed to send message to token %s: %w", fcmToken, err)
 			logging.GetLogger().Error(err.Error())
 			select {
-			case p.errorChan <- err:
+			case errorChan <- err:
 			default:
 			}
 			continue
@@ -261,33 +305,18 @@ func (p *PushOutput) processFcmNotifications(title, body string) {
 }
 
 func (p *PushOutput) GetAccessToken() error {
-	if p.serviceAccountFilePath == "" {
-		return nil
-	}
-	data, err := os.ReadFile(p.serviceAccountFilePath)
+	token, err := p.tokenProvider.GetToken()
 	if err != nil {
-		return fmt.Errorf("failed to read credential file: %w", err)
+		return err
 	}
-
-	conf, err := google.JWTConfigFromJSON(data, p.accessTokenUrl)
-	if err != nil {
-		return fmt.Errorf("failed to parse credential file: %w", err)
-	}
-
-	token, err := conf.TokenSource(context.Background()).Token()
-	if err != nil {
-		return fmt.Errorf("failed to get token: %w", err)
-	}
-
-	fmt.Println(token.AccessToken)
-	p.accessToken = token.AccessToken
+	p.accessToken = token
 	return nil
 }
 
 // GetProjectId gets project ID from file
 func (p *PushOutput) GetProjectId() error {
 	if p.serviceAccountFilePath == "" {
-		return nil
+		return errors.New("service account file path is empty")
 	}
 	data, err := os.ReadFile(p.serviceAccountFilePath)
 	if err != nil {
@@ -299,43 +328,46 @@ func (p *PushOutput) GetProjectId() error {
 	if err := json.Unmarshal(data, &v); err != nil {
 		return fmt.Errorf("failed to parse credential file: %w", err)
 	}
-	p.projectID = v["project_id"].(string)
+	projectID, ok := v["project_id"].(string)
+	if !ok || projectID == "" {
+		return errors.New("invalid or empty project_id in service account file")
+	}
+	p.projectID = projectID
 
 	return nil
 }
 
 // Stop the embedded output
 func (p *PushOutput) Stop() error {
+	p.mu.Lock()
 	if p.eventChan != nil {
 		close(p.eventChan)
-		// Wait for goroutine to exit with a bounded 5-second timeout
-		waitChan := make(chan struct{})
-		go func() {
-			p.wg.Wait()
-			close(waitChan)
-		}()
-		select {
-		case <-waitChan:
-			// Clean exit
-		case <-time.After(5 * time.Second):
-			logging.GetLogger().Warn("Stop() timed out waiting for worker goroutine to exit")
-		}
 		p.eventChan = nil
 	}
+	p.mu.Unlock()
+
+	p.wg.Wait()
+
+	p.mu.Lock()
 	if p.errorChan != nil {
 		close(p.errorChan)
 		p.errorChan = nil
 	}
+	p.mu.Unlock()
 	return nil
 }
 
 // ErrorChan returns the plugin's error channel
 func (p *PushOutput) ErrorChan() <-chan error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	return p.errorChan
 }
 
 // InputChan returns the input event channel
 func (p *PushOutput) InputChan() chan<- event.Event {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	return p.eventChan
 }
 

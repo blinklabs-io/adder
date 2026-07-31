@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"io"
 	"net/http"
+	"os"
 	"testing"
 	"time"
 
@@ -30,6 +31,24 @@ type mockRoundTripper func(*http.Request) (*http.Response, error)
 
 func (m mockRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 	return m(req)
+}
+
+type mockTokenProvider struct {
+	token string
+	err   error
+}
+
+func (m *mockTokenProvider) GetToken() (string, error) {
+	return m.token, m.err
+}
+
+func createDummyCredentialsFile(t *testing.T, projectID string) string {
+	tmpDir := t.TempDir()
+	filePath := tmpDir + "/service-account.json"
+	content := []byte(`{"project_id": "` + projectID + `"}`)
+	err := os.WriteFile(filePath, content, 0644)
+	require.NoError(t, err)
+	return filePath
 }
 
 func TestPushOutput_FCMFailureSurfacesError(t *testing.T) {
@@ -50,10 +69,10 @@ func TestPushOutput_FCMFailureSurfacesError(t *testing.T) {
 		fcmStore.mu.Unlock()
 	})
 
-	// Create and configure PushOutput directly (bypassing GetProjectId reading file)
-	// We can set empty serviceAccountFilePath so GetAccessToken is a no-op
+	credentialsPath := createDummyCredentialsFile(t, "test-fcm-project")
 	p, err := New(
-		WithServiceAccountFilePath(""), // bypass file reads
+		WithServiceAccountFilePath(credentialsPath),
+		WithTokenProvider(&mockTokenProvider{token: "mock-access-token"}),
 	)
 	require.NoError(t, err)
 
@@ -98,4 +117,106 @@ func TestPushOutput_FCMFailureSurfacesError(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("timed out waiting for FCM failure error propagation")
 	}
+}
+
+func TestPushOutput_New_EmptyServiceAccountFilePath_Fails(t *testing.T) {
+	_, err := New(WithServiceAccountFilePath(""))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "service account file path is required")
+}
+
+func TestPushOutput_New_NonexistentFile_Fails(t *testing.T) {
+	_, err := New(WithServiceAccountFilePath("nonexistent-file-path-123.json"))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to read credential file")
+}
+
+func TestPushOutput_New_InvalidJSON_Fails(t *testing.T) {
+	tmpDir := t.TempDir()
+	filePath := tmpDir + "/bad.json"
+	err := os.WriteFile(filePath, []byte("{invalid-json}"), 0644)
+	require.NoError(t, err)
+
+	_, err = New(WithServiceAccountFilePath(filePath))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to parse credential file")
+}
+
+func TestPushOutput_New_MissingProjectId_Fails(t *testing.T) {
+	tmpDir := t.TempDir()
+	filePath := tmpDir + "/missing-id.json"
+	err := os.WriteFile(filePath, []byte(`{"not_project_id": "value"}`), 0644)
+	require.NoError(t, err)
+
+	_, err = New(WithServiceAccountFilePath(filePath))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid or empty project_id in service account file")
+}
+
+func TestPushOutput_ShutdownDuringInFlightRequest(t *testing.T) {
+	token := "test-token-5678"
+	if fcmStore == nil {
+		t.Fatal("fcmStore is nil")
+	}
+	fcmStore.mu.Lock()
+	fcmStore.FCMTokens[token] = token
+	fcmStore.mu.Unlock()
+	t.Cleanup(func() {
+		if fcmStore == nil {
+			return
+		}
+		fcmStore.mu.Lock()
+		delete(fcmStore.FCMTokens, token)
+		fcmStore.mu.Unlock()
+	})
+
+	credentialsPath := createDummyCredentialsFile(t, "test-fcm-project")
+	p, err := New(
+		WithServiceAccountFilePath(credentialsPath),
+		WithTokenProvider(&mockTokenProvider{token: "mock-access-token"}),
+	)
+	require.NoError(t, err)
+
+	err = p.Start()
+	require.NoError(t, err)
+
+	origTransport := http.DefaultTransport
+	t.Cleanup(func() {
+		http.DefaultTransport = origTransport
+	})
+
+	// Slow outbound server (stalls for 100ms, then fails)
+	http.DefaultTransport = mockRoundTripper(func(req *http.Request) (*http.Response, error) {
+		time.Sleep(100 * time.Millisecond)
+		return &http.Response{
+			StatusCode: http.StatusInternalServerError,
+			Body:       io.NopCloser(bytes.NewBufferString("FCM Simulated 500 Error")),
+			Header:     make(http.Header),
+		}, nil
+	})
+
+	// Send an event
+	evt := event.Event{
+		Type: "input.block",
+		Context: event.BlockContext{
+			BlockNumber: 100,
+			SlotNumber:  200,
+		},
+		Payload: event.BlockEvent{
+			BlockHash: "test-hash",
+		},
+	}
+
+	p.InputChan() <- evt
+
+	// Give the worker a short moment to pick up the event and enter fcm.Send
+	time.Sleep(10 * time.Millisecond)
+
+	// Concurrently call Stop() while the request is in-flight.
+	// If the race detector or panic bug is present, this will trigger them.
+	err = p.Stop()
+	require.NoError(t, err)
+
+	// Sleep slightly to let the mock finish its time.Sleep and try to send on p.errorChan.
+	time.Sleep(150 * time.Millisecond)
 }

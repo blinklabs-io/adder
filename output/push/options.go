@@ -36,3 +36,9 @@ func WithAccessTokenUrl(url string) PushOptionFunc {
 		o.accessTokenUrl = url
 	}
 }
+
+func WithTokenProvider(tp tokenProvider) PushOptionFunc {
+	return func(o *PushOutput) {
+		o.tokenProvider = tp
+	}
+}
