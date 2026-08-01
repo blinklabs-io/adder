@@ -23,6 +23,7 @@ import (
 	"log/slog"
 	"math/big"
 	"os"
+	"sync"
 
 	"github.com/blinklabs-io/adder/event"
 	"github.com/blinklabs-io/adder/internal/logging"
@@ -32,7 +33,36 @@ import (
 	"golang.org/x/oauth2/google"
 )
 
+type tokenProvider interface {
+	GetToken() (string, error)
+}
+
+type googleTokenProvider struct {
+	serviceAccountFilePath string
+	accessTokenUrl         string
+}
+
+func (g *googleTokenProvider) GetToken() (string, error) {
+	data, err := os.ReadFile(g.serviceAccountFilePath)
+	if err != nil {
+		return "", fmt.Errorf("failed to read credential file: %w", err)
+	}
+
+	conf, err := google.JWTConfigFromJSON(data, g.accessTokenUrl)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse credential file: %w", err)
+	}
+
+	token, err := conf.TokenSource(context.Background()).Token()
+	if err != nil {
+		return "", fmt.Errorf("failed to get token: %w", err)
+	}
+	return token.AccessToken, nil
+}
+
 type PushOutput struct {
+	mu                     sync.Mutex
+	wg                     sync.WaitGroup
 	errorChan              chan error
 	eventChan              chan event.Event
 	logger                 plugin.Logger
@@ -41,6 +71,7 @@ type PushOutput struct {
 	projectID              string
 	serviceAccountFilePath string
 	fcmTokens              []string
+	tokenProvider          tokenProvider
 }
 
 type Notification struct {
@@ -59,6 +90,17 @@ func New(options ...PushOptionFunc) (*PushOutput, error) {
 		option(p)
 	}
 
+	if p.serviceAccountFilePath == "" {
+		return nil, errors.New("service account file path is required")
+	}
+
+	if p.tokenProvider == nil {
+		p.tokenProvider = &googleTokenProvider{
+			serviceAccountFilePath: p.serviceAccountFilePath,
+			accessTokenUrl:         p.accessTokenUrl,
+		}
+	}
+
 	if err := p.GetProjectId(); err != nil {
 		return nil, fmt.Errorf("failed to get project ID: %w", err)
 	}
@@ -66,20 +108,34 @@ func New(options ...PushOptionFunc) (*PushOutput, error) {
 }
 
 func (p *PushOutput) Start() error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.eventChan != nil {
+		return nil
+	}
 	p.eventChan = make(chan event.Event, 10)
-	p.errorChan = make(chan error)
+	p.errorChan = make(chan error, 16)
 	logger := logging.GetLogger()
 	logger.Info("starting push notification server")
-	go func() {
+	eventChan := p.eventChan
+	errorChan := p.errorChan
+	p.wg.Add(1)
+	go func(eventChan <-chan event.Event, errorChan chan<- error) {
+		defer p.wg.Done()
 		for {
-			evt, ok := <-p.eventChan
+			evt, ok := <-eventChan
 			// Channel has been closed, which means we're shutting down
 			if !ok {
 				return
 			}
 			// Get access token per each event
 			if err := p.GetAccessToken(); err != nil {
-				slog.Error("failed to get access token", "error", err)
+				err = fmt.Errorf("failed to get access token: %w", err)
+				slog.Error(err.Error())
+				select {
+				case errorChan <- err:
+				default:
+				}
 				continue
 			}
 
@@ -116,7 +172,7 @@ func (p *PushOutput) Start() error {
 				)
 
 				// Send notification
-				p.processFcmNotifications(title, body)
+				p.processFcmNotifications(errorChan, title, body)
 
 			case "input.rollback":
 				payload := evt.Payload
@@ -187,14 +243,14 @@ func (p *PushOutput) Start() error {
 					)
 				}
 				// Send notification
-				p.processFcmNotifications(title, body)
+				p.processFcmNotifications(errorChan, title, body)
 
 			default:
 				fmt.Println("Adder")
 				fmt.Printf("New Event!\nEvent: %v", evt)
 			}
 		}
-	}()
+	}(eventChan, errorChan)
 	return nil
 }
 
@@ -208,7 +264,7 @@ func (p *PushOutput) refreshFcmTokens() {
 	}
 }
 
-func (p *PushOutput) processFcmNotifications(title, body string) {
+func (p *PushOutput) processFcmNotifications(errorChan chan<- error, title, body string) {
 	// Fetch new FCM tokens and add to p.fcmTokens
 	p.refreshFcmTokens()
 
@@ -225,14 +281,22 @@ func (p *PushOutput) processFcmNotifications(title, body string) {
 			fcm.WithNotification(title, body),
 		)
 		if err != nil {
-			logging.GetLogger().
-				Error(fmt.Sprintf("Failed to create message for token %s: %v", fcmToken, err))
+			err = fmt.Errorf("failed to create message for token %s: %w", fcmToken, err)
+			logging.GetLogger().Error(err.Error())
+			select {
+			case errorChan <- err:
+			default:
+			}
 			continue
 		}
 
 		if err := fcm.Send(p.accessToken, p.projectID, msg); err != nil {
-			logging.GetLogger().
-				Error(fmt.Sprintf("Failed to send message to token %s: %v", fcmToken, err))
+			err = fmt.Errorf("failed to send message to token %s: %w", fcmToken, err)
+			logging.GetLogger().Error(err.Error())
+			select {
+			case errorChan <- err:
+			default:
+			}
 			continue
 		}
 		logging.GetLogger().
@@ -241,28 +305,19 @@ func (p *PushOutput) processFcmNotifications(title, body string) {
 }
 
 func (p *PushOutput) GetAccessToken() error {
-	data, err := os.ReadFile(p.serviceAccountFilePath)
+	token, err := p.tokenProvider.GetToken()
 	if err != nil {
-		return fmt.Errorf("failed to read credential file: %w", err)
+		return err
 	}
-
-	conf, err := google.JWTConfigFromJSON(data, p.accessTokenUrl)
-	if err != nil {
-		return fmt.Errorf("failed to parse credential file: %w", err)
-	}
-
-	token, err := conf.TokenSource(context.Background()).Token()
-	if err != nil {
-		return fmt.Errorf("failed to get token: %w", err)
-	}
-
-	fmt.Println(token.AccessToken)
-	p.accessToken = token.AccessToken
+	p.accessToken = token
 	return nil
 }
 
 // GetProjectId gets project ID from file
 func (p *PushOutput) GetProjectId() error {
+	if p.serviceAccountFilePath == "" {
+		return errors.New("service account file path is empty")
+	}
 	data, err := os.ReadFile(p.serviceAccountFilePath)
 	if err != nil {
 		return fmt.Errorf("failed to read credential file: %w", err)
@@ -273,31 +328,46 @@ func (p *PushOutput) GetProjectId() error {
 	if err := json.Unmarshal(data, &v); err != nil {
 		return fmt.Errorf("failed to parse credential file: %w", err)
 	}
-	p.projectID = v["project_id"].(string)
+	projectID, ok := v["project_id"].(string)
+	if !ok || projectID == "" {
+		return errors.New("invalid or empty project_id in service account file")
+	}
+	p.projectID = projectID
 
 	return nil
 }
 
 // Stop the embedded output
 func (p *PushOutput) Stop() error {
+	p.mu.Lock()
 	if p.eventChan != nil {
 		close(p.eventChan)
 		p.eventChan = nil
 	}
+	p.mu.Unlock()
+
+	p.wg.Wait()
+
+	p.mu.Lock()
 	if p.errorChan != nil {
 		close(p.errorChan)
 		p.errorChan = nil
 	}
+	p.mu.Unlock()
 	return nil
 }
 
 // ErrorChan returns the plugin's error channel
 func (p *PushOutput) ErrorChan() <-chan error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	return p.errorChan
 }
 
 // InputChan returns the input event channel
 func (p *PushOutput) InputChan() chan<- event.Event {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	return p.eventChan
 }
 
