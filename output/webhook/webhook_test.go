@@ -1,4 +1,4 @@
-// Copyright 2026 Blink Labs Software
+// Copyright 2025 Blink Labs Software
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -17,8 +17,11 @@ package webhook
 import (
 	"encoding/json"
 	"io"
+	"math"
 	"net/http"
 	"net/http/httptest"
+	"runtime"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -27,6 +30,273 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+const mainnetNetworkMagic = 764824073
+
+// fastRetry disables backoff sleeping so error paths return promptly.
+func fastRetry() WebhookOptionFunc {
+	return WithRetryConfig(0, time.Millisecond, time.Millisecond)
+}
+
+func blockEvent() event.Event {
+	return event.New(
+		"input.block",
+		time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+		event.BlockContext{
+			Era:          "Conway",
+			BlockNumber:  100,
+			SlotNumber:   200,
+			NetworkMagic: mainnetNetworkMagic,
+		},
+		event.BlockEvent{
+			BlockHash:  "deadbeef",
+			IssuerVkey: "vkey1",
+		},
+	)
+}
+
+// --- Success-path regression guards --------------------------------------
+
+func TestFormatWebhookAdderSuccess(t *testing.T) {
+	e := blockEvent()
+	data, err := formatWebhook(&e, "adder")
+	require.NoError(t, err)
+	require.NotEmpty(t, data)
+
+	var parsed event.Event
+	require.NoError(t, json.Unmarshal(data, &parsed))
+	assert.Equal(t, "input.block", parsed.Type)
+}
+
+func TestFormatWebhookDiscordSuccess(t *testing.T) {
+	cases := []struct {
+		name string
+		evt  event.Event
+	}{
+		{"block", blockEvent()},
+		{
+			"rollback",
+			event.New("input.rollback", time.Now(), nil,
+				event.RollbackEvent{BlockHash: "abc", SlotNumber: 5}),
+		},
+		{
+			"transaction",
+			event.New("input.transaction", time.Now(),
+				event.TransactionContext{TransactionHash: "tx", BlockNumber: 1},
+				event.TransactionEvent{Fee: 10}),
+		},
+		{
+			"governance",
+			event.New("input.governance", time.Now(),
+				event.GovernanceContext{TransactionHash: "gtx", BlockNumber: 1},
+				event.GovernanceEvent{}),
+		},
+		{
+			"default",
+			event.New("input.other", time.Now(), nil, "raw-payload"),
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			data, err := formatWebhook(&tc.evt, "discord")
+			require.NoError(t, err)
+			var dwe DiscordWebhookEvent
+			require.NoError(t, json.Unmarshal(data, &dwe))
+		})
+	}
+}
+
+func TestSendWebhookSuccess(t *testing.T) {
+	srv := httptest.NewServer(
+		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		}),
+	)
+	defer srv.Close()
+
+	w := New(WithUrl(srv.URL, false))
+	e := blockEvent()
+	require.NoError(t, w.SendWebhook(&e))
+}
+
+// --- Error-path tests ----------------------------------------------------
+
+func TestFormatWebhookDiscordBadPayloadType(t *testing.T) {
+	// input.block with a payload that is not a BlockEvent
+	e := event.New(
+		"input.block",
+		time.Now(),
+		event.BlockContext{},
+		"not-a-block-event",
+	)
+	data, err := formatWebhook(&e, "discord")
+	require.Error(t, err)
+	assert.Nil(t, data)
+	assert.Contains(t, err.Error(), "unexpected payload type")
+}
+
+func TestFormatWebhookDiscordBadContextType(t *testing.T) {
+	// input.block with a valid payload but wrong context type
+	e := event.New(
+		"input.block",
+		time.Now(),
+		"not-a-block-context",
+		event.BlockEvent{BlockHash: "h"},
+	)
+	data, err := formatWebhook(&e, "discord")
+	require.Error(t, err)
+	assert.Nil(t, data)
+	assert.Contains(t, err.Error(), "unexpected context type")
+}
+
+func TestFormatWebhookMarshalError(t *testing.T) {
+	// A float NaN cannot be marshaled to JSON; embed it in the default
+	// (non-discord) path via an unsupported payload value.
+	e := event.New("input.other", time.Now(), nil, math.NaN())
+	data, err := formatWebhook(&e, "adder")
+	require.Error(t, err)
+	assert.Nil(t, data)
+	assert.Contains(t, err.Error(), "failed to marshal")
+}
+
+func TestSendWebhookFormatError(t *testing.T) {
+	// SendWebhook must propagate formatWebhook errors instead of POSTing.
+	e := event.New(
+		"input.block",
+		time.Now(),
+		event.BlockContext{},
+		"not-a-block-event",
+	)
+	w := New(WithFormat("discord"), WithUrl("http://127.0.0.1:0", false))
+	err := w.SendWebhook(&e)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unexpected payload type")
+}
+
+func TestSendWebhookConnectionRefused(t *testing.T) {
+	// Point at a server we immediately close so the POST fails.
+	srv := httptest.NewServer(
+		http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}),
+	)
+	url := srv.URL
+	srv.Close()
+
+	w := New(WithUrl(url, false))
+	e := blockEvent()
+	require.Error(t, w.SendWebhook(&e))
+}
+
+func TestSendWebhookBadURL(t *testing.T) {
+	// A control character in the URL fails request construction.
+	w := New(WithUrl("http://example.com/\x7f", false))
+	e := blockEvent()
+	require.Error(t, w.SendWebhook(&e))
+}
+
+// drainErr starts a reader on the plugin error channel and returns a
+// function that blocks until one error arrives (or times out). The plugin
+// sends errors non-blockingly on an unbuffered channel, so the reader is
+// started (and given a chance to park on the receive) before the caller
+// feeds the input that triggers the error.
+func drainErr(t *testing.T, w *WebhookOutput) func() error {
+	t.Helper()
+	var (
+		mu    sync.Mutex
+		got   error
+		done  = make(chan struct{})
+		ready = make(chan struct{})
+	)
+	go func() {
+		errChan := w.ErrorChan()
+		close(ready)
+		select {
+		case e := <-errChan:
+			mu.Lock()
+			got = e
+			mu.Unlock()
+		case <-time.After(3 * time.Second):
+		}
+		close(done)
+	}()
+	// Wait for the reader goroutine to start and yield so it has parked on
+	// the receive before the triggering event is delivered.
+	<-ready
+	runtime.Gosched()
+	return func() error {
+		<-done
+		mu.Lock()
+		defer mu.Unlock()
+		return got
+	}
+}
+
+func TestStartNilPayloadSurfacesError(t *testing.T) {
+	w := New(fastRetry())
+	require.NoError(t, w.Start())
+	wait := drainErr(t, w)
+	w.InputChan() <- event.New("input.block", time.Now(), event.BlockContext{}, nil)
+	err := wait()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "nil payload")
+	require.NoError(t, w.Stop())
+}
+
+func TestStartNilContextSurfacesError(t *testing.T) {
+	w := New(fastRetry())
+	require.NoError(t, w.Start())
+	wait := drainErr(t, w)
+	w.InputChan() <- event.New(
+		"input.block", time.Now(), nil, event.BlockEvent{BlockHash: "h"},
+	)
+	err := wait()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "nil context")
+	require.NoError(t, w.Stop())
+}
+
+func TestStartBadPayloadTypeSurfacesError(t *testing.T) {
+	w := New(fastRetry())
+	require.NoError(t, w.Start())
+	wait := drainErr(t, w)
+	w.InputChan() <- event.New(
+		"input.transaction", time.Now(), event.TransactionContext{}, "bogus",
+	)
+	err := wait()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unexpected payload type")
+	require.NoError(t, w.Stop())
+}
+
+func TestStartDeliveryFailureSurfacesError(t *testing.T) {
+	// Valid event but no reachable server -> retries exhaust -> error.
+	srv := httptest.NewServer(
+		http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}),
+	)
+	url := srv.URL
+	srv.Close()
+
+	w := New(WithUrl(url, false), fastRetry())
+	require.NoError(t, w.Start())
+	wait := drainErr(t, w)
+	e := blockEvent()
+	w.InputChan() <- e
+	err := wait()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed after")
+	require.NoError(t, w.Stop())
+}
+
+func TestStartUnknownEventTypeSurfacesError(t *testing.T) {
+	// Unknown types are now reported as errors.
+	w := New(fastRetry())
+	require.NoError(t, w.Start())
+	wait := drainErr(t, w)
+	w.InputChan() <- event.New("input.bogus", time.Now(), nil, "x")
+	err := wait()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unknown event type")
+	require.NoError(t, w.Stop())
+}
 
 func TestWebhookOutput_Start(t *testing.T) {
 	received := make(chan []byte, 1)
@@ -155,3 +425,36 @@ func TestWebhookOutput_BasicAuth(t *testing.T) {
 		t.Fatal("timed out waiting for auth")
 	}
 }
+
+func TestWebhookOutput_ShutdownDuringInFlightRequest(t *testing.T) {
+	// 1. Slow server (stalls for 100ms)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(100 * time.Millisecond)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	w := New(
+		WithUrl(srv.URL, false),
+		WithRetryConfig(0, time.Millisecond, time.Millisecond),
+	)
+
+	require.NoError(t, w.Start())
+
+	// 2. Send an event
+	evt := event.Event{
+		Type:    "input.rollback",
+		Payload: event.RollbackEvent{},
+	}
+	w.InputChan() <- evt
+
+	// 3. Wait briefly for worker to pick up the event and enter SendWebhook
+	time.Sleep(10 * time.Millisecond)
+
+	// 4. Stop concurrently while request is in flight
+	require.NoError(t, w.Stop())
+
+	// Sleep slightly to let mock finish and make sure no races or panics happen
+	time.Sleep(150 * time.Millisecond)
+}
+

@@ -43,6 +43,7 @@ const (
 )
 
 type WebhookOutput struct {
+	mu             sync.Mutex
 	errorChan      chan error
 	eventChan      chan event.Event
 	doneChan       chan struct{}
@@ -77,9 +78,15 @@ func New(options ...WebhookOptionFunc) *WebhookOutput {
 
 // Start the webhook output
 func (w *WebhookOutput) Start() error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.eventChan != nil {
+		return nil
+	}
 	// Guard against double-start: wait for existing goroutine to exit
 	if w.doneChan != nil {
 		close(w.doneChan)
+		w.doneChan = nil
 		w.wg.Wait()
 	}
 	w.eventChan = make(chan event.Event, 10)
@@ -87,13 +94,10 @@ func (w *WebhookOutput) Start() error {
 	w.doneChan = make(chan struct{})
 	logger := logging.GetLogger()
 	logger.Info("starting webhook server")
-
-	// Capture channels locally to avoid races with Stop()
-	eventChan := w.eventChan
-	doneChan := w.doneChan
-
 	w.wg.Add(1)
-	go func() {
+	// Pass the channels as arguments so the goroutine never reads the
+	// shared struct fields, which Stop() may mutate concurrently.
+	go func(doneChan <-chan struct{}, eventChan <-chan event.Event, errorChan chan<- error) {
 		defer w.wg.Done()
 		for {
 			select {
@@ -104,33 +108,137 @@ func (w *WebhookOutput) Start() error {
 				if !ok {
 					return
 				}
-				if evt.Payload == nil {
-					logger.Error("webhook received event with nil payload", "event_type", evt.Type)
+				payload := evt.Payload
+				if payload == nil {
+					w.reportError(
+						logger,
+						errorChan,
+						fmt.Errorf(
+							"received event with nil payload (type %q)",
+							evt.Type,
+						),
+					)
 					continue
 				}
+				context := evt.Context
 				switch evt.Type {
 				case "input.block":
-					if evt.Context == nil {
-						logger.Error("webhook received block event with nil context")
+					if context == nil {
+						w.reportError(
+							logger,
+							errorChan,
+							fmt.Errorf(
+								"received %q event with nil context",
+								evt.Type,
+							),
+						)
+						continue
+					}
+					if _, ok := payload.(event.BlockEvent); !ok {
+						w.reportError(
+							logger,
+							errorChan,
+							unexpectedPayloadErr(evt.Type, payload),
+						)
+						continue
+					}
+					if _, ok := context.(event.BlockContext); !ok {
+						w.reportError(
+							logger,
+							errorChan,
+							unexpectedContextErr(evt.Type, context),
+						)
+						continue
+					}
+				case "input.rollback":
+					if _, ok := payload.(event.RollbackEvent); !ok {
+						w.reportError(
+							logger,
+							errorChan,
+							unexpectedPayloadErr(evt.Type, payload),
+						)
 						continue
 					}
 				case "input.transaction":
-					if evt.Context == nil {
-						logger.Error("webhook received transaction event with nil context")
+					if _, ok := payload.(event.TransactionEvent); !ok {
+						w.reportError(
+							logger,
+							errorChan,
+							unexpectedPayloadErr(evt.Type, payload),
+						)
+						continue
+					}
+					if _, ok := context.(event.TransactionContext); !ok {
+						w.reportError(
+							logger,
+							errorChan,
+							unexpectedContextErr(evt.Type, context),
+						)
 						continue
 					}
 				case "input.governance":
-					if evt.Context == nil {
-						logger.Error("webhook received governance event with nil context")
+					if _, ok := payload.(event.GovernanceEvent); !ok {
+						w.reportError(
+							logger,
+							errorChan,
+							unexpectedPayloadErr(evt.Type, payload),
+						)
 						continue
 					}
+					if _, ok := context.(event.GovernanceContext); !ok {
+						w.reportError(
+							logger,
+							errorChan,
+							unexpectedContextErr(evt.Type, context),
+						)
+						continue
+					}
+				default:
+					w.reportError(
+						logger,
+						errorChan,
+						fmt.Errorf("received unknown event type %q", evt.Type),
+					)
+					continue
 				}
 				// Send webhook with retry logic and exponential backoff
-				w.sendWebhookWithRetry(&evt)
+				w.sendWebhookWithRetry(doneChan, errorChan, &evt)
 			}
 		}
-	}()
+	}(w.doneChan, w.eventChan, w.errorChan)
 	return nil
+}
+
+// reportError surfaces an error on the plugin error channel without
+// blocking. If no consumer is ready, the error is logged instead. This
+// mirrors the non-blocking delivery used by sendWebhookWithRetry.
+func (w *WebhookOutput) reportError(logger plugin.Logger, errorChan chan<- error, err error) {
+	logger.Error(err.Error())
+	select {
+	case errorChan <- err:
+	default:
+		logger.Warn("could not send error to error channel (full)")
+	}
+}
+
+// unexpectedPayloadErr builds an error describing a payload whose dynamic
+// type does not match the one expected for the given event type.
+func unexpectedPayloadErr(eventType string, payload any) error {
+	return fmt.Errorf(
+		"unexpected payload type %T for event %q",
+		payload,
+		eventType,
+	)
+}
+
+// unexpectedContextErr builds an error describing a context whose dynamic
+// type does not match the one expected for the given event type.
+func unexpectedContextErr(eventType string, context any) error {
+	return fmt.Errorf(
+		"unexpected context type %T for event %q",
+		context,
+		eventType,
+	)
 }
 
 func basicAuth(username, password string) string {
@@ -138,7 +246,7 @@ func basicAuth(username, password string) string {
 	return "Basic " + base64.StdEncoding.EncodeToString([]byte(auth))
 }
 
-func formatWebhook(e *event.Event, format string) []byte {
+func formatWebhook(e *event.Event, format string) ([]byte, error) {
 	var data []byte
 	var err error
 	switch format {
@@ -149,8 +257,14 @@ func formatWebhook(e *event.Event, format string) []byte {
 		var dmefs []*DiscordMessageEmbedField
 		switch e.Type {
 		case "input.block":
-			be := e.Payload.(event.BlockEvent)
-			bc := e.Context.(event.BlockContext)
+			be, ok := e.Payload.(event.BlockEvent)
+			if !ok {
+				return nil, unexpectedPayloadErr(e.Type, e.Payload)
+			}
+			bc, ok := e.Context.(event.BlockContext)
+			if !ok {
+				return nil, unexpectedContextErr(e.Type, e.Context)
+			}
 			dme.Title = "New Cardano Block"
 			dmefs = append(dmefs, &DiscordMessageEmbedField{
 				Name:  "Block Number",
@@ -171,7 +285,10 @@ func formatWebhook(e *event.Event, format string) []byte {
 			baseURL := getBaseURL(bc.NetworkMagic)
 			dme.URL = fmt.Sprintf("%s/block/%s", baseURL, be.BlockHash)
 		case "input.rollback":
-			be := e.Payload.(event.RollbackEvent)
+			be, ok := e.Payload.(event.RollbackEvent)
+			if !ok {
+				return nil, unexpectedPayloadErr(e.Type, e.Payload)
+			}
 			dme.Title = "Cardano Rollback"
 			dmefs = append(dmefs, &DiscordMessageEmbedField{
 				Name:  "Slot Number",
@@ -182,8 +299,14 @@ func formatWebhook(e *event.Event, format string) []byte {
 				Value: be.BlockHash,
 			})
 		case "input.transaction":
-			te := e.Payload.(event.TransactionEvent)
-			tc := e.Context.(event.TransactionContext)
+			te, ok := e.Payload.(event.TransactionEvent)
+			if !ok {
+				return nil, unexpectedPayloadErr(e.Type, e.Payload)
+			}
+			tc, ok := e.Context.(event.TransactionContext)
+			if !ok {
+				return nil, unexpectedContextErr(e.Type, e.Context)
+			}
 			dme.Title = "New Cardano Transaction"
 			dmefs = append(dmefs, &DiscordMessageEmbedField{
 				Name:  "Block Number",
@@ -212,8 +335,14 @@ func formatWebhook(e *event.Event, format string) []byte {
 			baseURL := getBaseURL(tc.NetworkMagic)
 			dme.URL = fmt.Sprintf("%s/tx/%s", baseURL, tc.TransactionHash)
 		case "input.governance":
-			ge := e.Payload.(event.GovernanceEvent)
-			gc := e.Context.(event.GovernanceContext)
+			ge, ok := e.Payload.(event.GovernanceEvent)
+			if !ok {
+				return nil, unexpectedPayloadErr(e.Type, e.Payload)
+			}
+			gc, ok := e.Context.(event.GovernanceContext)
+			if !ok {
+				return nil, unexpectedContextErr(e.Type, e.Context)
+			}
 			dme.Title = "Cardano Governance Event"
 			dmefs = append(dmefs, &DiscordMessageEmbedField{
 				Name:  "Block Number",
@@ -246,15 +375,15 @@ func formatWebhook(e *event.Event, format string) []byte {
 
 		data, err = json.Marshal(dwe)
 		if err != nil {
-			return data
+			return nil, fmt.Errorf("failed to marshal webhook payload: %w", err)
 		}
 	default:
 		data, err = json.Marshal(e)
 		if err != nil {
-			return data
+			return nil, fmt.Errorf("failed to marshal webhook payload: %w", err)
 		}
 	}
-	return data
+	return data, nil
 }
 
 type DiscordWebhookEvent struct {
@@ -280,7 +409,10 @@ func getBaseURL(networkMagic uint32) string {
 func (w *WebhookOutput) SendWebhook(e *event.Event) error {
 	logger := logging.GetLogger()
 	logger.Info(fmt.Sprintf("sending event %s to %s", e.Type, w.url))
-	data := formatWebhook(e, w.format)
+	data, err := formatWebhook(e, w.format)
+	if err != nil {
+		return err
+	}
 	// Setup request
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -304,16 +436,20 @@ func (w *WebhookOutput) SendWebhook(e *event.Event) error {
 		req.Header.Add("Authorization", basicAuth(w.username, w.password))
 	}
 	// Setup custom transport to allow self-signed SSL
-	defaultTransport := http.DefaultTransport.(*http.Transport)
 	// #nosec G402
 	customTransport := &http.Transport{
-		Proxy:                 defaultTransport.Proxy,
-		DialContext:           defaultTransport.DialContext,
-		MaxIdleConns:          defaultTransport.MaxIdleConns,
-		IdleConnTimeout:       defaultTransport.IdleConnTimeout,
-		ExpectContinueTimeout: defaultTransport.ExpectContinueTimeout,
-		TLSHandshakeTimeout:   defaultTransport.TLSHandshakeTimeout,
-		TLSClientConfig:       &tls.Config{InsecureSkipVerify: w.skipVerify},
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: w.skipVerify},
+	}
+	// Copy connection-pool tuning from the default transport when it is the
+	// expected concrete type, rather than asserting unconditionally (which
+	// would panic if DefaultTransport were replaced).
+	if defaultTransport, ok := http.DefaultTransport.(*http.Transport); ok {
+		customTransport.Proxy = defaultTransport.Proxy
+		customTransport.DialContext = defaultTransport.DialContext
+		customTransport.MaxIdleConns = defaultTransport.MaxIdleConns
+		customTransport.IdleConnTimeout = defaultTransport.IdleConnTimeout
+		customTransport.ExpectContinueTimeout = defaultTransport.ExpectContinueTimeout
+		customTransport.TLSHandshakeTimeout = defaultTransport.TLSHandshakeTimeout
 	}
 	client := &http.Client{Transport: customTransport}
 	// Send payload
@@ -349,12 +485,10 @@ func (w *WebhookOutput) SendWebhook(e *event.Event) error {
 }
 
 // sendWebhookWithRetry wraps SendWebhook with retry logic and exponential backoff
-func (w *WebhookOutput) sendWebhookWithRetry(e *event.Event) {
+func (w *WebhookOutput) sendWebhookWithRetry(doneChan <-chan struct{}, errorChan chan<- error, e *event.Event) {
 	logger := logging.GetLogger()
 	var lastErr error
 	backoff := w.initialBackoff
-
-	logger.Debug("starting webhook delivery with retry", "url", w.url, "max_retries", w.maxRetries)
 
 	for attempt := 0; attempt <= w.maxRetries; attempt++ {
 		if attempt > 0 {
@@ -369,10 +503,9 @@ func (w *WebhookOutput) sendWebhookWithRetry(e *event.Event) {
 				"event_type", e.Type,
 				"error", lastErr,
 			)
-
 			// Responsive sleep
 			select {
-			case <-w.doneChan:
+			case <-doneChan:
 				return
 			case <-time.After(backoff):
 			}
@@ -388,9 +521,14 @@ func (w *WebhookOutput) sendWebhookWithRetry(e *event.Event) {
 		if err == nil {
 			if attempt > 0 {
 				logger.Info(
-					fmt.Sprintf("webhook delivery succeeded after %d retries", attempt),
-					"url", w.url,
-					"event_type", e.Type,
+					fmt.Sprintf(
+						"webhook delivery succeeded after %d retries",
+						attempt,
+					),
+					"url",
+					w.url,
+					"event_type",
+					e.Type,
 				)
 			}
 			return
@@ -411,26 +549,31 @@ func (w *WebhookOutput) sendWebhookWithRetry(e *event.Event) {
 
 	// Send error to error channel for monitoring (non-blocking)
 	select {
-	case w.errorChan <- fmt.Errorf(
+	case errorChan <- fmt.Errorf(
 		"webhook delivery to %s failed after %d retries: %w",
 		w.url,
 		w.maxRetries,
 		lastErr,
 	):
 	default:
-		// Error channel is full or closed, just log
-		logger.Warn("could not send error to error channel (full or closed)")
+		// Error channel is full, just log
+		logger.Warn("could not send error to error channel (full)")
 	}
 }
 
 // Stop the webhook output
 func (w *WebhookOutput) Stop() error {
+	w.mu.Lock()
 	if w.doneChan != nil {
 		close(w.doneChan)
-		// Wait for goroutine to exit before clearing field
-		w.wg.Wait()
 		w.doneChan = nil
 	}
+	w.mu.Unlock()
+
+	// Wait for goroutine to exit before closing channels
+	w.wg.Wait()
+
+	w.mu.Lock()
 	if w.eventChan != nil {
 		close(w.eventChan)
 		w.eventChan = nil
@@ -439,16 +582,21 @@ func (w *WebhookOutput) Stop() error {
 		close(w.errorChan)
 		w.errorChan = nil
 	}
+	w.mu.Unlock()
 	return nil
 }
 
 // ErrorChan returns the plugin's error channel
 func (w *WebhookOutput) ErrorChan() <-chan error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	return w.errorChan
 }
 
 // InputChan returns the input event channel
 func (w *WebhookOutput) InputChan() chan<- event.Event {
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	return w.eventChan
 }
 
