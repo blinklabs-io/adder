@@ -1,4 +1,4 @@
-// Copyright 2025 Blink Labs Software
+// Copyright 2026 Blink Labs Software
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -144,6 +144,15 @@ func TestFilterByAddress(t *testing.T) {
 				StakeCredential: cred,
 			},
 			shouldMatch: true,
+		},
+		{
+			name:          "StakeDelegationCertificate with nil StakeCredential should not panic or match",
+			filterAddress: testStakeAddress,
+			output:        placeholderOutput,
+			cert: &common.StakeDelegationCertificate{
+				StakeCredential: nil,
+			},
+			shouldMatch: false,
 		},
 		{
 			name:          "No match",
@@ -424,6 +433,110 @@ func TestFilterByPoolOrDRepIdTransactionEvent(t *testing.T) {
 	}
 
 	assert.True(t, cs.filterTransactionEvent(te))
+}
+
+type mockTransaction struct {
+	common.Transaction
+	votingProcedures common.VotingProcedures
+}
+
+func (m mockTransaction) VotingProcedures() common.VotingProcedures {
+	return m.votingProcedures
+}
+
+func TestFilterByPoolIdTransactionEvent(t *testing.T) {
+	poolHex := "abcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcd"
+	poolHashBytes, _ := hex.DecodeString(poolHex)
+	var poolKeyHash common.PoolKeyHash
+	copy(poolKeyHash[:], poolHashBytes)
+
+	otherPoolHex := "11112222333344445555666677778888999900001111222233334444"
+	otherPoolHashBytes, _ := hex.DecodeString(otherPoolHex)
+	var otherPoolKeyHash common.PoolKeyHash
+	copy(otherPoolKeyHash[:], otherPoolHashBytes)
+
+	cs := New(WithPoolIds([]string{poolHex}))
+
+	t.Run("pool-bearing certificates", func(t *testing.T) {
+		tests := []struct {
+			name        string
+			cert        ledger.Certificate
+			shouldMatch bool
+		}{
+			{
+				name: "StakeDelegationCertificate - matching",
+				cert: &ledger.StakeDelegationCertificate{
+					PoolKeyHash: poolKeyHash,
+				},
+				shouldMatch: true,
+			},
+			{
+				name: "PoolRetirementCertificate - matching",
+				cert: &ledger.PoolRetirementCertificate{
+					PoolKeyHash: poolKeyHash,
+				},
+				shouldMatch: true,
+			},
+			{
+				name: "PoolRegistrationCertificate - matching",
+				cert: &ledger.PoolRegistrationCertificate{
+					Operator: poolKeyHash,
+				},
+				shouldMatch: true,
+			},
+			{
+				name: "StakeDelegationCertificate - non-matching pool",
+				cert: &ledger.StakeDelegationCertificate{
+					PoolKeyHash: otherPoolKeyHash,
+				},
+				shouldMatch: false,
+			},
+			{
+				name: "StakeDeregistrationCertificate - non-pool certificate",
+				cert: &common.StakeDeregistrationCertificate{},
+				shouldMatch: false,
+			},
+		}
+
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				te := event.TransactionEvent{
+					Certificates: []ledger.Certificate{tt.cert},
+				}
+				assert.Equal(t, tt.shouldMatch, cs.filterTransactionEvent(te))
+			})
+		}
+	})
+
+	t.Run("SPO voting procedures in transaction", func(t *testing.T) {
+		vps := make(common.VotingProcedures)
+		vps[&common.Voter{
+			Type: common.VoterTypeStakingPoolKeyHash,
+			Hash: poolKeyHash,
+		}] = nil
+
+		te := event.TransactionEvent{
+			Transaction: mockTransaction{
+				votingProcedures: vps,
+			},
+		}
+		assert.True(t, cs.filterTransactionEvent(te))
+	})
+
+	t.Run("non-matching SPO voting procedures in transaction", func(t *testing.T) {
+		vps := make(common.VotingProcedures)
+		vps[&common.Voter{
+			Type: common.VoterTypeStakingPoolKeyHash,
+			Hash: otherPoolKeyHash,
+		}] = nil
+
+		te := event.TransactionEvent{
+			Transaction: mockTransaction{
+				votingProcedures: vps,
+			},
+		}
+		assert.False(t, cs.filterTransactionEvent(te))
+	})
 }
 
 func TestFilterByDRepIdGovernanceEvent(t *testing.T) {
