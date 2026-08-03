@@ -107,6 +107,14 @@ func New(options ...PushOptionFunc) (*PushOutput, error) {
 	return p, nil
 }
 
+// log returns the plugin logger, or the global logger if unset.
+func (p *PushOutput) log() plugin.Logger {
+	if p.logger != nil {
+		return p.logger
+	}
+	return logging.GetLoggerForComponent("output.push")
+}
+
 func (p *PushOutput) Start() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -115,7 +123,7 @@ func (p *PushOutput) Start() error {
 	}
 	p.eventChan = make(chan event.Event, 10)
 	p.errorChan = make(chan error, 16)
-	logger := logging.GetLogger()
+	logger := p.log()
 	logger.Info("starting push notification server")
 	eventChan := p.eventChan
 	errorChan := p.errorChan
@@ -154,13 +162,15 @@ func (p *PushOutput) Start() error {
 
 				be := payload.(event.BlockEvent)
 				bc := context.(event.BlockContext)
-				logger.Debug("Adder")
-				logger.Debug(fmt.Sprintf(
-					"New Block!\nBlockNumber: %d, SlotNumber: %d\nHash: %s",
+				logger.Debug(
+					"New Block!",
+					"block_number",
 					bc.BlockNumber,
+					"slot_number",
 					bc.SlotNumber,
+					"hash",
 					be.BlockHash,
-				))
+				)
 
 				// Create notification message
 				title := "Adder"
@@ -182,12 +192,12 @@ func (p *PushOutput) Start() error {
 				}
 
 				re := payload.(event.RollbackEvent)
-				logger.Debug("Adder")
 				logger.Debug(
-					fmt.Sprintf("Rollback!\nSlotNumber: %d\nBlockHash: %s",
-						re.SlotNumber,
-						re.BlockHash,
-					),
+					"Rollback!",
+					"slot_number",
+					re.SlotNumber,
+					"block_hash",
+					re.BlockHash,
 				)
 			case "input.transaction":
 				payload := evt.Payload
@@ -264,13 +274,21 @@ func (p *PushOutput) refreshFcmTokens() {
 	}
 }
 
+func truncToken(token string) string {
+	if len(token) <= 16 {
+		return "REDACTED"
+	}
+	return token[:8] + "..." + token[len(token)-8:]
+}
+
 func (p *PushOutput) processFcmNotifications(errorChan chan<- error, title, body string) {
+	logger := p.log()
 	// Fetch new FCM tokens and add to p.fcmTokens
 	p.refreshFcmTokens()
 
 	// If no FCM tokens exist, log and return
 	if len(p.fcmTokens) == 0 {
-		logging.GetLogger().Info("No FCM tokens found. Skipping notification.")
+		logger.Info("No FCM tokens found. Skipping notification.")
 		return
 	}
 
@@ -281,26 +299,39 @@ func (p *PushOutput) processFcmNotifications(errorChan chan<- error, title, body
 			fcm.WithNotification(title, body),
 		)
 		if err != nil {
-			err = fmt.Errorf("failed to create message for token %s: %w", fcmToken, err)
-			logging.GetLogger().Error(err.Error())
+			logger.Error(
+				"Failed to create message for token",
+				"token",
+				truncToken(fcmToken),
+				"error",
+				err,
+			)
 			select {
-			case errorChan <- err:
+			case errorChan <- fmt.Errorf("failed to create message for token %s: %w", truncToken(fcmToken), err):
 			default:
 			}
 			continue
 		}
 
 		if err := fcm.Send(p.accessToken, p.projectID, msg); err != nil {
-			err = fmt.Errorf("failed to send message to token %s: %w", fcmToken, err)
-			logging.GetLogger().Error(err.Error())
+			logger.Error(
+				"Failed to send message to token",
+				"token",
+				truncToken(fcmToken),
+				"error",
+				err,
+			)
 			select {
-			case errorChan <- err:
+			case errorChan <- fmt.Errorf("failed to send message to token %s: %w", truncToken(fcmToken), err):
 			default:
 			}
 			continue
 		}
-		logging.GetLogger().
-			Info(fmt.Sprintf("Message sent successfully to token %s!", fcmToken))
+		logger.Info(
+			"Message sent successfully to token",
+			"token",
+			truncToken(fcmToken),
+		)
 	}
 }
 

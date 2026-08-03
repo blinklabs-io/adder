@@ -332,6 +332,9 @@ func TestIntegration_SSEThroughMiddleware(t *testing.T) {
 	// replay=false so the first data frame is the event we broadcast below.
 	resp, err := http.Get(server.URL + "/events?replay=false")
 	require.NoError(t, err)
+	if resp == nil {
+		t.Fatal("response is nil")
+	}
 	defer resp.Body.Close()
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)

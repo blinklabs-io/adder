@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"sync"
 	"time"
@@ -406,9 +407,31 @@ func getBaseURL(networkMagic uint32) string {
 	return explorer.BaseURL(networkMagic)
 }
 
+func sanitizeURL(rawURL string) string {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return "invalid-url"
+	}
+	// Strip user info, path, raw query, and fragment to avoid credential/token leaks
+	u.User = nil
+	u.Path = ""
+	u.RawPath = ""
+	u.RawQuery = ""
+	u.Fragment = ""
+	return u.String()
+}
+
+// log returns the plugin logger, or the global logger if unset.
+func (w *WebhookOutput) log() plugin.Logger {
+	if w.logger != nil {
+		return w.logger
+	}
+	return logging.GetLoggerForComponent("output.webhook")
+}
+
 func (w *WebhookOutput) SendWebhook(e *event.Event) error {
-	logger := logging.GetLogger()
-	logger.Info(fmt.Sprintf("sending event %s to %s", e.Type, w.url))
+	logger := w.log()
+	logger.Info("sending event", "type", e.Type, "url", sanitizeURL(w.url))
 	data, err := formatWebhook(e, w.format)
 	if err != nil {
 		return err
@@ -459,7 +482,7 @@ func (w *WebhookOutput) SendWebhook(e *event.Event) error {
 		return fmt.Errorf("%w", err)
 	}
 	if resp == nil {
-		return fmt.Errorf("failed to send payload: %s", data)
+		return fmt.Errorf("failed to send payload to %s", sanitizeURL(w.url))
 	}
 	defer resp.Body.Close()
 
@@ -473,35 +496,55 @@ func (w *WebhookOutput) SendWebhook(e *event.Event) error {
 	}
 
 	logger.Info(
-		fmt.Sprintf("sent: %s, payload: %s, body: %s, response: %s, status: %d",
-			w.url,
-			string(data),
-			string(respBody),
-			resp.Status,
-			resp.StatusCode,
-		),
+		"sent webhook",
+		"url",
+		sanitizeURL(w.url),
+		"payload_size",
+		len(data),
+		"response_size",
+		len(respBody),
+		"status",
+		resp.StatusCode,
+	)
+
+	logger.Debug(
+		"sent webhook diagnostics",
+		"url",
+		sanitizeURL(w.url),
+		"payload_size",
+		len(data),
+		"response_size",
+		len(respBody),
+		"status",
+		resp.StatusCode,
 	)
 	return nil
 }
 
 // sendWebhookWithRetry wraps SendWebhook with retry logic and exponential backoff
 func (w *WebhookOutput) sendWebhookWithRetry(doneChan <-chan struct{}, errorChan chan<- error, e *event.Event) {
-	logger := logging.GetLogger()
+	logger := w.log()
 	var lastErr error
 	backoff := w.initialBackoff
+
+	logger.Debug("starting webhook delivery with retry", "url", sanitizeURL(w.url), "max_retries", w.maxRetries)
 
 	for attempt := 0; attempt <= w.maxRetries; attempt++ {
 		if attempt > 0 {
 			logger.Warn(
-				fmt.Sprintf(
-					"webhook delivery failed, retrying (attempt %d/%d) after %v",
-					attempt,
-					w.maxRetries,
-					backoff,
-				),
-				"url", w.url,
-				"event_type", e.Type,
-				"error", lastErr,
+				"webhook delivery failed, retrying",
+				"attempt",
+				attempt,
+				"max_retries",
+				w.maxRetries,
+				"delay",
+				backoff,
+				"url",
+				sanitizeURL(w.url),
+				"event_type",
+				e.Type,
+				"error",
+				lastErr,
 			)
 			// Responsive sleep
 			select {
@@ -521,12 +564,11 @@ func (w *WebhookOutput) sendWebhookWithRetry(doneChan <-chan struct{}, errorChan
 		if err == nil {
 			if attempt > 0 {
 				logger.Info(
-					fmt.Sprintf(
-						"webhook delivery succeeded after %d retries",
-						attempt,
-					),
+					"webhook delivery succeeded",
+					"retries",
+					attempt,
 					"url",
-					w.url,
+					sanitizeURL(w.url),
 					"event_type",
 					e.Type,
 				)
@@ -538,20 +580,22 @@ func (w *WebhookOutput) sendWebhookWithRetry(doneChan <-chan struct{}, errorChan
 
 	// All retries exhausted
 	logger.Error(
-		fmt.Sprintf(
-			"webhook delivery failed after %d retries, giving up",
-			w.maxRetries,
-		),
-		"url", w.url,
-		"event_type", e.Type,
-		"error", lastErr,
+		"webhook delivery failed, giving up",
+		"max_retries",
+		w.maxRetries,
+		"url",
+		sanitizeURL(w.url),
+		"event_type",
+		e.Type,
+		"error",
+		lastErr,
 	)
 
 	// Send error to error channel for monitoring (non-blocking)
 	select {
 	case errorChan <- fmt.Errorf(
 		"webhook delivery to %s failed after %d retries: %w",
-		w.url,
+		sanitizeURL(w.url),
 		w.maxRetries,
 		lastErr,
 	):

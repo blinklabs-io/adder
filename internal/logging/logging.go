@@ -30,7 +30,10 @@ func defaultLogger() *slog.Logger {
 	})).With("component", "main")
 }
 
-var globalLogger = defaultLogger()
+var (
+	baseLogger   *slog.Logger
+	globalLogger = defaultLogger()
+)
 
 // Configure initializes the global logger writing to os.Stderr.
 func Configure() {
@@ -71,7 +74,8 @@ func ConfigureWithWriter(w io.Writer) {
 		},
 		Level: level,
 	})
-	globalLogger = slog.New(handler).With("component", "main")
+	baseLogger = slog.New(handler)
+	globalLogger = baseLogger.With("component", "main")
 }
 
 func GetLogger() *slog.Logger {
@@ -79,4 +83,11 @@ func GetLogger() *slog.Logger {
 		Configure()
 	}
 	return globalLogger
+}
+
+func GetLoggerForComponent(component string) *slog.Logger {
+	if baseLogger == nil {
+		Configure()
+	}
+	return baseLogger.With("component", component)
 }
