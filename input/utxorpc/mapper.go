@@ -26,9 +26,9 @@ import (
 	"github.com/blinklabs-io/gouroboros/ledger"
 	"github.com/blinklabs-io/gouroboros/protocol/blockfetch"
 	"github.com/blinklabs-io/gouroboros/protocol/common"
-	cardanopb "github.com/utxorpc/go-codegen/utxorpc/v1alpha/cardano"
-	syncpb "github.com/utxorpc/go-codegen/utxorpc/v1alpha/sync"
-	watchpb "github.com/utxorpc/go-codegen/utxorpc/v1alpha/watch"
+	cardanopb "github.com/utxorpc/go-codegen/utxorpc/v1beta/cardano"
+	syncpb "github.com/utxorpc/go-codegen/utxorpc/v1beta/sync"
+	watchpb "github.com/utxorpc/go-codegen/utxorpc/v1beta/watch"
 )
 
 // mapFollowTipResponse maps a single FollowTipResponse into zero or more adder

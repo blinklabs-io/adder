@@ -12,9 +12,9 @@ import (
 	"github.com/blinklabs-io/gouroboros/protocol/blockfetch"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	cardanopb "github.com/utxorpc/go-codegen/utxorpc/v1alpha/cardano"
-	syncpb "github.com/utxorpc/go-codegen/utxorpc/v1alpha/sync"
-	watchpb "github.com/utxorpc/go-codegen/utxorpc/v1alpha/watch"
+	cardanopb "github.com/utxorpc/go-codegen/utxorpc/v1beta/cardano"
+	syncpb "github.com/utxorpc/go-codegen/utxorpc/v1beta/sync"
+	watchpb "github.com/utxorpc/go-codegen/utxorpc/v1beta/watch"
 )
 
 //go:embed testdata/mainnet_nativebytes.hex
@@ -133,7 +133,7 @@ func TestFollowTipApplyProtobufPopulatesFilterFields(t *testing.T) {
 											PolicyId: policyId,
 											Assets: []*cardanopb.Asset{{
 												Name:     []byte("tokenA"),
-												Quantity: &cardanopb.Asset_OutputCoin{OutputCoin: &cardanopb.BigInt{BigInt: &cardanopb.BigInt_Int{Int: 10}}},
+												Quantity: &cardanopb.BigInt{BigInt: &cardanopb.BigInt_Int{Int: 10}},
 											}},
 										}},
 									}},
@@ -242,7 +242,7 @@ func TestFollowTipApplyProtobufGovernance(t *testing.T) {
 											Deposit:       &cardanopb.BigInt{BigInt: &cardanopb.BigInt_Int{Int: 500000000}},
 											RewardAccount: rewardAcct,
 											GovAction: &cardanopb.GovernanceAction{
-												GovernanceAction: &cardanopb.GovernanceAction_InfoAction{InfoAction: 6},
+												GovernanceAction: &cardanopb.GovernanceAction_InfoAction{InfoAction: &cardanopb.InfoAction{}},
 											},
 											Anchor: &cardanopb.Anchor{
 												Url:         "https://example.com/proposal.json",
@@ -456,7 +456,7 @@ func TestWatchTxApplyProtobufGovernance(t *testing.T) {
 						Hash: []byte{0xdd},
 						Proposals: []*cardanopb.GovernanceActionProposal{
 							{GovAction: &cardanopb.GovernanceAction{
-								GovernanceAction: &cardanopb.GovernanceAction_InfoAction{InfoAction: 6},
+								GovernanceAction: &cardanopb.GovernanceAction_InfoAction{InfoAction: &cardanopb.InfoAction{}},
 							}},
 						},
 						Certificates: []*cardanopb.Certificate{

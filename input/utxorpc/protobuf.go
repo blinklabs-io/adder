@@ -25,7 +25,7 @@ import (
 	lcommon "github.com/blinklabs-io/gouroboros/ledger/common"
 	"github.com/blinklabs-io/gouroboros/ledger/mary"
 	"github.com/blinklabs-io/gouroboros/ledger/shelley"
-	cardanopb "github.com/utxorpc/go-codegen/utxorpc/v1alpha/cardano"
+	cardanopb "github.com/utxorpc/go-codegen/utxorpc/v1beta/cardano"
 	"google.golang.org/protobuf/encoding/protowire"
 )
 
@@ -486,7 +486,7 @@ func pbMultiAssetsToLedger(assets []*cardanopb.Multiasset) *lcommon.MultiAsset[l
 		}
 		for _, asset := range ma.GetAssets() {
 			name := cbor.NewByteString(asset.GetName())
-			assetMap[name] = new(big.Int).SetUint64(utxorpcBigIntToUint64(asset.GetOutputCoin()))
+			assetMap[name] = new(big.Int).SetUint64(utxorpcBigIntToUint64(asset.GetQuantity()))
 		}
 	}
 	ma := lcommon.NewMultiAsset(data)
