@@ -28,8 +28,8 @@ import (
 	"github.com/blinklabs-io/adder/event"
 	"github.com/blinklabs-io/adder/plugin"
 	ouroboros "github.com/blinklabs-io/gouroboros"
-	syncpb "github.com/utxorpc/go-codegen/utxorpc/v1alpha/sync"
-	watchpb "github.com/utxorpc/go-codegen/utxorpc/v1alpha/watch"
+	syncpb "github.com/utxorpc/go-codegen/utxorpc/v1beta/sync"
+	watchpb "github.com/utxorpc/go-codegen/utxorpc/v1beta/watch"
 	sdk "github.com/utxorpc/go-sdk"
 )
 
