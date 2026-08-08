@@ -242,9 +242,9 @@ ChainSync also emits `input.rollback` when the chain rolls back.
 
 The individual DRep certificate event types are:
 
-- `chainsync.drep.registration`;
-- `chainsync.drep.update`;
-- `chainsync.drep.deregistration`.
+- `input.drep-registration`;
+- `input.drep-update`;
+- `input.drep-retirement`.
 
 The same DRep certificate is also represented inside the transaction's
 `input.governance` event. Consumers must avoid producing duplicate alerts from
@@ -310,7 +310,7 @@ The current DRep-related notification coverage is:
 | Stake credential changes away from followed DRep         | Not directly derivable from one event | Requires prior delegation state                              |
 | Followed DRep inactivity or missed vote                  | Not currently derivable               | Requires proposal deadlines and historical state             |
 | DRep voting-power change                                 | Not currently notified                | Requires delegation and stake-state aggregation              |
-| Individual `chainsync.drep.*` event                      | Not consumed directly by tray rules   | Equivalent certificate is handled through `input.governance` |
+| Individual `input.drep-*` event                      | Not consumed directly by tray rules   | Equivalent certificate is handled through `input.governance` |
 
 The governance event also contains SPO and committee activity, but current
 DRep rules intentionally match only the followed DRep for votes and

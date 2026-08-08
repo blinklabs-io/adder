@@ -228,7 +228,7 @@ func (t *TelegramOutput) processEvent(evt *event.Event) {
 
 	var message string
 	switch evt.Type {
-	case "input.block":
+	case event.TypeBlock:
 		evtCtx := evt.Context
 		if evtCtx == nil {
 			logger.Error("block event has nil context")
@@ -248,7 +248,7 @@ func (t *TelegramOutput) processEvent(evt *event.Event) {
 		baseURL := getBaseURL(bc.NetworkMagic)
 		message = formatBlockMessage(be, bc, baseURL, t.parseMode)
 
-	case "input.rollback":
+	case event.TypeRollback:
 		re, ok := payload.(event.RollbackEvent)
 		if !ok {
 			logger.Error("rollback event has invalid payload type")
@@ -256,7 +256,7 @@ func (t *TelegramOutput) processEvent(evt *event.Event) {
 		}
 		message = formatRollbackMessage(re, t.parseMode)
 
-	case "input.transaction":
+	case event.TypeTransaction:
 		evtCtx := evt.Context
 		if evtCtx == nil {
 			logger.Error("transaction event has nil context")
@@ -276,7 +276,7 @@ func (t *TelegramOutput) processEvent(evt *event.Event) {
 		baseURL := getBaseURL(tc.NetworkMagic)
 		message = formatTransactionMessage(te, tc, baseURL, t.parseMode)
 
-	case "input.governance":
+	case event.TypeGovernance:
 		evtCtx := evt.Context
 		if evtCtx == nil {
 			logger.Error("governance event has nil context")

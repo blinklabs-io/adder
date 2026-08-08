@@ -96,7 +96,7 @@ func TestPushOutput_FCMFailureSurfacesError(t *testing.T) {
 
 	// Send a block event
 	evt := event.Event{
-		Type: "input.block",
+		Type: event.TypeBlock,
 		Context: event.BlockContext{
 			BlockNumber: 100,
 			SlotNumber:  200,
@@ -197,7 +197,7 @@ func TestPushOutput_ShutdownDuringInFlightRequest(t *testing.T) {
 
 	// Send an event
 	evt := event.Event{
-		Type: "input.block",
+		Type: event.TypeBlock,
 		Context: event.BlockContext{
 			BlockNumber: 100,
 			SlotNumber:  200,

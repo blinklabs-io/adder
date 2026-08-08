@@ -54,8 +54,8 @@ go run main.go
 The program will only output events related to the specified pools:
 ```text
 ChainSync status update: {Status: syncing, Tip: 12345678}
-Received event: chainsync.block (from filtered pool)
-Received event: chainsync.delegation (to filtered pool)
+Received event: input.block (from filtered pool)
+Received event: input.transaction (involving filtered pool)
 ...
 ```
 

@@ -123,7 +123,7 @@ func (w *WebhookOutput) Start() error {
 				}
 				context := evt.Context
 				switch evt.Type {
-				case "input.block":
+				case event.TypeBlock:
 					if context == nil {
 						w.reportError(
 							logger,
@@ -151,7 +151,7 @@ func (w *WebhookOutput) Start() error {
 						)
 						continue
 					}
-				case "input.rollback":
+				case event.TypeRollback:
 					if _, ok := payload.(event.RollbackEvent); !ok {
 						w.reportError(
 							logger,
@@ -160,7 +160,7 @@ func (w *WebhookOutput) Start() error {
 						)
 						continue
 					}
-				case "input.transaction":
+				case event.TypeTransaction:
 					if _, ok := payload.(event.TransactionEvent); !ok {
 						w.reportError(
 							logger,
@@ -177,7 +177,7 @@ func (w *WebhookOutput) Start() error {
 						)
 						continue
 					}
-				case "input.governance":
+				case event.TypeGovernance:
 					if _, ok := payload.(event.GovernanceEvent); !ok {
 						w.reportError(
 							logger,
@@ -257,7 +257,7 @@ func formatWebhook(e *event.Event, format string) ([]byte, error) {
 		dmes := make([]*DiscordMessageEmbed, 0, 1)
 		var dmefs []*DiscordMessageEmbedField
 		switch e.Type {
-		case "input.block":
+		case event.TypeBlock:
 			be, ok := e.Payload.(event.BlockEvent)
 			if !ok {
 				return nil, unexpectedPayloadErr(e.Type, e.Payload)
@@ -285,7 +285,7 @@ func formatWebhook(e *event.Event, format string) ([]byte, error) {
 			})
 			baseURL := getBaseURL(bc.NetworkMagic)
 			dme.URL = fmt.Sprintf("%s/block/%s", baseURL, be.BlockHash)
-		case "input.rollback":
+		case event.TypeRollback:
 			be, ok := e.Payload.(event.RollbackEvent)
 			if !ok {
 				return nil, unexpectedPayloadErr(e.Type, e.Payload)
@@ -299,7 +299,7 @@ func formatWebhook(e *event.Event, format string) ([]byte, error) {
 				Name:  "Block Hash",
 				Value: be.BlockHash,
 			})
-		case "input.transaction":
+		case event.TypeTransaction:
 			te, ok := e.Payload.(event.TransactionEvent)
 			if !ok {
 				return nil, unexpectedPayloadErr(e.Type, e.Payload)
@@ -335,7 +335,7 @@ func formatWebhook(e *event.Event, format string) ([]byte, error) {
 			})
 			baseURL := getBaseURL(tc.NetworkMagic)
 			dme.URL = fmt.Sprintf("%s/tx/%s", baseURL, tc.TransactionHash)
-		case "input.governance":
+		case event.TypeGovernance:
 			ge, ok := e.Payload.(event.GovernanceEvent)
 			if !ok {
 				return nil, unexpectedPayloadErr(e.Type, e.Payload)

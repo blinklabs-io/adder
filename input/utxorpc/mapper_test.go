@@ -63,7 +63,7 @@ func TestFollowTipApplyCBORRealProviderBlock(t *testing.T) {
 	require.NoError(t, err)
 	require.Greater(t, len(evts), 1, "should produce at least block + transaction events")
 
-	assert.Equal(t, "input.block", evts[0].Type)
+	assert.Equal(t, event.TypeBlock, evts[0].Type)
 
 	blockCtx := evts[0].Context.(event.BlockContext)
 	assert.Equal(t, uint64(13380271), blockCtx.BlockNumber)
@@ -75,7 +75,7 @@ func TestFollowTipApplyCBORRealProviderBlock(t *testing.T) {
 
 	for _, e := range evts[1:] {
 		assert.Contains(t,
-			[]string{"input.transaction", "input.governance", "input.drep-registration", "input.drep-update", "input.drep-retirement"},
+			[]string{event.TypeTransaction, event.TypeGovernance, event.TypeDRepRegistration, event.TypeDRepUpdate, event.TypeDRepRetirement},
 			e.Type,
 		)
 	}
@@ -95,10 +95,10 @@ func TestFollowTipApplyCBORFansOut(t *testing.T) {
 	evts, err := mapFollowTipResponse(resp, false, 764824073)
 	require.NoError(t, err)
 	require.Greater(t, len(evts), 1, "should produce at least block + transaction events")
-	assert.Equal(t, "input.block", evts[0].Type)
+	assert.Equal(t, event.TypeBlock, evts[0].Type)
 	for _, e := range evts[1:] {
 		assert.Contains(t,
-			[]string{"input.transaction", "input.governance", "input.drep-registration", "input.drep-update", "input.drep-retirement"},
+			[]string{event.TypeTransaction, event.TypeGovernance, event.TypeDRepRegistration, event.TypeDRepUpdate, event.TypeDRepRetirement},
 			e.Type,
 		)
 	}
@@ -204,8 +204,8 @@ func TestFollowTipApplyProtobufFansOut(t *testing.T) {
 	evts, err := mapFollowTipResponse(resp, false, 764824073)
 	require.NoError(t, err)
 	require.Len(t, evts, 2, "block + 1 transaction")
-	assert.Equal(t, "input.block", evts[0].Type)
-	assert.Equal(t, "input.transaction", evts[1].Type)
+	assert.Equal(t, event.TypeBlock, evts[0].Type)
+	assert.Equal(t, event.TypeTransaction, evts[1].Type)
 
 	blockEvt := evts[0].Payload.(event.BlockEvent)
 	assert.Equal(t, uint64(1), blockEvt.TransactionCount)
@@ -262,9 +262,9 @@ func TestFollowTipApplyProtobufGovernance(t *testing.T) {
 	evts, err := mapFollowTipResponse(resp, false, 0)
 	require.NoError(t, err)
 	require.Len(t, evts, 3, "block + tx + governance")
-	assert.Equal(t, "input.block", evts[0].Type)
-	assert.Equal(t, "input.transaction", evts[1].Type)
-	assert.Equal(t, "input.governance", evts[2].Type)
+	assert.Equal(t, event.TypeBlock, evts[0].Type)
+	assert.Equal(t, event.TypeTransaction, evts[1].Type)
+	assert.Equal(t, event.TypeGovernance, evts[2].Type)
 
 	govEvt := evts[2].Payload.(event.GovernanceEvent)
 	require.Len(t, govEvt.ProposalProcedures, 1)
@@ -317,7 +317,7 @@ func TestFollowTipUndoProducesRollback(t *testing.T) {
 	evts, err := mapFollowTipResponse(resp, false, 0)
 	require.NoError(t, err)
 	require.Len(t, evts, 1)
-	assert.Equal(t, "input.rollback", evts[0].Type)
+	assert.Equal(t, event.TypeRollback, evts[0].Type)
 }
 
 func TestFollowTipUndoNativeBytesProducesRollback(t *testing.T) {
@@ -333,7 +333,7 @@ func TestFollowTipUndoNativeBytesProducesRollback(t *testing.T) {
 	evts, err := mapFollowTipResponse(resp, false, 0)
 	require.NoError(t, err)
 	require.Len(t, evts, 1)
-	assert.Equal(t, "input.rollback", evts[0].Type)
+	assert.Equal(t, event.TypeRollback, evts[0].Type)
 
 	rb := evts[0].Payload.(event.RollbackEvent)
 	assert.Equal(t, block.SlotNumber(), rb.SlotNumber)
@@ -349,7 +349,7 @@ func TestFollowTipResetProducesRollback(t *testing.T) {
 	evts, err := mapFollowTipResponse(resp, false, 0)
 	require.NoError(t, err)
 	require.Len(t, evts, 1)
-	assert.Equal(t, "input.rollback", evts[0].Type)
+	assert.Equal(t, event.TypeRollback, evts[0].Type)
 }
 
 // --------------- WatchTx: NativeBytes header extraction ---------------
@@ -376,7 +376,7 @@ func TestWatchTxApplyNativeBytesExtractsHeader(t *testing.T) {
 	evts, err := mapWatchTxResponse(resp, 764824073)
 	require.NoError(t, err)
 	require.Len(t, evts, 1)
-	assert.Equal(t, "input.transaction", evts[0].Type)
+	assert.Equal(t, event.TypeTransaction, evts[0].Type)
 
 	txCtx := evts[0].Context.(event.TransactionContext)
 	assert.Equal(t, block.SlotNumber(), txCtx.SlotNumber)
@@ -411,7 +411,7 @@ func TestWatchTxApplyProtobufWithHeader(t *testing.T) {
 	evts, err := mapWatchTxResponse(resp, 764824073)
 	require.NoError(t, err)
 	require.Len(t, evts, 1)
-	assert.Equal(t, "input.transaction", evts[0].Type)
+	assert.Equal(t, event.TypeTransaction, evts[0].Type)
 
 	txCtx := evts[0].Context.(event.TransactionContext)
 	assert.Equal(t, hex.EncodeToString(txHash), txCtx.TransactionHash)
@@ -440,7 +440,7 @@ func TestWatchTxApplyProtobufNoBlock(t *testing.T) {
 	evts, err := mapWatchTxResponse(resp, 0)
 	require.NoError(t, err)
 	require.Len(t, evts, 1)
-	assert.Equal(t, "input.transaction", evts[0].Type)
+	assert.Equal(t, event.TypeTransaction, evts[0].Type)
 
 	txEvt := evts[0].Payload.(event.TransactionEvent)
 	assert.Equal(t, uint64(180000), txEvt.Fee)
@@ -497,11 +497,11 @@ func TestWatchTxApplyProtobufGovernance(t *testing.T) {
 	evts, err := mapWatchTxResponse(resp, 0)
 	require.NoError(t, err)
 	require.Len(t, evts, 5, "tx + governance + 3 drep events")
-	assert.Equal(t, "input.transaction", evts[0].Type)
-	assert.Equal(t, "input.governance", evts[1].Type)
-	assert.Equal(t, "input.drep-registration", evts[2].Type)
-	assert.Equal(t, "input.drep-update", evts[3].Type)
-	assert.Equal(t, "input.drep-retirement", evts[4].Type)
+	assert.Equal(t, event.TypeTransaction, evts[0].Type)
+	assert.Equal(t, event.TypeGovernance, evts[1].Type)
+	assert.Equal(t, event.TypeDRepRegistration, evts[2].Type)
+	assert.Equal(t, event.TypeDRepUpdate, evts[3].Type)
+	assert.Equal(t, event.TypeDRepRetirement, evts[4].Type)
 }
 
 // --------------- WatchTx: Undo / Idle ---------------
@@ -528,7 +528,7 @@ func TestWatchTxUndoEmitsRollback(t *testing.T) {
 	evts, err := mapWatchTxResponse(resp, 0)
 	require.NoError(t, err)
 	require.Len(t, evts, 1)
-	assert.Equal(t, "input.rollback", evts[0].Type)
+	assert.Equal(t, event.TypeRollback, evts[0].Type)
 }
 
 func TestWatchTxUndoNeitherPathErrors(t *testing.T) {
@@ -565,7 +565,7 @@ func TestWatchTxUndoNativeBytesEmitsRollback(t *testing.T) {
 	evts, err := mapWatchTxResponse(resp, 0)
 	require.NoError(t, err)
 	require.Len(t, evts, 1)
-	assert.Equal(t, "input.rollback", evts[0].Type)
+	assert.Equal(t, event.TypeRollback, evts[0].Type)
 
 	rb := evts[0].Payload.(event.RollbackEvent)
 	assert.Equal(t, block.SlotNumber(), rb.SlotNumber)
