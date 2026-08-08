@@ -458,3 +458,272 @@ func TestWebhookOutput_ShutdownDuringInFlightRequest(t *testing.T) {
 	time.Sleep(150 * time.Millisecond)
 }
 
+// TestWebhookDeliverySuccess verifies successful HTTP POST delivery to a webhook endpoint.
+func TestWebhookDeliverySuccess(t *testing.T) {
+	type receivedRequest struct {
+		body   []byte
+		method string
+	}
+	received := make(chan receivedRequest, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		received <- receivedRequest{body: body, method: r.Method}
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(server.Close)
+
+	w := New(
+		WithUrl(server.URL, false),
+		WithFormat("adder"),
+	)
+	require.NoError(t, w.Start())
+	t.Cleanup(func() { _ = w.Stop() })
+
+	be := blockEvent()
+	w.InputChan() <- be
+
+	select {
+	case req := <-received:
+		assert.Equal(t, http.MethodPost, req.method)
+		var receivedEvt event.Event
+		err := json.Unmarshal(req.body, &receivedEvt)
+		require.NoError(t, err)
+		assert.Equal(t, "input.block", receivedEvt.Type)
+		// Payloads might be unmarshaled as map[string]any
+		payload, ok := receivedEvt.Payload.(map[string]any)
+		require.True(t, ok, "expected payload to be map[string]any")
+		assert.Equal(t, "deadbeef", payload["blockHash"])
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for webhook")
+	}
+}
+
+// TestWebhookDeliveryFailure verifies that HTTP 500 errors are surfaced on the error channel rather than panicking.
+func TestWebhookDeliveryFailure(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	t.Cleanup(server.Close)
+
+	w := New(
+		WithUrl(server.URL, false),
+		fastRetry(),
+	)
+	require.NoError(t, w.Start())
+	t.Cleanup(func() { _ = w.Stop() })
+
+	wait := drainErr(t, w)
+	be := blockEvent()
+	w.InputChan() <- be
+
+	err := wait()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "server returned status: 500")
+}
+
+// TestWebhookEventSerialization verifies that Block, Transaction, and Rollback events serialize to their expected JSON shapes.
+func TestWebhookEventSerialization(t *testing.T) {
+	received := make(chan []byte, 3)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		received <- body
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(server.Close)
+
+	w := New(
+		WithUrl(server.URL, false),
+		WithFormat("adder"),
+	)
+	require.NoError(t, w.Start())
+	t.Cleanup(func() { _ = w.Stop() })
+
+	// 1. BlockEvent
+	w.InputChan() <- blockEvent()
+
+	// 2. TransactionEvent
+	w.InputChan() <- event.New(
+		"input.transaction",
+		time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+		event.TransactionContext{
+			TransactionHash: "txdeadbeef",
+			BlockNumber:     100,
+			SlotNumber:      200,
+			NetworkMagic:    mainnetNetworkMagic,
+		},
+		event.TransactionEvent{
+			Fee: 180000,
+		},
+	)
+
+	// 3. RollbackEvent
+	w.InputChan() <- event.New(
+		"input.rollback",
+		time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+		nil,
+		event.RollbackEvent{
+			BlockHash:  "rollbackdeadbeef",
+			SlotNumber: 200,
+		},
+	)
+
+	for i := 0; i < 3; i++ {
+		select {
+		case body := <-received:
+			var parsed event.Event
+			err := json.Unmarshal(body, &parsed)
+			require.NoError(t, err)
+
+			switch parsed.Type {
+			case "input.block":
+				payload, ok := parsed.Payload.(map[string]any)
+				require.True(t, ok)
+				assert.Equal(t, "deadbeef", payload["blockHash"])
+			case "input.transaction":
+				payload, ok := parsed.Payload.(map[string]any)
+				require.True(t, ok)
+				assert.Equal(t, float64(180000), payload["fee"])
+			case "input.rollback":
+				payload, ok := parsed.Payload.(map[string]any)
+				require.True(t, ok)
+				assert.Equal(t, "rollbackdeadbeef", payload["blockHash"])
+			default:
+				t.Fatalf("unexpected event type: %s", parsed.Type)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatalf("timed out waiting for event %d", i+1)
+		}
+	}
+}
+
+// TestWebhookOutput_DoubleStart verifies that starting an already started plugin handles the transition and teardown cleanly.
+func TestWebhookOutput_DoubleStart(t *testing.T) {
+	w := New(fastRetry())
+	require.NoError(t, w.Start())
+	// Starting again should shut down the first worker and start cleanly
+	require.NoError(t, w.Start())
+	require.NoError(t, w.Stop())
+}
+
+// TestWebhookOutput_ReportErrorWithoutReader verifies that reportError logs the error if no consumer is reading from ErrorChan.
+func TestWebhookOutput_ReportErrorWithoutReader(t *testing.T) {
+	received := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		close(received)
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(server.Close)
+
+	w := New(
+		WithUrl(server.URL, false),
+		fastRetry(),
+	)
+	require.NoError(t, w.Start())
+	t.Cleanup(func() { _ = w.Stop() })
+
+	// 1. Send malformed event to trigger error reporting but DO NOT read from ErrorChan()
+	// This exercises the reportError default select case where error is logged.
+	w.InputChan() <- event.New("input.block", time.Now(), nil, nil)
+
+	// 2. Concurrently send a valid event through InputChan
+	w.InputChan() <- event.Event{
+		Type:    "input.rollback",
+		Payload: event.RollbackEvent{},
+	}
+
+	// 3. Wait for the test server to receive the valid event, proving that the processing
+	// loop was not blocked by the unread ErrorChan in the first event.
+	select {
+	case <-received:
+		// Success!
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for subsequent valid event delivery; processing loop was blocked")
+	}
+
+	require.NoError(t, w.Stop())
+}
+
+// TestFormatWebhookDiscordBadTransactionPayload verifies that formatting a transaction event with a malformed payload fails in Discord format mode.
+func TestFormatWebhookDiscordBadTransactionPayload(t *testing.T) {
+	e := event.New(
+		"input.transaction",
+		time.Now(),
+		event.TransactionContext{},
+		"not-a-transaction-event",
+	)
+	data, err := formatWebhook(&e, "discord")
+	require.Error(t, err)
+	assert.Nil(t, data)
+	assert.Contains(t, err.Error(), "unexpected payload type")
+}
+
+// TestFormatWebhookDiscordBadTransactionContext verifies that formatting a transaction event with a malformed context fails in Discord format mode.
+func TestFormatWebhookDiscordBadTransactionContext(t *testing.T) {
+	e := event.New(
+		"input.transaction",
+		time.Now(),
+		"not-a-transaction-context",
+		event.TransactionEvent{},
+	)
+	data, err := formatWebhook(&e, "discord")
+	require.Error(t, err)
+	assert.Nil(t, data)
+	assert.Contains(t, err.Error(), "unexpected context type")
+}
+
+// TestFormatWebhookDiscordBadGovernancePayload verifies that formatting a governance event with a malformed payload fails in Discord format mode.
+func TestFormatWebhookDiscordBadGovernancePayload(t *testing.T) {
+	e := event.New(
+		"input.governance",
+		time.Now(),
+		event.GovernanceContext{},
+		"not-a-governance-event",
+	)
+	data, err := formatWebhook(&e, "discord")
+	require.Error(t, err)
+	assert.Nil(t, data)
+	assert.Contains(t, err.Error(), "unexpected payload type")
+}
+
+// TestFormatWebhookDiscordBadGovernanceContext verifies that formatting a governance event with a malformed context fails in Discord format mode.
+func TestFormatWebhookDiscordBadGovernanceContext(t *testing.T) {
+	e := event.New(
+		"input.governance",
+		time.Now(),
+		"not-a-governance-context",
+		event.GovernanceEvent{},
+	)
+	data, err := formatWebhook(&e, "discord")
+	require.Error(t, err)
+	assert.Nil(t, data)
+	assert.Contains(t, err.Error(), "unexpected context type")
+}
+
+// TestFormatWebhookDiscordBadRollbackPayload verifies that formatting a rollback event with a malformed payload fails in Discord format mode.
+func TestFormatWebhookDiscordBadRollbackPayload(t *testing.T) {
+	e := event.New(
+		"input.rollback",
+		time.Now(),
+		nil,
+		"not-a-rollback-event",
+	)
+	data, err := formatWebhook(&e, "discord")
+	require.Error(t, err)
+	assert.Nil(t, data)
+	assert.Contains(t, err.Error(), "unexpected payload type")
+}
+
+// TestNewFromCmdlineOptions verifies that the CLI registration factory creates a valid WebhookOutput instance.
+func TestNewFromCmdlineOptions(t *testing.T) {
+	p := NewFromCmdlineOptions()
+	assert.NotNil(t, p)
+	assert.IsType(t, &WebhookOutput{}, p)
+}
+
+// TestWebhookOutput_OutputChan verifies that OutputChan returns nil as webhook is a sink-only plugin.
+func TestWebhookOutput_OutputChan(t *testing.T) {
+	w := New()
+	assert.Nil(t, w.OutputChan())
+}
+
+
