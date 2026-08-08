@@ -107,7 +107,7 @@ func TestFormatJSONOutput(t *testing.T) {
 	err = json.Unmarshal([]byte(line), &parsed)
 	require.NoError(t, err, "output should be valid JSON: %s", line)
 
-	assert.Equal(t, event.TypeBlock, parsed.Type)
+	assert.Equal(t, "input.block", parsed.Type)
 	assert.Equal(
 		t,
 		time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
@@ -153,7 +153,7 @@ func TestFormatJSONNoSlogWrapper(t *testing.T) {
 	assert.Contains(t, raw, "type")
 	assert.Contains(t, raw, "timestamp")
 	assert.Contains(t, raw, "payload")
-	assert.Equal(t, event.TypeTransaction, raw["type"])
+	assert.Equal(t, "input.transaction", raw["type"])
 }
 
 func TestFormatTextBlock(t *testing.T) {

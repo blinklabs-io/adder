@@ -128,7 +128,7 @@ func followTipApplyCBOR(nativeBytes []byte, includeCbor bool, networkMagic uint3
 		if drepCerts := event.ExtractDRepCertificates(transaction); len(drepCerts) > 0 {
 			drepCtx := event.NewGovernanceContext(block, transaction, idx, networkMagic)
 			for _, cert := range drepCerts {
-				if evtType, ok := inputDRepEventType(cert.CertificateType); ok {
+				if evtType, ok := event.DRepEventType(cert.CertificateType); ok {
 					out = append(out, event.New(evtType, time.Now(), drepCtx,
 						event.NewDRepCertificateEvent(block, cert)))
 				}
@@ -189,7 +189,7 @@ func followTipApplyProtobuf(cb *cardanopb.Block, networkMagic uint32) ([]event.E
 		if len(drepCerts) > 0 {
 			drepCtx := pbGovernanceContext(header, txHash, idx, networkMagic)
 			for _, cert := range drepCerts {
-				if evtType, ok := inputDRepEventType(cert.CertificateType); ok {
+				if evtType, ok := event.DRepEventType(cert.CertificateType); ok {
 					out = append(out, event.New(
 						evtType,
 						now,
@@ -319,7 +319,7 @@ func watchTxApplyProtobuf(
 	if len(drepCerts) > 0 {
 		drepCtx := pbGovernanceContext(header, txHash, 0, networkMagic)
 		for _, cert := range drepCerts {
-			if evtType, ok := inputDRepEventType(cert.CertificateType); ok {
+			if evtType, ok := event.DRepEventType(cert.CertificateType); ok {
 				out = append(out, event.New(
 					evtType,
 					now,
@@ -361,17 +361,4 @@ func hasGovernanceData(tx *cardanopb.Tx) bool {
 		}
 	}
 	return false
-}
-
-func inputDRepEventType(certType string) (string, bool) {
-	switch certType {
-	case event.DRepCertificateTypeRegistration:
-		return event.TypeDRepRegistration, true
-	case event.DRepCertificateTypeUpdate:
-		return event.TypeDRepUpdate, true
-	case event.DRepCertificateTypeDeregistration:
-		return event.TypeDRepRetirement, true
-	default:
-		return "", false
-	}
 }

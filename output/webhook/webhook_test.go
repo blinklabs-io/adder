@@ -65,7 +65,7 @@ func TestFormatWebhookAdderSuccess(t *testing.T) {
 
 	var parsed event.Event
 	require.NoError(t, json.Unmarshal(data, &parsed))
-	assert.Equal(t, event.TypeBlock, parsed.Type)
+	assert.Equal(t, "input.block", parsed.Type)
 }
 
 func TestFormatWebhookDiscordSuccess(t *testing.T) {

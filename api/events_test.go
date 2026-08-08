@@ -110,7 +110,7 @@ func TestEventHub_RingBufferReplay(t *testing.T) {
 
 	assert.Len(t, received, 3)
 	for _, evt := range received {
-		assert.Equal(t, event.TypeBlock, evt.Type)
+		assert.Equal(t, "input.block", evt.Type)
 	}
 }
 
@@ -174,7 +174,7 @@ func TestEventHub_TypeFiltering(t *testing.T) {
 	var received event.Event
 	err = json.Unmarshal(msg, &received)
 	require.NoError(t, err)
-	assert.Equal(t, event.TypeBlock, received.Type)
+	assert.Equal(t, "input.block", received.Type)
 
 	// Next read should timeout since we filtered out the transaction events
 	conn.SetReadDeadline(time.Now().Add(200 * time.Millisecond))
@@ -215,7 +215,7 @@ func TestEventHub_MultipleClients(t *testing.T) {
 		var received event.Event
 		err = json.Unmarshal(msg, &received)
 		require.NoError(t, err)
-		assert.Equal(t, event.TypeBlock, received.Type)
+		assert.Equal(t, "input.block", received.Type)
 	}
 }
 
@@ -284,7 +284,7 @@ func TestEventHub_SSEFallback(t *testing.T) {
 			var evt event.Event
 			err = json.Unmarshal([]byte(jsonData), &evt)
 			require.NoError(t, err)
-			assert.Equal(t, event.TypeBlock, evt.Type)
+			assert.Equal(t, "input.block", evt.Type)
 			found = true
 			break
 		}
@@ -360,7 +360,7 @@ func TestEventHub_InputChan(t *testing.T) {
 	var received event.Event
 	err = json.Unmarshal(msg, &received)
 	require.NoError(t, err)
-	assert.Equal(t, event.TypeTransaction, received.Type)
+	assert.Equal(t, "input.transaction", received.Type)
 }
 
 func TestEventHub_RingBufferWraparound(t *testing.T) {

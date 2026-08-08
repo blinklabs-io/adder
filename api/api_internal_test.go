@@ -318,7 +318,7 @@ func TestIntegration_WebSocketThroughMiddleware(t *testing.T) {
 
 	var received event.Event
 	require.NoError(t, json.Unmarshal(msg, &received))
-	assert.Equal(t, event.TypeBlock, received.Type)
+	assert.Equal(t, "input.block", received.Type)
 }
 
 // TestIntegration_SSEThroughMiddleware verifies SSE (which requires
