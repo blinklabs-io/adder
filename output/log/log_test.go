@@ -47,7 +47,7 @@ func TestLogToFile(t *testing.T) {
 	require.NoError(t, err)
 
 	evt := event.Event{
-		Type:      "input.block",
+		Type:      event.TypeBlock,
 		Timestamp: time.Date(2026, 5, 24, 12, 0, 0, 0, time.UTC),
 		Context: event.BlockContext{
 			BlockNumber: 100,
@@ -85,7 +85,7 @@ func TestFormatJSONOutput(t *testing.T) {
 	require.NoError(t, l.Start())
 
 	testEvent := event.New(
-		"input.block",
+		event.TypeBlock,
 		time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
 		map[string]any{"blockNumber": 12345},
 		map[string]any{"hash": "abc123"},
@@ -107,7 +107,7 @@ func TestFormatJSONOutput(t *testing.T) {
 	err = json.Unmarshal([]byte(line), &parsed)
 	require.NoError(t, err, "output should be valid JSON: %s", line)
 
-	assert.Equal(t, "input.block", parsed.Type)
+	assert.Equal(t, event.TypeBlock, parsed.Type)
 	assert.Equal(
 		t,
 		time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
@@ -127,7 +127,7 @@ func TestFormatJSONNoSlogWrapper(t *testing.T) {
 	require.NoError(t, l.Start())
 
 	testEvent := event.New(
-		"input.transaction",
+		event.TypeTransaction,
 		time.Now(),
 		nil,
 		map[string]any{"fee": 200000},
@@ -153,7 +153,7 @@ func TestFormatJSONNoSlogWrapper(t *testing.T) {
 	assert.Contains(t, raw, "type")
 	assert.Contains(t, raw, "timestamp")
 	assert.Contains(t, raw, "payload")
-	assert.Equal(t, "input.transaction", raw["type"])
+	assert.Equal(t, event.TypeTransaction, raw["type"])
 }
 
 func TestFormatTextBlock(t *testing.T) {
@@ -168,7 +168,7 @@ func TestFormatTextBlock(t *testing.T) {
 
 	ts := time.Date(2026, 1, 15, 14, 30, 45, 0, time.UTC)
 	testEvent := event.New(
-		"input.block",
+		event.TypeBlock,
 		ts,
 		event.BlockContext{
 			Era:         "Conway",
@@ -212,7 +212,7 @@ func TestFormatTextTransaction(t *testing.T) {
 
 	ts := time.Date(2026, 1, 15, 14, 30, 45, 0, time.UTC)
 	testEvent := event.New(
-		"input.transaction",
+		event.TypeTransaction,
 		ts,
 		event.TransactionContext{
 			TransactionHash: "deadbeef12345678",
@@ -251,7 +251,7 @@ func TestFormatTextRollback(t *testing.T) {
 
 	ts := time.Date(2026, 1, 15, 14, 30, 45, 0, time.UTC)
 	testEvent := event.New(
-		"input.rollback",
+		event.TypeRollback,
 		ts,
 		nil,
 		event.RollbackEvent{
@@ -285,7 +285,7 @@ func TestFormatTextGovernance(t *testing.T) {
 
 	ts := time.Date(2026, 1, 15, 14, 30, 45, 0, time.UTC)
 	testEvent := event.New(
-		"input.governance",
+		event.TypeGovernance,
 		ts,
 		event.GovernanceContext{
 			TransactionHash: "govtx12345678abc",

@@ -18,6 +18,17 @@ import (
 	"time"
 )
 
+// Event type constants
+const (
+	TypeBlock            = "input.block"
+	TypeTransaction      = "input.transaction"
+	TypeRollback         = "input.rollback"
+	TypeGovernance       = "input.governance"
+	TypeDRepRegistration = "input.drep-registration"
+	TypeDRepUpdate       = "input.drep-update"
+	TypeDRepRetirement   = "input.drep-retirement"
+)
+
 type Event struct {
 	Timestamp time.Time `json:"timestamp"`
 	Context   any       `json:"context,omitempty"`

@@ -40,7 +40,7 @@ func fastRetry() WebhookOptionFunc {
 
 func blockEvent() event.Event {
 	return event.New(
-		"input.block",
+		event.TypeBlock,
 		time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
 		event.BlockContext{
 			Era:          "Conway",
@@ -65,7 +65,7 @@ func TestFormatWebhookAdderSuccess(t *testing.T) {
 
 	var parsed event.Event
 	require.NoError(t, json.Unmarshal(data, &parsed))
-	assert.Equal(t, "input.block", parsed.Type)
+	assert.Equal(t, event.TypeBlock, parsed.Type)
 }
 
 func TestFormatWebhookDiscordSuccess(t *testing.T) {
@@ -76,18 +76,18 @@ func TestFormatWebhookDiscordSuccess(t *testing.T) {
 		{"block", blockEvent()},
 		{
 			"rollback",
-			event.New("input.rollback", time.Now(), nil,
+			event.New(event.TypeRollback, time.Now(), nil,
 				event.RollbackEvent{BlockHash: "abc", SlotNumber: 5}),
 		},
 		{
 			"transaction",
-			event.New("input.transaction", time.Now(),
+			event.New(event.TypeTransaction, time.Now(),
 				event.TransactionContext{TransactionHash: "tx", BlockNumber: 1},
 				event.TransactionEvent{Fee: 10}),
 		},
 		{
 			"governance",
-			event.New("input.governance", time.Now(),
+			event.New(event.TypeGovernance, time.Now(),
 				event.GovernanceContext{TransactionHash: "gtx", BlockNumber: 1},
 				event.GovernanceEvent{}),
 		},

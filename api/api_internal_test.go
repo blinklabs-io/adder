@@ -307,7 +307,7 @@ func TestIntegration_WebSocketThroughMiddleware(t *testing.T) {
 	assert.Equal(t, http.StatusSwitchingProtocols, resp.StatusCode)
 
 	hub.Broadcast(event.Event{
-		Type:      "input.block",
+		Type:      event.TypeBlock,
 		Timestamp: time.Now(),
 		Payload:   map[string]string{"hash": "abc123"},
 	})
@@ -318,7 +318,7 @@ func TestIntegration_WebSocketThroughMiddleware(t *testing.T) {
 
 	var received event.Event
 	require.NoError(t, json.Unmarshal(msg, &received))
-	assert.Equal(t, "input.block", received.Type)
+	assert.Equal(t, event.TypeBlock, received.Type)
 }
 
 // TestIntegration_SSEThroughMiddleware verifies SSE (which requires
@@ -341,7 +341,7 @@ func TestIntegration_SSEThroughMiddleware(t *testing.T) {
 	assert.Equal(t, "text/event-stream", resp.Header.Get("Content-Type"))
 
 	hub.Broadcast(event.Event{
-		Type:      "input.block",
+		Type:      event.TypeBlock,
 		Timestamp: time.Now(),
 		Payload:   map[string]string{"hash": "xyz789"},
 	})
@@ -369,7 +369,7 @@ func TestIntegration_SSEThroughMiddleware(t *testing.T) {
 	select {
 	case res := <-ch:
 		require.NoError(t, res.err)
-		assert.Contains(t, res.line, "input.block")
+		assert.Contains(t, res.line, event.TypeBlock)
 	case <-time.After(3 * time.Second):
 		t.Fatal("timed out waiting for SSE data frame")
 	}

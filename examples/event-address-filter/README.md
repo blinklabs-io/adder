@@ -26,7 +26,7 @@ By default, this example connects to a remote IOG Cardano node. To use a local s
 
 Filters events to only include transactions:
 ```go
-filter_event.WithTypes([]string{"chainsync.transaction"})
+filter_event.WithTypes([]string{event.TypeTransaction})
 ```
 
 ### Address Filter
@@ -81,9 +81,9 @@ To disable asset filtering, comment out or remove the `WithAssetFingerprints` li
 ### Filter Other Event Types
 
 Available event types include:
-- `chainsync.block`
-- `chainsync.transaction`
-- `chainsync.rollback`
+- `input.block`
+- `input.transaction`
+- `input.rollback`
 
 ## Running
 
@@ -104,7 +104,7 @@ go run main.go
 The program will only output transaction events involving the specified address and/or assets:
 ```text
 ChainSync status update: {Status: syncing, Tip: 12345678}
-Received event: chainsync.transaction (involving filtered address/asset)
+Received event: input.transaction (involving filtered address/asset)
 ...
 ```
 

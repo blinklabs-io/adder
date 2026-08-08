@@ -148,7 +148,7 @@ func (p *PushOutput) Start() error {
 			}
 
 			switch evt.Type {
-			case "input.block":
+			case event.TypeBlock:
 				payload := evt.Payload
 				if payload == nil {
 					slog.Error("block event has nil payload")
@@ -184,7 +184,7 @@ func (p *PushOutput) Start() error {
 				// Send notification
 				p.processFcmNotifications(errorChan, title, body)
 
-			case "input.rollback":
+			case event.TypeRollback:
 				payload := evt.Payload
 				if payload == nil {
 					slog.Error("rollback event has nil payload")
@@ -199,7 +199,7 @@ func (p *PushOutput) Start() error {
 					"block_hash",
 					re.BlockHash,
 				)
-			case "input.transaction":
+			case event.TypeTransaction:
 				payload := evt.Payload
 				if payload == nil {
 					slog.Error("transaction event has nil payload")

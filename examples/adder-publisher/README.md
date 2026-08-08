@@ -61,8 +61,8 @@ The program will output:
 Example:
 ```text
 ChainSync status update: {Status: syncing, Tip: 12345678}
-Received event: chainsync.block
-Received event: chainsync.transaction
+Received event: input.block
+Received event: input.transaction
 ...
 ```
 
