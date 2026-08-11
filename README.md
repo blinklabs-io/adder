@@ -115,44 +115,48 @@ input.governance:
         "transactionCbor": "a500828258200a1ad...",
         "proposalProcedures": [
             {
+                "index": 0,
                 "deposit": 1000000000,
                 "rewardAccount": "stake1u9abcd...",
-                "anchor": {
-                    "url": "https://example.com/proposal.json",
-                    "hash": "abcd1234..."
-                },
-                "action": {
+                "actionType": "ParameterChange",
+                "actionData": {
                     "parameterChange": {
-                        "govActionId": {
+                        "prevActionId": {
                             "transactionId": "prev_tx_hash...",
                             "govActionIdx": 0
                         },
-                        "policyHash": "abcd1234..."
+                        "policyHash": "abcd1234...",
+                        "paramUpdate": {
+                            "minFeeA": 44,
+                            "maxTxSize": 16384
+                        }
                     }
+                },
+                "anchor": {
+                    "url": "https://example.com/proposal.json",
+                    "dataHash": "abcd1234..."
                 }
             }
         ],
         "votingProcedures": [
             {
-                "voter": "drep1abcd...",
                 "voterType": "DRep",
-                "govActionId": {
-                    "transactionId": "action_tx_hash...",
-                    "govActionIdx": 0
-                },
+                "voterHash": "81f156d98e1f02123abccdef5439a89d71fa9d8b76c8db028c7df0e1",
+                "voterId": "drep1abcd...",
+                "govActionTxId": "action_tx_hash...",
+                "govActionIndex": 0,
                 "vote": "Yes",
                 "anchor": {
                     "url": "https://example.com/vote-rationale.json",
-                    "hash": "efgh5678..."
+                    "dataHash": "81f156d98e1f02123abccdef5439a89d71fa9d8b76c8db028c7df0e1..."
                 }
             }
-        ],
-        "drepCertificates": [...],
-        "voteDelegationCertificates": [...],
-        "committeeCertificates": [...]
+        ]
     }
 }
 ```
+
+For detailed information about the governance schemas, supported actions, and fields, see the [Governance Event Documentation](./docs/governance.md).
 
 Each event is output individually. The log output supports two formats:
 
