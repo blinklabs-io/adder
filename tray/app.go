@@ -961,13 +961,13 @@ func (a *App) reconfigurePlan() (setup.SetupPlan, error) {
 
 func getEmojiForType(evtType string) string {
 	switch evtType {
-	case "input.block":
+	case event.TypeBlock:
 		return "🧱"
-	case "input.transaction":
+	case event.TypeTransaction:
 		return "💸"
-	case "input.governance":
+	case event.TypeGovernance:
 		return "🗳️"
-	case "input.rollback":
+	case event.TypeRollback:
 		return "🔄"
 	default:
 		return "❓"
@@ -1154,7 +1154,7 @@ func getExplorerURL(e event.Event, hash string) string {
 	}
 	baseURL := explorer.BaseURL(magic)
 
-	if e.Type == "input.transaction" || e.Type == "input.governance" {
+	if e.Type == event.TypeTransaction || e.Type == event.TypeGovernance {
 		return fmt.Sprintf("%s/tx/%s", baseURL, hash)
 	}
 	return fmt.Sprintf("%s/block/%s", baseURL, hash)
@@ -1167,7 +1167,7 @@ func getExplorerURL(e event.Event, hash string) string {
 // payloads also carry blockHash.
 func explorerHash(e event.Event) string {
 	switch e.Type {
-	case "input.transaction", "input.governance":
+	case event.TypeTransaction, event.TypeGovernance:
 		if ctx, ok := e.Context.(map[string]any); ok {
 			if h, ok := ctx["transactionHash"].(string); ok {
 				return h

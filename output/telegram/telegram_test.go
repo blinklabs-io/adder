@@ -300,7 +300,7 @@ func TestProcessEventInvalidPayloadNoPanic(t *testing.T) {
 
 	// Wrong payload type for block — should log and return, not panic
 	evt := &event.Event{
-		Type:    "input.block",
+		Type:    event.TypeBlock,
 		Payload: "not a BlockEvent",
 		Context: event.BlockContext{
 			Era: "Conway", BlockNumber: 1, SlotNumber: 1, NetworkMagic: mainnetNetworkMagic,
@@ -309,7 +309,7 @@ func TestProcessEventInvalidPayloadNoPanic(t *testing.T) {
 	tg.processEvent(evt)
 
 	// Wrong payload type for rollback
-	evt2 := &event.Event{Type: "input.rollback", Payload: 12345}
+	evt2 := &event.Event{Type: event.TypeRollback, Payload: 12345}
 	tg.processEvent(evt2)
 
 	// Unknown event type

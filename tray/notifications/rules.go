@@ -36,10 +36,10 @@ import (
 // emitted by adder's input plugins (see the event package); the tray.*
 // values are synthesized by the engine for non-chain notifications.
 const (
-	EventTypeBlock       = "input.block"
-	EventTypeTransaction = "input.transaction"
-	EventTypeGovernance  = "input.governance"
-	EventTypeRollback    = "input.rollback"
+	EventTypeBlock       = event.TypeBlock
+	EventTypeTransaction = event.TypeTransaction
+	EventTypeGovernance  = event.TypeGovernance
+	EventTypeRollback    = event.TypeRollback
 	// EventTypeConnection is a synthesized event type used to route
 	// connection-status notifications through the same rule pipeline as
 	// chain events. See Engine.NotifyConnection and ConnectionEvent.

@@ -63,7 +63,7 @@ func mapFollowTipResponse(resp *syncpb.FollowTipResponse, includeCbor bool, netw
 		}
 		return []event.Event{
 			event.New(
-				"input.rollback",
+				event.TypeRollback,
 				time.Now(),
 				nil,
 				event.NewRollbackEvent(common.NewPoint(header.GetSlot(), header.GetHash())),
@@ -74,7 +74,7 @@ func mapFollowTipResponse(resp *syncpb.FollowTipResponse, includeCbor bool, netw
 	if reset := resp.GetReset_(); reset != nil {
 		return []event.Event{
 			event.New(
-				"input.rollback",
+				event.TypeRollback,
 				time.Now(),
 				nil,
 				event.NewRollbackEvent(common.NewPoint(reset.GetSlot(), reset.GetHash())),
@@ -100,7 +100,7 @@ func followTipApplyCBOR(nativeBytes []byte, includeCbor bool, networkMagic uint3
 	txns := block.Transactions()
 	out := make([]event.Event, 0, 1+len(txns))
 	out = append(out, event.New(
-		"input.block",
+		event.TypeBlock,
 		time.Now(),
 		event.NewBlockHeaderContext(block.Header(), networkMagic),
 		event.NewBlockEvent(block, includeCbor),
@@ -112,14 +112,14 @@ func followTipApplyCBOR(nativeBytes []byte, includeCbor bool, networkMagic uint3
 		//nolint:gosec // t is bounds-checked above
 		idx := uint32(t)
 		out = append(out, event.New(
-			"input.transaction",
+			event.TypeTransaction,
 			time.Now(),
 			event.NewTransactionContext(block, transaction, idx, networkMagic),
 			event.NewTransactionEvent(block, transaction, includeCbor, nil),
 		))
 		if event.HasGovernanceData(transaction) {
 			out = append(out, event.New(
-				"input.governance",
+				event.TypeGovernance,
 				time.Now(),
 				event.NewGovernanceContext(block, transaction, idx, networkMagic),
 				event.NewGovernanceEvent(block, transaction, includeCbor),
@@ -128,7 +128,7 @@ func followTipApplyCBOR(nativeBytes []byte, includeCbor bool, networkMagic uint3
 		if drepCerts := event.ExtractDRepCertificates(transaction); len(drepCerts) > 0 {
 			drepCtx := event.NewGovernanceContext(block, transaction, idx, networkMagic)
 			for _, cert := range drepCerts {
-				if evtType, ok := inputDRepEventType(cert.CertificateType); ok {
+				if evtType, ok := event.DRepEventType(cert.CertificateType); ok {
 					out = append(out, event.New(evtType, time.Now(), drepCtx,
 						event.NewDRepCertificateEvent(block, cert)))
 				}
@@ -154,7 +154,7 @@ func followTipApplyProtobuf(cb *cardanopb.Block, networkMagic uint32) ([]event.E
 	}
 	out := make([]event.Event, 0, 1+txCount)
 	out = append(out, event.New(
-		"input.block",
+		event.TypeBlock,
 		now,
 		pbBlockContext(header, networkMagic),
 		pbBlockEvent(cb),
@@ -172,14 +172,14 @@ func followTipApplyProtobuf(cb *cardanopb.Block, networkMagic uint32) ([]event.E
 		//nolint:gosec // t is bounds-checked above
 		idx := uint32(t)
 		out = append(out, event.New(
-			"input.transaction",
+			event.TypeTransaction,
 			now,
 			pbTransactionContext(header, txHash, idx, networkMagic),
 			pbTransactionEvent(blockHash, tx),
 		))
 		if hasGovernanceData(tx) {
 			out = append(out, event.New(
-				"input.governance",
+				event.TypeGovernance,
 				now,
 				pbGovernanceContext(header, txHash, idx, networkMagic),
 				pbGovernanceEvent(blockHash, tx),
@@ -189,7 +189,7 @@ func followTipApplyProtobuf(cb *cardanopb.Block, networkMagic uint32) ([]event.E
 		if len(drepCerts) > 0 {
 			drepCtx := pbGovernanceContext(header, txHash, idx, networkMagic)
 			for _, cert := range drepCerts {
-				if evtType, ok := inputDRepEventType(cert.CertificateType); ok {
+				if evtType, ok := event.DRepEventType(cert.CertificateType); ok {
 					out = append(out, event.New(
 						evtType,
 						now,
@@ -232,7 +232,7 @@ func mapWatchTxResponse(resp *watchpb.WatchTxResponse, networkMagic uint32) ([]e
 		}
 		return []event.Event{
 			event.New(
-				"input.rollback",
+				event.TypeRollback,
 				time.Now(),
 				nil,
 				event.NewRollbackEvent(common.NewPoint(
@@ -301,7 +301,7 @@ func watchTxApplyProtobuf(
 
 	var out []event.Event
 	out = append(out, event.New(
-		"input.transaction",
+		event.TypeTransaction,
 		now,
 		pbTransactionContext(header, txHash, 0, networkMagic),
 		pbTransactionEvent(blockHash, tx),
@@ -309,7 +309,7 @@ func watchTxApplyProtobuf(
 
 	if hasGovernanceData(tx) {
 		out = append(out, event.New(
-			"input.governance",
+			event.TypeGovernance,
 			now,
 			pbGovernanceContext(header, txHash, 0, networkMagic),
 			pbGovernanceEvent(blockHash, tx),
@@ -319,7 +319,7 @@ func watchTxApplyProtobuf(
 	if len(drepCerts) > 0 {
 		drepCtx := pbGovernanceContext(header, txHash, 0, networkMagic)
 		for _, cert := range drepCerts {
-			if evtType, ok := inputDRepEventType(cert.CertificateType); ok {
+			if evtType, ok := event.DRepEventType(cert.CertificateType); ok {
 				out = append(out, event.New(
 					evtType,
 					now,
@@ -361,17 +361,4 @@ func hasGovernanceData(tx *cardanopb.Tx) bool {
 		}
 	}
 	return false
-}
-
-func inputDRepEventType(certType string) (string, bool) {
-	switch certType {
-	case event.DRepCertificateTypeRegistration:
-		return "input.drep-registration", true
-	case event.DRepCertificateTypeUpdate:
-		return "input.drep-update", true
-	case event.DRepCertificateTypeDeregistration:
-		return "input.drep-retirement", true
-	default:
-		return "", false
-	}
 }

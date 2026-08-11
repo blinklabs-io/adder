@@ -82,7 +82,7 @@ func (n *NotifyOutput) Start() error {
 				return
 			}
 			switch evt.Type {
-			case "input.block":
+			case event.TypeBlock:
 				payload := evt.Payload
 				if payload == nil {
 					slog.Error("block event has nil payload")
@@ -111,7 +111,7 @@ func (n *NotifyOutput) Start() error {
 					slog.Error("failed to send block notification", "error", err)
 					continue
 				}
-			case "input.rollback":
+			case event.TypeRollback:
 				payload := evt.Payload
 				if payload == nil {
 					slog.Error("rollback event has nil payload")
@@ -131,7 +131,7 @@ func (n *NotifyOutput) Start() error {
 					slog.Error("failed to send rollback notification", "error", err)
 					continue
 				}
-			case "input.transaction":
+			case event.TypeTransaction:
 				payload := evt.Payload
 				if payload == nil {
 					slog.Error("transaction event has nil payload")

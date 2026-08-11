@@ -83,13 +83,13 @@ func TestNotifyOutputMalformedPayload(t *testing.T) {
 	}{
 		{
 			name:    "block event nil payload",
-			evt:     event.Event{Type: "input.block", Payload: nil},
+			evt:     event.Event{Type: event.TypeBlock, Payload: nil},
 			wantMsg: "block event has nil payload",
 		},
 		{
 			name: "block event nil context",
 			evt: event.Event{
-				Type:    "input.block",
+				Type:    event.TypeBlock,
 				Payload: event.BlockEvent{},
 				Context: nil,
 			},
@@ -97,18 +97,18 @@ func TestNotifyOutputMalformedPayload(t *testing.T) {
 		},
 		{
 			name:    "rollback event nil payload",
-			evt:     event.Event{Type: "input.rollback", Payload: nil},
+			evt:     event.Event{Type: event.TypeRollback, Payload: nil},
 			wantMsg: "rollback event has nil payload",
 		},
 		{
 			name:    "transaction event nil payload",
-			evt:     event.Event{Type: "input.transaction", Payload: nil},
+			evt:     event.Event{Type: event.TypeTransaction, Payload: nil},
 			wantMsg: "transaction event has nil payload",
 		},
 		{
 			name: "transaction event nil context",
 			evt: event.Event{
-				Type:    "input.transaction",
+				Type:    event.TypeTransaction,
 				Payload: event.TransactionEvent{},
 				Context: nil,
 			},

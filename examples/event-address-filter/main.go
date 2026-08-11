@@ -66,7 +66,7 @@ func main() {
 
 	// Define type in event filter
 	filterEvent := filter_event.New(
-		filter_event.WithTypes([]string{"chainsync.transaction"}),
+		filter_event.WithTypes([]string{event.TypeTransaction}),
 	)
 	// Add event filter to pipeline
 	p.AddFilter(filterEvent)

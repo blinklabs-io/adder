@@ -55,7 +55,7 @@ func TestEventHub_WebSocketConnectReceive(t *testing.T) {
 
 	// Broadcast an event
 	testEvt := event.Event{
-		Type:      "input.block",
+		Type:      event.TypeBlock,
 		Timestamp: time.Now(),
 		Payload:   map[string]string{"hash": "abc123"},
 	}
@@ -79,7 +79,7 @@ func TestEventHub_RingBufferReplay(t *testing.T) {
 	// Broadcast some events before any client connects
 	for i := 0; i < 3; i++ {
 		hub.Broadcast(event.Event{
-			Type:      "input.block",
+			Type:      event.TypeBlock,
 			Timestamp: time.Now(),
 			Payload:   map[string]int{"index": i},
 		})
@@ -118,7 +118,7 @@ func TestEventHub_ReplayCanBeDisabled(t *testing.T) {
 	hub := api.NewEventHub(5)
 	defer hub.Close()
 	hub.Broadcast(event.Event{
-		Type:      "input.rollback",
+		Type:      event.TypeRollback,
 		Timestamp: time.Now(),
 	})
 
@@ -146,23 +146,23 @@ func TestEventHub_TypeFiltering(t *testing.T) {
 
 	// Connect with type filter
 	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") +
-		"/events?types=input.block"
+		"/events?types=" + event.TypeBlock
 	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
 	require.NoError(t, err)
 	defer conn.Close()
 
 	// Broadcast events of different types
 	hub.Broadcast(event.Event{
-		Type:      "input.transaction",
+		Type:      event.TypeTransaction,
 		Timestamp: time.Now(),
 	})
 	hub.Broadcast(event.Event{
-		Type:      "input.block",
+		Type:      event.TypeBlock,
 		Timestamp: time.Now(),
 		Payload:   "wanted",
 	})
 	hub.Broadcast(event.Event{
-		Type:      "input.transaction",
+		Type:      event.TypeTransaction,
 		Timestamp: time.Now(),
 	})
 
@@ -202,7 +202,7 @@ func TestEventHub_MultipleClients(t *testing.T) {
 
 	// Broadcast an event
 	hub.Broadcast(event.Event{
-		Type:      "input.block",
+		Type:      event.TypeBlock,
 		Timestamp: time.Now(),
 	})
 
@@ -238,7 +238,7 @@ func TestEventHub_ClientDisconnectCleanup(t *testing.T) {
 
 	// Broadcast should not panic with no clients
 	hub.Broadcast(event.Event{
-		Type:      "input.block",
+		Type:      event.TypeBlock,
 		Timestamp: time.Now(),
 	})
 }
@@ -252,7 +252,7 @@ func TestEventHub_SSEFallback(t *testing.T) {
 
 	// Pre-broadcast an event so the SSE response has data immediately
 	hub.Broadcast(event.Event{
-		Type:      "input.block",
+		Type:      event.TypeBlock,
 		Timestamp: time.Now(),
 		Payload:   "sse-test",
 	})
@@ -312,7 +312,7 @@ func TestEventHub_NonBlockingBroadcast(t *testing.T) {
 		defer wg.Done()
 		for i := 0; i < 200; i++ {
 			hub.Broadcast(event.Event{
-				Type:      "input.block",
+				Type:      event.TypeBlock,
 				Timestamp: time.Now(),
 				Payload:   i,
 			})
@@ -349,7 +349,7 @@ func TestEventHub_InputChan(t *testing.T) {
 	// Use InputChan to feed the hub (simulates pipeline observer)
 	ch := hub.InputChan()
 	ch <- event.Event{
-		Type:      "input.transaction",
+		Type:      event.TypeTransaction,
 		Timestamp: time.Now(),
 	}
 
@@ -370,7 +370,7 @@ func TestEventHub_RingBufferWraparound(t *testing.T) {
 	// Broadcast 5 events -- ring wraps around
 	for i := 0; i < 5; i++ {
 		hub.Broadcast(event.Event{
-			Type:      "input.block",
+			Type:      event.TypeBlock,
 			Timestamp: time.Now(),
 			Payload:   i,
 		})

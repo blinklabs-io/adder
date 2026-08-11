@@ -367,7 +367,7 @@ func (m *Mempool) pollOnce() {
 		if resolveErr != nil && m.logger != nil {
 			m.logger.Warn("some transaction inputs could not be resolved; partial resolved inputs may be set", "error", resolveErr)
 		}
-		evt := event.New("input.transaction", time.Now(), ctx, payload)
+		evt := event.New(event.TypeTransaction, time.Now(), ctx, payload)
 		select {
 		case <-m.doneChan:
 			return

@@ -23,9 +23,9 @@ const (
 )
 
 const (
-	DRepRegistrationEventType   = "chainsync.drep.registration"
-	DRepUpdateEventType         = "chainsync.drep.update"
-	DRepDeregistrationEventType = "chainsync.drep.deregistration"
+	DRepRegistrationEventType   = TypeDRepRegistration
+	DRepUpdateEventType         = TypeDRepUpdate
+	DRepDeregistrationEventType = TypeDRepRetirement
 )
 
 // DRepCertificateEvent represents a single DRep certificate event
