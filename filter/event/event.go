@@ -55,13 +55,13 @@ func (e *Event) Start() error {
 	e.doneChan = make(chan struct{})
 	e.stopOnce = sync.Once{}
 	e.wg.Add(1)
-	go func() {
+	go func(doneChan <-chan struct{}, inputChan <-chan event.Event, outputChan chan<- event.Event) {
 		defer e.wg.Done()
 		for {
 			select {
-			case <-e.doneChan:
+			case <-doneChan:
 				return
-			case evt, ok := <-e.inputChan:
+			case evt, ok := <-inputChan:
 				// Channel has been closed, which means we're shutting down
 				if !ok {
 					return
@@ -75,13 +75,13 @@ func (e *Event) Start() error {
 				}
 				// Send event along, but check for shutdown
 				select {
-				case <-e.doneChan:
+				case <-doneChan:
 					return
-				case e.outputChan <- evt:
+				case outputChan <- evt:
 				}
 			}
 		}
-	}()
+	}(e.doneChan, e.inputChan, e.outputChan)
 	return nil
 }
 
