@@ -15,6 +15,7 @@
 package logging
 
 import (
+	"io"
 	"log/slog"
 	"os"
 
@@ -49,7 +50,10 @@ func (l *KugoCustomLogger) Debug(message string, kvs ...ogmigo.KeyValue) {
 
 // With returns a new logger with additional context (key-value pairs)
 func (l *KugoCustomLogger) With(kvs ...ogmigo.KeyValue) ogmigo.Logger {
-	return l // Here we just return the same logger, but you can add more context if needed
+	return &KugoCustomLogger{
+		logger:   l.logger.With(convertKVs(kvs)...),
+		logLevel: l.logLevel,
+	}
 }
 
 // Helper function to convert ogmigo.KeyValue to slog key-value format
@@ -63,8 +67,20 @@ func convertKVs(kvs []ogmigo.KeyValue) []any {
 }
 
 func NewKugoCustomLogger(level LogLevel) *KugoCustomLogger {
-	// Create a new slog logger that logs to stderr using JSON format
-	handler := slog.NewJSONHandler(os.Stderr, nil)
+	return NewKugoCustomLoggerWithWriter(level, os.Stderr)
+}
+
+func NewKugoCustomLoggerWithWriter(level LogLevel, w io.Writer) *KugoCustomLogger {
+	if w == nil {
+		w = io.Discard
+	}
+	// Configure handler to allow all log levels down to Debug.
+	// KugoCustomLogger will perform its own level filtering manually.
+	opts := &slog.HandlerOptions{
+		Level: slog.LevelDebug,
+	}
+	// Create a new slog logger that logs to the provided writer using JSON format
+	handler := slog.NewJSONHandler(w, opts)
 	logger := slog.New(handler)
 
 	return &KugoCustomLogger{

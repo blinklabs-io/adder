@@ -492,8 +492,8 @@ func TestFilterByPoolIdTransactionEvent(t *testing.T) {
 				shouldMatch: false,
 			},
 			{
-				name: "StakeDeregistrationCertificate - non-pool certificate",
-				cert: &common.StakeDeregistrationCertificate{},
+				name:        "StakeDeregistrationCertificate - non-pool certificate",
+				cert:        &common.StakeDeregistrationCertificate{},
 				shouldMatch: false,
 			},
 		}
