@@ -725,5 +725,3 @@ func TestWebhookOutput_OutputChan(t *testing.T) {
 	w := New()
 	assert.Nil(t, w.OutputChan())
 }
-
-
