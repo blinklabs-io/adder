@@ -266,10 +266,14 @@ func RulesFromPlan(plan setup.SetupPlan) []Rule {
 	}
 
 	// Rollback fires for fork resolutions regardless of monitored
-	// targets, gated on the blocks-minted pref.
+	// targets, gated on the chain-rollbacks pref. Defaults to true if missing.
+	rollbackEnabled := true
+	if val, ok := prefs[setup.NotifyPrefChainRollbacks]; ok {
+		rollbackEnabled = val
+	}
 	rules = append(rules, Rule{
 		ID:          "rollback",
-		Enabled:     prefs[setup.NotifyPrefBlocksMinted],
+		Enabled:     rollbackEnabled,
 		EventType:   EventTypeRollback,
 		NotifyTitle: "🔄 Chain Rollback",
 		NotifyBody:  "A chain rollback was detected.",
