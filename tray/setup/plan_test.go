@@ -67,6 +67,7 @@ func TestClonePlanNilMapsStaySafe(t *testing.T) {
 func TestAllNotifyPrefsExhaustive(t *testing.T) {
 	want := []string{
 		NotifyPrefBlocksMinted,
+		NotifyPrefChainRollbacks,
 		NotifyPrefIncomingTx,
 		NotifyPrefOutgoingTx,
 		NotifyPrefTokenTransfers,

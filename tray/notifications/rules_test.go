@@ -482,7 +482,7 @@ func TestRulesFromPlan_AllDisabled(t *testing.T) {
 // rule ever produced it, so fork-resolution events silently stopped
 // surfacing. The rule is always present (independent of
 // MonitorEverything and per-target lists) and gated on
-// NotifyPrefBlocksMinted to match the old behavior.
+// NotifyPrefChainRollbacks.
 func TestRulesFromPlan_RollbackRuleIsAlwaysEmitted(t *testing.T) {
 	rollback := event.Event{Type: EventTypeRollback}
 	plans := []setup.SetupPlan{
@@ -492,21 +492,30 @@ func TestRulesFromPlan_RollbackRuleIsAlwaysEmitted(t *testing.T) {
 	}
 	for _, p := range plans {
 		p.Notify = setup.NotificationPrefs{
-			setup.NotifyPrefBlocksMinted: true,
+			setup.NotifyPrefChainRollbacks: true,
 		}
 		rules := RulesFromPlan(p)
 		assert.True(t, anyRuleMatches(rules, rollback),
-			"rollback rule must fire when BlocksMinted=true")
+			"rollback rule must fire when ChainRollbacks=true")
 	}
 	noToggle := setup.SetupPlan{
 		Filter: setup.FilterConfig{MonitorEverything: true},
 		Notify: setup.NotificationPrefs{
-			setup.NotifyPrefBlocksMinted: false,
+			setup.NotifyPrefChainRollbacks: false,
 		},
 	}
 	assert.False(t,
 		anyRuleMatches(RulesFromPlan(noToggle), rollback),
-		"rollback rule must be silent when BlocksMinted=false")
+		"rollback rule must be silent when ChainRollbacks=false")
+
+	// Verify that rollback rule defaults to true (enabled) if the preference is missing/omitted
+	missingPrefPlan := setup.SetupPlan{
+		Filter: setup.FilterConfig{MonitorEverything: true},
+		Notify: setup.NotificationPrefs{}, // completely empty, missing ChainRollbacks key
+	}
+	assert.True(t,
+		anyRuleMatches(RulesFromPlan(missingPrefPlan), rollback),
+		"rollback rule must default to true (enabled) if the preference is missing from the plan")
 }
 
 // TestRulesFromPlan_MonitorEverythingORsRelevantPrefs guards the

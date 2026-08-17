@@ -27,6 +27,8 @@ import (
 const (
 	// NotifyPrefBlocksMinted is the preference key for block minting alerts.
 	NotifyPrefBlocksMinted = "Blocks minted"
+	// NotifyPrefChainRollbacks is the preference key for chain rollback alerts.
+	NotifyPrefChainRollbacks = "Chain rollbacks"
 	// NotifyPrefIncomingTx is the preference key for incoming transaction alerts.
 	NotifyPrefIncomingTx = "Incoming transactions"
 	// NotifyPrefOutgoingTx is the preference key for outgoing transaction alerts.
@@ -62,6 +64,7 @@ var allNotifyPrefs = []string{
 	NotifyPrefOutgoingTx,
 	NotifyPrefTokenTransfers,
 	NotifyPrefBlocksMinted,
+	NotifyPrefChainRollbacks,
 	NotifyPrefPoolParams,
 	NotifyPrefGovProposals,
 	NotifyPrefVotesCast,

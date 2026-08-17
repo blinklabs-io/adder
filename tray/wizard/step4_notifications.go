@@ -228,45 +228,42 @@ func (s *notificationsStep) buildAdvancedRateLimit() {
 // the coarse set for MonitorEverything, otherwise the deduped union of
 // per-kind prefs whose list is non-empty.
 func (s *notificationsStep) getCheckLabels() []string {
+	seen := map[string]bool{}
 	if s.plan.Filter.MonitorEverything {
-		return []string{
-			setup.NotifyPrefBlocksMinted,
-			setup.NotifyPrefIncomingTx,
-			setup.NotifyPrefVotesCast,
+		seen[setup.NotifyPrefBlocksMinted] = true
+		seen[setup.NotifyPrefChainRollbacks] = true
+		seen[setup.NotifyPrefIncomingTx] = true
+		seen[setup.NotifyPrefVotesCast] = true
+	} else {
+		if len(s.plan.Filter.Wallets) > 0 {
+			seen[setup.NotifyPrefIncomingTx] = true
+			seen[setup.NotifyPrefOutgoingTx] = true
+			seen[setup.NotifyPrefTokenTransfers] = true
+		}
+		if len(s.plan.Filter.DReps) > 0 {
+			seen[setup.NotifyPrefGovProposals] = true
+			seen[setup.NotifyPrefVotesCast] = true
+			seen[setup.NotifyPrefRegChanges] = true
+		}
+		if len(s.plan.Filter.Pools) > 0 {
+			seen[setup.NotifyPrefBlocksMinted] = true
+			seen[setup.NotifyPrefPoolParams] = true
+			seen[setup.NotifyPrefChainRollbacks] = true
+		}
+		if len(s.plan.Filter.Assets) > 0 {
+			seen[setup.NotifyPrefAssetActivity] = true
+		}
+		if len(s.plan.Filter.Policies) > 0 {
+			seen[setup.NotifyPrefPolicyActivity] = true
 		}
 	}
 
-	// Per-kind ordering for UI stability. seen guards dedup when two
-	// kinds share a pref key.
+	// Filter setup.AllNotifyPrefs() to preserve canonical global ordering
 	var out []string
-	seen := map[string]bool{}
-	add := func(keys ...string) {
-		for _, k := range keys {
-			if !seen[k] {
-				seen[k] = true
-				out = append(out, k)
-			}
+	for _, pref := range setup.AllNotifyPrefs() {
+		if seen[pref] {
+			out = append(out, pref)
 		}
-	}
-	if len(s.plan.Filter.Wallets) > 0 {
-		add(setup.NotifyPrefIncomingTx,
-			setup.NotifyPrefOutgoingTx,
-			setup.NotifyPrefTokenTransfers)
-	}
-	if len(s.plan.Filter.DReps) > 0 {
-		add(setup.NotifyPrefGovProposals,
-			setup.NotifyPrefVotesCast,
-			setup.NotifyPrefRegChanges)
-	}
-	if len(s.plan.Filter.Pools) > 0 {
-		add(setup.NotifyPrefBlocksMinted,
-			setup.NotifyPrefPoolParams)
-	}
-	if len(s.plan.Filter.Assets) > 0 {
-		add(setup.NotifyPrefAssetActivity)
-	}
-	if len(s.plan.Filter.Policies) > 0 {
-		add(setup.NotifyPrefPolicyActivity)
 	}
 	return out
 }
