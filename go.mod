@@ -7,9 +7,9 @@ require (
 	fyne.io/fyne/v2 v2.8.0
 	github.com/SundaeSwap-finance/kugo v1.3.1
 	github.com/SundaeSwap-finance/ogmigo/v6 v6.2.1
-	github.com/blinklabs-io/gouroboros v0.192.2
+	github.com/blinklabs-io/gouroboros v0.193.0
 	github.com/blinklabs-io/ouroboros-mock v0.15.1
-	github.com/blinklabs-io/plutigo v0.2.0
+	github.com/blinklabs-io/plutigo v0.3.0
 	github.com/btcsuite/btcd/btcutil v1.2.0
 	github.com/gen2brain/beeep v0.11.2
 	github.com/go-telegram/bot v1.23.0
