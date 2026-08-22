@@ -38,7 +38,7 @@ func init() {
 					Type:         plugin.PluginOptionTypeString,
 					Description:  "specifies event type to filter on",
 					DefaultValue: "",
-					Dest:         &(cmdlineOptions.eventType),
+					Dest:         &cmdlineOptions.eventType,
 					CustomFlag:   "type",
 				},
 			},

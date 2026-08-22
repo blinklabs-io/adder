@@ -46,7 +46,7 @@ func createDummyCredentialsFile(t *testing.T, projectID string) string {
 	tmpDir := t.TempDir()
 	filePath := tmpDir + "/service-account.json"
 	content := []byte(`{"project_id": "` + projectID + `"}`)
-	err := os.WriteFile(filePath, content, 0644)
+	err := os.WriteFile(filePath, content, 0o644)
 	require.NoError(t, err)
 	return filePath
 }
@@ -134,7 +134,7 @@ func TestPushOutput_New_NonexistentFile_Fails(t *testing.T) {
 func TestPushOutput_New_InvalidJSON_Fails(t *testing.T) {
 	tmpDir := t.TempDir()
 	filePath := tmpDir + "/bad.json"
-	err := os.WriteFile(filePath, []byte("{invalid-json}"), 0644)
+	err := os.WriteFile(filePath, []byte("{invalid-json}"), 0o644)
 	require.NoError(t, err)
 
 	_, err = New(WithServiceAccountFilePath(filePath))
@@ -145,7 +145,7 @@ func TestPushOutput_New_InvalidJSON_Fails(t *testing.T) {
 func TestPushOutput_New_MissingProjectId_Fails(t *testing.T) {
 	tmpDir := t.TempDir()
 	filePath := tmpDir + "/missing-id.json"
-	err := os.WriteFile(filePath, []byte(`{"not_project_id": "value"}`), 0644)
+	err := os.WriteFile(filePath, []byte(`{"not_project_id": "value"}`), 0o644)
 	require.NoError(t, err)
 
 	_, err = New(WithServiceAccountFilePath(filePath))

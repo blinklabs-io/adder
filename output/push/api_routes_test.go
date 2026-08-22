@@ -6,10 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
-
 	"github.com/blinklabs-io/adder/api"
 	"github.com/blinklabs-io/adder/output/push"
+	"github.com/stretchr/testify/assert"
 )
 
 func setupRouter() http.Handler {

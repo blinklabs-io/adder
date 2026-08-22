@@ -36,7 +36,7 @@ func init() {
 					Type:         plugin.PluginOptionTypeString,
 					Description:  "specifies the title to use",
 					DefaultValue: "Adder",
-					Dest:         &(cmdlineOptions.title),
+					Dest:         &cmdlineOptions.title,
 				},
 			},
 		},

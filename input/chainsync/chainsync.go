@@ -741,7 +741,7 @@ func (c *ChainSync) updateStatus(
 	c.status.TipSlotNumber = tipSlotNumber
 	c.status.TipBlockHash = tipBlockHash
 	if c.statusUpdateFunc != nil {
-		c.statusUpdateFunc(*(c.status))
+		c.statusUpdateFunc(*c.status)
 	}
 }
 

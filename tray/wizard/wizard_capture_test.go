@@ -113,5 +113,4 @@ func TestCaptureSteps(t *testing.T) {
 			},
 		},
 	)
-
 }

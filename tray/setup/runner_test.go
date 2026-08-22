@@ -40,6 +40,7 @@ func (m *mockStore) LoadEngine(path string) (config.Config, error) {
 	}
 	return m.engine, nil
 }
+
 func (m *mockStore) SaveEngineAtomic(path string, cfg config.Config) error {
 	if m.saveEngineErr != nil {
 		return m.saveEngineErr
@@ -76,6 +77,7 @@ func (m *mockService) RestartIfConfigChanged(bin, cfg string) error {
 	m.restarts++
 	return nil
 }
+
 func (m *mockService) Stop() error {
 	m.running = false
 	return nil
