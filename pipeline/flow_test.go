@@ -579,6 +579,7 @@ func (b *blockedOutput) Start() error {
 	b.inputChan = make(chan event.Event)
 	return nil
 }
+
 func (b *blockedOutput) Stop() error {
 	close(b.inputChan)
 	return nil

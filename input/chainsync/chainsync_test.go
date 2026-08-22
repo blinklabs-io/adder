@@ -23,12 +23,11 @@ import (
 	"time"
 
 	"github.com/SundaeSwap-finance/kugo"
+	"github.com/blinklabs-io/adder/event"
 	"github.com/blinklabs-io/gouroboros/protocol/chainsync"
 	ocommon "github.com/blinklabs-io/gouroboros/protocol/common"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/blinklabs-io/adder/event"
 )
 
 func TestHandleRollBackward(t *testing.T) {

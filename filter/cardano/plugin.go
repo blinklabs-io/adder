@@ -42,7 +42,7 @@ func init() {
 					Type:         plugin.PluginOptionTypeString,
 					Description:  "specifies address(es) to filter on (comma-separated)",
 					DefaultValue: "",
-					Dest:         &(cmdlineOptions.address),
+					Dest:         &cmdlineOptions.address,
 					CustomFlag:   "address",
 				},
 				{
@@ -50,7 +50,7 @@ func init() {
 					Type:         plugin.PluginOptionTypeString,
 					Description:  "specifies asset fingerprint(s) to filter on (comma-separated)",
 					DefaultValue: "",
-					Dest:         &(cmdlineOptions.asset),
+					Dest:         &cmdlineOptions.asset,
 					CustomFlag:   "asset",
 				},
 				{
@@ -58,7 +58,7 @@ func init() {
 					Type:         plugin.PluginOptionTypeString,
 					Description:  "specifies asset policy ID(s) to filter on (comma-separated)",
 					DefaultValue: "",
-					Dest:         &(cmdlineOptions.policyId),
+					Dest:         &cmdlineOptions.policyId,
 					CustomFlag:   "policy",
 				},
 				{
@@ -66,7 +66,7 @@ func init() {
 					Type:         plugin.PluginOptionTypeString,
 					Description:  "specifies Pool ID(s) to filter on (comma-separated)",
 					DefaultValue: "",
-					Dest:         &(cmdlineOptions.poolId),
+					Dest:         &cmdlineOptions.poolId,
 					CustomFlag:   "pool",
 				},
 				{
@@ -74,7 +74,7 @@ func init() {
 					Type:         plugin.PluginOptionTypeString,
 					Description:  "specifies DRep ID(s) to filter on (comma-separated, hex or bech32)",
 					DefaultValue: "",
-					Dest:         &(cmdlineOptions.drepId),
+					Dest:         &cmdlineOptions.drepId,
 					CustomFlag:   "drep",
 				},
 			},

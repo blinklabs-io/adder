@@ -3,11 +3,10 @@ package chainsync
 import (
 	"testing"
 
+	"github.com/blinklabs-io/adder/event"
 	"github.com/blinklabs-io/gouroboros/ledger/common"
 	"github.com/stretchr/testify/assert"
 	utxorpc "github.com/utxorpc/go-codegen/utxorpc/v1alpha/cardano"
-
-	"github.com/blinklabs-io/adder/event"
 )
 
 // MockIssuerVkey to implement IssuerVkey interface

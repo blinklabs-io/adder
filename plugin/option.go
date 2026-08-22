@@ -110,27 +110,27 @@ func (p *PluginOption) ProcessEnvVars(envPrefix string) error {
 		if value, ok := os.LookupEnv(envVar); ok {
 			switch p.Type {
 			case PluginOptionTypeString:
-				*(p.Dest.(*string)) = value
+				*p.Dest.(*string) = value
 			case PluginOptionTypeBool:
 				value, err := strconv.ParseBool(value)
 				if err != nil {
 					return fmt.Errorf("error processing env vars: %w", err)
 				}
-				*(p.Dest.(*bool)) = value
+				*p.Dest.(*bool) = value
 			case PluginOptionTypeInt:
 				// We limit to 32-bit to not get inconsistent behavior on 32-bit platforms
 				value, err := strconv.ParseInt(value, 10, 32)
 				if err != nil {
 					return fmt.Errorf("error processing env vars: %w", err)
 				}
-				*(p.Dest.(*int)) = int(value)
+				*p.Dest.(*int) = int(value)
 			case PluginOptionTypeUint:
 				// We limit to 32-bit to not get inconsistent behavior on 32-bit platforms
 				value, err := strconv.ParseUint(value, 10, 32)
 				if err != nil {
 					return fmt.Errorf("error processing env vars: %w", err)
 				}
-				*(p.Dest.(*uint)) = uint(value)
+				*p.Dest.(*uint) = uint(value)
 			default:
 				return fmt.Errorf(
 					"unknown plugin option type %d for option %s",
@@ -151,21 +151,21 @@ func (p *PluginOption) ProcessConfig(
 		case PluginOptionTypeString:
 			switch value := optionData.(type) {
 			case string:
-				*(p.Dest.(*string)) = value
+				*p.Dest.(*string) = value
 			default:
 				return fmt.Errorf("invalid value for option '%s': expected string and got %T", p.Name, optionData)
 			}
 		case PluginOptionTypeBool:
 			switch value := optionData.(type) {
 			case bool:
-				*(p.Dest.(*bool)) = value
+				*p.Dest.(*bool) = value
 			default:
 				return fmt.Errorf("invalid value for option '%s': expected bool and got %T", p.Name, optionData)
 			}
 		case PluginOptionTypeInt:
 			switch value := optionData.(type) {
 			case int:
-				*(p.Dest.(*int)) = value
+				*p.Dest.(*int) = value
 			default:
 				return fmt.Errorf("invalid value for option '%s': expected int and got %T", p.Name, optionData)
 			}
@@ -175,7 +175,7 @@ func (p *PluginOption) ProcessConfig(
 				if value < 0 {
 					return fmt.Errorf("invalid value for option '%s': negative value: %T", p.Name, optionData)
 				}
-				*(p.Dest.(*uint)) = uint(value)
+				*p.Dest.(*uint) = uint(value)
 			default:
 				return fmt.Errorf("invalid value for option '%s': expected uint and got %T", p.Name, optionData)
 			}

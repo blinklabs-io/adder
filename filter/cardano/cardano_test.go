@@ -19,14 +19,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/blinklabs-io/adder/event"
 	"github.com/blinklabs-io/gouroboros/ledger"
 	"github.com/blinklabs-io/gouroboros/ledger/common"
 	mockledger "github.com/blinklabs-io/ouroboros-mock/ledger"
 	"github.com/btcsuite/btcd/btcutil/bech32"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/blinklabs-io/adder/event"
 )
 
 func TestNewCardano(t *testing.T) {
