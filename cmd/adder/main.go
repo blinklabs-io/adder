@@ -50,7 +50,7 @@ transactions, rollbacks, and governance actions. It uses a plugin-based
 pipeline architecture with configurable inputs, filters, and outputs.
 
 Input plugins:  chainsync (default), mempool
-Output plugins: log (default), webhook, telegram, push, notify
+Output plugins: log (default), webhook, telegram, push, notify, notify-json
 Filters:        address, asset, policy, pool, drep, event type
 
 Events are also available via the /events WebSocket/SSE API endpoint.`,
@@ -96,6 +96,7 @@ func init() {
 	if err := cfg.BindFlags(rootCmd.Flags()); err != nil {
 		panic(err)
 	}
+	rootCmd.AddCommand(newNotificationsCmd())
 }
 
 func run(cmd *cobra.Command) error {

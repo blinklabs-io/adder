@@ -141,7 +141,7 @@ func TestRenderTemplates_RealPhrasings(t *testing.T) {
 				"(84ee913d...255af401).",
 		},
 		{
-			name: "drep vote",
+			name: "drep vote identifies action with zero index",
 			tmpl: tmplGovVote,
 			evt: event.Event{
 				Type: EventTypeGovernance,
@@ -150,12 +150,14 @@ func TestRenderTemplates_RealPhrasings(t *testing.T) {
 						map[string]any{
 							"voterId":        "drep1abc0123456789wxyz",
 							"vote":           "Yes",
-							"govActionIndex": float64(42),
+							"govActionTxId":  "0123456789abcdef0123456789abcdeffedcba9876543210fedcba98",
+							"govActionIndex": float64(0),
 						},
 					},
 				},
 			},
-			want: "DRep drep1abc…wxyz voted Yes on proposal #42.",
+			want: "DRep drep1abc…wxyz voted Yes on action " +
+				"01234567...fedcba98#0.",
 		},
 		{
 			// Regression: an event carrying several votes must render
@@ -170,17 +172,20 @@ func TestRenderTemplates_RealPhrasings(t *testing.T) {
 						map[string]any{
 							"voterId":        "drep1otherCCCCDDDDzzzz",
 							"vote":           "No",
+							"govActionTxId":  "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 							"govActionIndex": float64(7),
 						},
 						map[string]any{
 							"voterId":        "drep1followedAAAAwxyz",
 							"vote":           "Yes",
+							"govActionTxId":  "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
 							"govActionIndex": float64(42),
 						},
 					},
 				},
 			},
-			want: "DRep drep1fol…wxyz voted Yes on proposal #42.",
+			want: "DRep drep1fol…wxyz voted Yes on action " +
+				"bbbbbbbb...bbbbbbbb#42.",
 		},
 	}
 	for _, tt := range tests {
@@ -331,7 +336,7 @@ func TestRenderTemplates_MissingFields(t *testing.T) {
 				Type:    EventTypeGovernance,
 				Payload: map[string]any{},
 			},
-			want: "DRep  voted  on proposal #.",
+			want: "DRep  voted  on action #.",
 		},
 	}
 	for _, tt := range tests {

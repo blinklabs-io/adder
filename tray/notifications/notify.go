@@ -16,17 +16,12 @@ package notifications
 
 import (
 	"log/slog"
-
-	"fyne.io/fyne/v2"
 )
 
-// Notifier is the minimal surface of fyne.App needed to dispatch a
-// desktop notification. fyne.App satisfies it directly; tests inject a
-// fake via fyne.io/fyne/v2/test's test.NewApp (which records sent
-// notifications for test.AssertNotificationSent). This is the only file
-// in the notifications package permitted to import fyne.
+// Notifier is the UI-neutral surface needed to dispatch a desktop
+// notification. Desktop frontends adapt their native notification API to it.
 type Notifier interface {
-	SendNotification(*fyne.Notification)
+	SendNotification(title, body string)
 }
 
 // Dispatch reads Requests from reqs and sends each as a native desktop
@@ -65,7 +60,7 @@ func Dispatch(
 			"title", title,
 			"batched", req.Batched,
 			"count", req.Count)
-		n.SendNotification(fyne.NewNotification(title, req.Body))
+		n.SendNotification(title, req.Body)
 		for _, fn := range onDelivered {
 			if fn != nil {
 				fn(req)

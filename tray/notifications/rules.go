@@ -79,7 +79,8 @@ const (
 	tmplGovVote = "DRep " +
 		"{{trunc (field \"voterId\" (voteFor .payload.votingProcedures .params))}} " +
 		"voted {{field \"vote\" (voteFor .payload.votingProcedures .params)}} " +
-		"on proposal " +
+		"on action " +
+		"{{truncHash (field \"govActionTxId\" (voteFor .payload.votingProcedures .params))}}" +
 		"#{{field \"govActionIndex\" (voteFor .payload.votingProcedures .params)}}."
 	tmplGovProposal   = "New governance proposal detected."
 	tmplGovReg        = "A registration change was detected."
