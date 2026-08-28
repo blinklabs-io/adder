@@ -157,6 +157,30 @@ func TestOutputReportsStaleBeforeFirstEvent(t *testing.T) {
 	require.NotContains(t, output.String(), `"kind":"notification"`)
 }
 
+func TestOutputReloadsStaleThresholdOnRestart(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "notifications.json")
+	writeConfig := func(seconds int) {
+		cfg := setup.DefaultNotificationConfig()
+		cfg.Monitor.Everything = true
+		cfg.ConnectionStaleSeconds = seconds
+		data, err := json.Marshal(cfg)
+		require.NoError(t, err)
+		require.NoError(t, os.WriteFile(path, data, 0o600))
+	}
+
+	var output lockedBuffer
+	o := New(WithConfigPath(path), WithWriter(&output))
+	t.Cleanup(func() { _ = o.Stop() })
+	writeConfig(30)
+	require.NoError(t, o.Start())
+	require.Equal(t, 30*time.Second, o.staleAfter)
+	require.NoError(t, o.Stop())
+	writeConfig(60)
+	require.NoError(t, o.Start())
+	require.Equal(t, 60*time.Second, o.staleAfter)
+	require.NoError(t, o.Stop())
+}
+
 func TestOutputNormalizesNativeEventBeforeRendering(t *testing.T) {
 	var output lockedBuffer
 	o := New(

@@ -51,9 +51,10 @@ type notificationRecord struct {
 }
 
 type Output struct {
-	configPath string
-	writer     io.Writer
-	staleAfter time.Duration
+	configPath         string
+	writer             io.Writer
+	staleAfter         time.Duration
+	staleAfterOverride time.Duration
 
 	eventChan chan event.Event
 	errorChan chan error
@@ -82,6 +83,7 @@ func (o *Output) Start() error {
 		return err
 	}
 	o.config = cfg
+	o.staleAfter = o.staleAfterOverride
 	if o.staleAfter <= 0 {
 		o.staleAfter = time.Duration(cfg.ConnectionStaleSeconds) * time.Second
 	}

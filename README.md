@@ -210,11 +210,17 @@ logs to stderr:
 
 ```bash
 adder \
+  --input chainsync \
+  --input-chainsync-network preview \
   --output notify-json \
   --output-notify-json-config ~/.config/adder/omarchy.json \
   --api-address 127.0.0.1 \
   --api-port 0
 ```
+
+The Chainsync network must match `network.name` in the notification JSON. When
+using a custom node, pass the same `host:port` with
+`--input-chainsync-address`; Adder rejects mismatches before starting.
 
 Validate the configuration before starting or restarting a frontend:
 

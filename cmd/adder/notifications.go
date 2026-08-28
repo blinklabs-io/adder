@@ -29,6 +29,61 @@ type notificationValidationResult struct {
 	Errors        []setup.ValidationIssue `json:"errors,omitempty"`
 }
 
+func validateNotificationInput(
+	cmd *cobra.Command,
+	inputName string,
+	outputName string,
+) error {
+	if outputName != "notify-json" {
+		return nil
+	}
+	if inputName != "chainsync" {
+		return fmt.Errorf("notify-json requires chainsync input, got %q", inputName)
+	}
+	configPath, err := cmd.Flags().GetString("output-notify-json-config")
+	if err != nil {
+		return err
+	}
+	if configPath == "" {
+		return errors.New("notify-json config path must not be empty")
+	}
+	cfg, err := setup.ReadNotificationConfig(configPath)
+	if err != nil {
+		return err
+	}
+	inputNetwork, err := cmd.Flags().GetString("input-chainsync-network")
+	if err != nil {
+		return err
+	}
+	if inputNetwork != cfg.Network.Name {
+		return fmt.Errorf(
+			"notification network %q does not match chainsync network %q",
+			cfg.Network.Name,
+			inputNetwork,
+		)
+	}
+	if cfg.Network.CustomAddress == "" {
+		return nil
+	}
+	inputAddress, err := cmd.Flags().GetString("input-chainsync-address")
+	if err != nil {
+		return err
+	}
+	expectedAddress := fmt.Sprintf(
+		"%s:%d",
+		cfg.Network.CustomAddress,
+		cfg.Network.CustomPort,
+	)
+	if inputAddress != expectedAddress {
+		return fmt.Errorf(
+			"notification custom node %q does not match chainsync address %q",
+			expectedAddress,
+			inputAddress,
+		)
+	}
+	return nil
+}
+
 func newNotificationsCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "notifications",

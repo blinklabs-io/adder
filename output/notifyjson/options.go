@@ -34,5 +34,5 @@ func WithWriter(w io.Writer) Option {
 }
 
 func WithStaleAfter(d time.Duration) Option {
-	return func(o *Output) { o.staleAfter = d }
+	return func(o *Output) { o.staleAfterOverride = d }
 }

@@ -22,6 +22,7 @@ import (
 	"testing"
 
 	"github.com/blinklabs-io/adder/tray/setup"
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 )
 
@@ -68,4 +69,62 @@ func TestNotificationsValidateJSONReportsIssues(t *testing.T) {
 	require.False(t, result.Valid)
 	require.NotEmpty(t, result.Errors)
 	require.Equal(t, "schemaVersion", result.Errors[0].Field)
+}
+
+func TestValidateNotificationInput(t *testing.T) {
+	for _, test := range []struct {
+		name          string
+		inputNetwork  string
+		inputAddress  string
+		customAddress string
+		customPort    uint
+		expectedError string
+	}{
+		{
+			name:         "preview",
+			inputNetwork: "preview",
+		},
+		{
+			name:          "network mismatch",
+			inputNetwork:  "mainnet",
+			expectedError: "does not match chainsync network",
+		},
+		{
+			name:          "custom node mismatch",
+			inputNetwork:  "preview",
+			customAddress: "node.example",
+			customPort:    3001,
+			expectedError: "does not match chainsync address",
+		},
+		{
+			name:          "custom node",
+			inputNetwork:  "preview",
+			inputAddress:  "node.example:3001",
+			customAddress: "node.example",
+			customPort:    3001,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			cfg := setup.DefaultNotificationConfig()
+			cfg.Network.Name = "preview"
+			cfg.Network.CustomAddress = test.customAddress
+			cfg.Network.CustomPort = test.customPort
+			cfg.Monitor.Everything = true
+
+			cmd := &cobra.Command{}
+			cmd.Flags().String(
+				"output-notify-json-config",
+				writeNotificationConfig(t, cfg),
+				"",
+			)
+			cmd.Flags().String("input-chainsync-network", test.inputNetwork, "")
+			cmd.Flags().String("input-chainsync-address", test.inputAddress, "")
+			err := validateNotificationInput(cmd, "chainsync", "notify-json")
+			if test.expectedError == "" {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, test.expectedError)
+			}
+		})
+	}
 }

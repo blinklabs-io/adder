@@ -136,6 +136,9 @@ func run(cmd *cobra.Command) error {
 	if err := plugin.ProcessEnvVars(); err != nil {
 		return fmt.Errorf("failed to process env vars: %w", err)
 	}
+	if err := validateNotificationInput(cmd, cfg.Input, cfg.Output); err != nil {
+		return err
+	}
 
 	// Configure logging
 	logging.Configure()
