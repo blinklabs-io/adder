@@ -141,6 +141,22 @@ func TestOutputReportsStaleAndRecovery(t *testing.T) {
 	require.NoError(t, o.Stop())
 }
 
+func TestOutputReportsStaleBeforeFirstEvent(t *testing.T) {
+	var output lockedBuffer
+	o := New(
+		WithConfigPath(writeTestConfig(t)),
+		WithWriter(&output),
+		WithStaleAfter(25*time.Millisecond),
+	)
+	require.NoError(t, o.Start())
+	require.Eventually(t, func() bool {
+		return strings.Contains(output.String(), `"status":"stale"`)
+	}, 2*time.Second, 10*time.Millisecond)
+	require.NoError(t, o.Stop())
+	require.Equal(t, 1, strings.Count(output.String(), `"status":"stale"`))
+	require.NotContains(t, output.String(), `"kind":"notification"`)
+}
+
 func TestOutputNormalizesNativeEventBeforeRendering(t *testing.T) {
 	var output lockedBuffer
 	o := New(

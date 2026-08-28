@@ -123,9 +123,6 @@ func (o *Output) eventLoop(engineEvents chan<- event.Event) {
 	defer close(engineEvents)
 
 	timer := time.NewTimer(o.staleAfter)
-	if !timer.Stop() {
-		<-timer.C
-	}
 	defer timer.Stop()
 	connected := false
 	everConnected := false
@@ -178,16 +175,19 @@ func (o *Output) eventLoop(engineEvents chan<- event.Event) {
 				return
 			}
 		case <-timer.C:
+			message := "no chain events received before startup timeout"
+			if connected {
+				message = "no chain events received recently"
+			}
+			o.reportWriteError(o.writeRecord(statusRecord{
+				SchemaVersion: schemaVersion,
+				Kind:          "status",
+				Status:        "stale",
+				Timestamp:     time.Now().UTC(),
+				Message:       message,
+			}))
 			if connected {
 				connected = false
-				message := "no chain events received recently"
-				o.reportWriteError(o.writeRecord(statusRecord{
-					SchemaVersion: schemaVersion,
-					Kind:          "status",
-					Status:        "stale",
-					Timestamp:     time.Now().UTC(),
-					Message:       message,
-				}))
 				o.engine.NotifyConnection(
 					"Adder Connection",
 					"Lost connection to "+o.config.NetworkLabel(),
