@@ -135,14 +135,14 @@ func DecodeNotificationConfig(r io.Reader) (NotificationConfig, error) {
 		}
 		return cfg, fmt.Errorf("parsing notification config: %w", err)
 	}
-	cfg.normalize()
+	normalizeNotificationConfig(&cfg)
 	if issues := cfg.ValidationIssues(); len(issues) > 0 {
 		return cfg, ValidationIssuesError{Issues: issues}
 	}
 	return cfg, nil
 }
 
-func (c *NotificationConfig) normalize() {
+func normalizeNotificationConfig(c *NotificationConfig) {
 	c.Network.Name = strings.TrimSpace(c.Network.Name)
 	c.Network.CustomAddress = strings.TrimSpace(c.Network.CustomAddress)
 	c.Monitor.DRepMatch = AdvancedMatchMode(strings.TrimSpace(string(c.Monitor.DRepMatch)))
