@@ -375,3 +375,91 @@ func TestProcessConfigUnknownType(t *testing.T) {
 		t.Fatal("expected error for unknown type, got nil")
 	}
 }
+
+// TestSplitAndTrim verifies comma-separated option values are split with
+// surrounding whitespace removed and empty entries dropped, including the
+// separator forms produced by YAML block scalars.
+func TestSplitAndTrim(t *testing.T) {
+	testCases := []struct {
+		name     string
+		input    string
+		expected []string
+	}{
+		{
+			name:     "empty string",
+			input:    "",
+			expected: nil,
+		},
+		{
+			name:     "no separator",
+			input:    "addr1aaa",
+			expected: []string{"addr1aaa"},
+		},
+		{
+			name:     "no whitespace",
+			input:    "addr1aaa,addr1bbb",
+			expected: []string{"addr1aaa", "addr1bbb"},
+		},
+		{
+			name:  "YAML folded scalar (spaces after commas)",
+			input: "addr1aaa, addr1bbb, addr1ccc",
+			expected: []string{
+				"addr1aaa",
+				"addr1bbb",
+				"addr1ccc",
+			},
+		},
+		{
+			name:     "YAML literal scalar (newlines and tabs)",
+			input:    "addr1aaa,\n\taddr1bbb\n",
+			expected: []string{"addr1aaa", "addr1bbb"},
+		},
+		{
+			// A folded scalar only replaces newlines with spaces for equally
+			// indented lines; a more-indented line keeps its newline and
+			// leading indent
+			name:  "YAML folded scalar (more-indented line)",
+			input: "addr1aaa,\n  addr1bbb,\naddr1ccc",
+			expected: []string{
+				"addr1aaa",
+				"addr1bbb",
+				"addr1ccc",
+			},
+		},
+		{
+			// A blank line inside a folded scalar also yields a newline
+			name:     "YAML folded scalar (blank line)",
+			input:    "addr1aaa,\naddr1bbb",
+			expected: []string{"addr1aaa", "addr1bbb"},
+		},
+		{
+			name:     "leading and trailing whitespace",
+			input:    "  addr1aaa  ",
+			expected: []string{"addr1aaa"},
+		},
+		{
+			name:     "empty entries dropped",
+			input:    "addr1aaa,,  ,addr1bbb,",
+			expected: []string{"addr1aaa", "addr1bbb"},
+		},
+		{
+			name:     "whitespace only",
+			input:    "  ,\n , ",
+			expected: nil,
+		},
+	}
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			got := SplitAndTrim(testCase.input)
+			if len(got) != len(testCase.expected) {
+				t.Fatalf("got %q, want %q", got, testCase.expected)
+			}
+			for i := range got {
+				if got[i] != testCase.expected[i] {
+					t.Errorf("got %q, want %q", got, testCase.expected)
+					break
+				}
+			}
+		})
+	}
+}

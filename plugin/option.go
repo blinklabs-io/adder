@@ -1,4 +1,4 @@
-// Copyright 2025 Blink Labs Software
+// Copyright 2026 Blink Labs Software
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -40,6 +40,19 @@ type PluginOption struct {
 	CustomFlag   string
 	Description  string
 	Type         PluginOptionType
+}
+
+// SplitAndTrim splits a comma-separated option value, trimming surrounding
+// whitespace from each entry and dropping empty ones. YAML folded/literal
+// block scalars introduce spaces and newlines around entries.
+func SplitAndTrim(val string) []string {
+	var out []string
+	for item := range strings.SplitSeq(val, ",") {
+		if item = strings.TrimSpace(item); item != "" {
+			out = append(out, item)
+		}
+	}
+	return out
 }
 
 func (p *PluginOption) AddToFlagSet(

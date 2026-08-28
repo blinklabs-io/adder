@@ -1,6 +1,6 @@
 module github.com/blinklabs-io/adder
 
-go 1.25.7
+go 1.26.0
 
 require (
 	connectrpc.com/connect v1.20.0

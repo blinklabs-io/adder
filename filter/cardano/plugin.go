@@ -1,4 +1,4 @@
-// Copyright 2025 Blink Labs Software
+// Copyright 2026 Blink Labs Software
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -88,53 +88,41 @@ func NewFromCmdlineOptions() plugin.Plugin {
 			logging.GetLogger().With("plugin", "filter.cardano"),
 		),
 	}
-	if cmdlineOptions.address != "" {
+	if addresses := plugin.SplitAndTrim(cmdlineOptions.address); len(
+		addresses,
+	) > 0 {
 		pluginOptions = append(
 			pluginOptions,
-			WithAddresses(
-				strings.Split(cmdlineOptions.address, ","),
-			),
+			WithAddresses(addresses),
 		)
 	}
-	if cmdlineOptions.asset != "" {
+	if assets := plugin.SplitAndTrim(cmdlineOptions.asset); len(assets) > 0 {
 		pluginOptions = append(
 			pluginOptions,
-			WithAssetFingerprints(
-				strings.Split(cmdlineOptions.asset, ","),
-			),
+			WithAssetFingerprints(assets),
 		)
 	}
-	if cmdlineOptions.policyId != "" {
+	if policyIds := plugin.SplitAndTrim(cmdlineOptions.policyId); len(
+		policyIds,
+	) > 0 {
 		pluginOptions = append(
 			pluginOptions,
-			WithPolicies(
-				strings.Split(cmdlineOptions.policyId, ","),
-			),
+			WithPolicies(policyIds),
 		)
 	}
-	if cmdlineOptions.poolId != "" {
+	if poolIds := plugin.SplitAndTrim(cmdlineOptions.poolId); len(poolIds) > 0 {
 		pluginOptions = append(
 			pluginOptions,
-			WithPoolIds(
-				strings.Split(cmdlineOptions.poolId, ","),
-			),
+			WithPoolIds(poolIds),
 		)
 	}
-	if cmdlineOptions.drepId != "" {
-		rawIds := strings.Split(cmdlineOptions.drepId, ",")
-		var cleanIds []string
-		for _, id := range rawIds {
-			id = strings.TrimSpace(strings.ToLower(id))
-			if id != "" {
-				cleanIds = append(cleanIds, id)
-			}
-		}
-		if len(cleanIds) > 0 {
-			pluginOptions = append(
-				pluginOptions,
-				WithDRepIds(cleanIds),
-			)
-		}
+	if drepIds := plugin.SplitAndTrim(
+		strings.ToLower(cmdlineOptions.drepId),
+	); len(drepIds) > 0 {
+		pluginOptions = append(
+			pluginOptions,
+			WithDRepIds(drepIds),
+		)
 	}
 	p := New(pluginOptions...)
 	return p

@@ -1,4 +1,4 @@
-// Copyright 2025 Blink Labs Software
+// Copyright 2026 Blink Labs Software
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -143,8 +143,8 @@ func NewFromCmdlineOptions() plugin.Plugin {
 		WithAutoReconnect(cmdlineOptions.autoReconnect),
 		WithDelayConfirmations(cmdlineOptions.delayConfirmations),
 	}
-	if cmdlineOptions.intersectPoint != "" {
-		pointsSlice := strings.Split(cmdlineOptions.intersectPoint, ",")
+	pointsSlice := plugin.SplitAndTrim(cmdlineOptions.intersectPoint)
+	if len(pointsSlice) > 0 {
 		intersectPoints := make([]ocommon.Point, 0, len(pointsSlice))
 		for _, point := range pointsSlice {
 			intersectPointParts := strings.Split(point, ".")
