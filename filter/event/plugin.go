@@ -15,8 +15,6 @@
 package event
 
 import (
-	"strings"
-
 	"github.com/blinklabs-io/adder/internal/logging"
 	"github.com/blinklabs-io/adder/plugin"
 )
@@ -52,12 +50,12 @@ func NewFromCmdlineOptions() plugin.Plugin {
 			logging.GetLogger().With("plugin", "filter.event"),
 		),
 	}
-	if cmdlineOptions.eventType != "" {
+	if eventTypes := plugin.SplitAndTrim(
+		cmdlineOptions.eventType,
+	); len(eventTypes) > 0 {
 		pluginOptions = append(
 			pluginOptions,
-			WithTypes(
-				strings.Split(cmdlineOptions.eventType, ","),
-			),
+			WithTypes(eventTypes),
 		)
 	}
 	p := New(pluginOptions...)
