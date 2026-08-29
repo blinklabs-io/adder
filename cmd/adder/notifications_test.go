@@ -92,6 +92,7 @@ func TestValidateNotificationInput(t *testing.T) {
 		{
 			name:          "custom node mismatch",
 			inputNetwork:  "preview",
+			inputAddress:  "other.example:3001",
 			customAddress: "node.example",
 			customPort:    3001,
 			expectedError: "does not match chainsync address",
@@ -101,6 +102,20 @@ func TestValidateNotificationInput(t *testing.T) {
 			inputNetwork:  "preview",
 			inputAddress:  "node.example:3001",
 			customAddress: "node.example",
+			customPort:    3001,
+		},
+		{
+			name:          "IPv6 custom node",
+			inputNetwork:  "preview",
+			inputAddress:  "[::1]:3001",
+			customAddress: "::1",
+			customPort:    3001,
+		},
+		{
+			name:          "equivalent IPv6 custom node",
+			inputNetwork:  "preview",
+			inputAddress:  "[0:0:0:0:0:0:0:1]:3001",
+			customAddress: "::1",
 			customPort:    3001,
 		},
 	} {

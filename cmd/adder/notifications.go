@@ -18,6 +18,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
+	"strconv"
+	"strings"
 
 	"github.com/blinklabs-io/adder/tray/setup"
 	"github.com/spf13/cobra"
@@ -27,6 +30,23 @@ type notificationValidationResult struct {
 	SchemaVersion int                     `json:"schemaVersion"`
 	Valid         bool                    `json:"valid"`
 	Errors        []setup.ValidationIssue `json:"errors,omitempty"`
+}
+
+func normalizeHostPort(address string) (string, error) {
+	host, portText, err := net.SplitHostPort(address)
+	if err != nil {
+		return "", err
+	}
+	port, err := strconv.ParseUint(portText, 10, 16)
+	if err != nil {
+		return "", err
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		host = ip.String()
+	} else {
+		host = strings.ToLower(host)
+	}
+	return net.JoinHostPort(host, strconv.FormatUint(port, 10)), nil
 }
 
 func validateNotificationInput(
@@ -69,12 +89,19 @@ func validateNotificationInput(
 	if err != nil {
 		return err
 	}
-	expectedAddress := fmt.Sprintf(
-		"%s:%d",
+	expectedAddress := net.JoinHostPort(
 		cfg.Network.CustomAddress,
-		cfg.Network.CustomPort,
+		strconv.FormatUint(uint64(cfg.Network.CustomPort), 10),
 	)
-	if inputAddress != expectedAddress {
+	normalizedExpected, err := normalizeHostPort(expectedAddress)
+	if err != nil {
+		return fmt.Errorf("invalid notification custom node %q: %w", expectedAddress, err)
+	}
+	normalizedInput, err := normalizeHostPort(inputAddress)
+	if err != nil {
+		return fmt.Errorf("invalid chainsync address %q: %w", inputAddress, err)
+	}
+	if normalizedInput != normalizedExpected {
 		return fmt.Errorf(
 			"notification custom node %q does not match chainsync address %q",
 			expectedAddress,
