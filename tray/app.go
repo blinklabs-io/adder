@@ -641,7 +641,7 @@ func (a *App) setupTray() {
 	eng.Start()
 	go notifications.Dispatch(
 		eng.Requests(),
-		a.fyneApp,
+		fyneNotifier{app: a.fyneApp},
 		eng.CurrentEpoch,
 		eng.RecordDrop,
 		a.addRecentAlert,

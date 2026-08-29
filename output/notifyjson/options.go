@@ -1,4 +1,4 @@
-// Copyright 2023 Blink Labs Software
+// Copyright 2026 Blink Labs Software
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,14 +12,27 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package output
+package notifyjson
 
-// We import the various plugins that we want to be auto-registered
 import (
-	_ "github.com/blinklabs-io/adder/output/log"
-	_ "github.com/blinklabs-io/adder/output/notify"
-	_ "github.com/blinklabs-io/adder/output/notifyjson"
-	_ "github.com/blinklabs-io/adder/output/push"
-	_ "github.com/blinklabs-io/adder/output/telegram"
-	_ "github.com/blinklabs-io/adder/output/webhook"
+	"io"
+	"time"
 )
+
+type Option func(*Output)
+
+func WithConfigPath(path string) Option {
+	return func(o *Output) { o.configPath = path }
+}
+
+func WithWriter(w io.Writer) Option {
+	return func(o *Output) {
+		if w != nil {
+			o.writer = w
+		}
+	}
+}
+
+func WithStaleAfter(d time.Duration) Option {
+	return func(o *Output) { o.staleAfterOverride = d }
+}

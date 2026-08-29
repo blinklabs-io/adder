@@ -20,8 +20,6 @@ import (
 	"testing"
 	"time"
 
-	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/test"
 	"github.com/blinklabs-io/adder/event"
 	"github.com/stretchr/testify/require"
 )
@@ -31,61 +29,56 @@ import (
 // can be observed safely from the test goroutine under -race.
 type recordingNotifier struct {
 	mu   sync.Mutex
-	last *fyne.Notification
+	last *recordedNotification
 }
 
-func (r *recordingNotifier) SendNotification(n *fyne.Notification) {
+type recordedNotification struct {
+	Title   string
+	Content string
+}
+
+func (r *recordingNotifier) SendNotification(title, body string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.last = n
+	r.last = &recordedNotification{Title: title, Content: body}
 }
 
-func (r *recordingNotifier) lastSent() *fyne.Notification {
+func (r *recordingNotifier) lastSent() *recordedNotification {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.last
 }
 
 func TestDispatch_SendsNotification(t *testing.T) {
-	app := test.NewApp()
+	n := &recordingNotifier{}
 	reqs := make(chan Request, 1)
-
-	test.AssertNotificationSent(
-		t,
-		fyne.NewNotification("💸 Incoming Transaction", "Received 5 ADA at a"),
-		func() {
-			reqs <- Request{
-				RuleID: "wallet-in-0",
-				Title:  "💸 Incoming Transaction",
-				Body:   "Received 5 ADA at a",
-			}
-			close(reqs)
-			Dispatch(reqs, app, nil, nil)
-		},
-	)
+	reqs <- Request{
+		RuleID: "wallet-in-0",
+		Title:  "💸 Incoming Transaction",
+		Body:   "Received 5 ADA at a",
+	}
+	close(reqs)
+	Dispatch(reqs, n, nil, nil)
+	require.Equal(t, &recordedNotification{
+		Title: "💸 Incoming Transaction", Content: "Received 5 ADA at a",
+	}, n.lastSent())
 }
 
 func TestDispatch_EmptyTitleFallsBackToAdder(t *testing.T) {
-	app := test.NewApp()
+	n := &recordingNotifier{}
 	reqs := make(chan Request, 1)
-
-	test.AssertNotificationSent(
-		t,
-		fyne.NewNotification("Adder", "body"),
-		func() {
-			reqs <- Request{Body: "body"}
-			close(reqs)
-			Dispatch(reqs, app, nil, nil)
-		},
-	)
+	reqs <- Request{Body: "body"}
+	close(reqs)
+	Dispatch(reqs, n, nil, nil)
+	require.Equal(t, &recordedNotification{Title: "Adder", Content: "body"}, n.lastSent())
 }
 
 func TestDispatch_StopsWhenChannelClosed(t *testing.T) {
-	app := test.NewApp()
+	n := &recordingNotifier{}
 	reqs := make(chan Request)
 	done := make(chan struct{})
 	go func() {
-		Dispatch(reqs, app, nil, nil)
+		Dispatch(reqs, n, nil, nil)
 		close(done)
 	}()
 	close(reqs)

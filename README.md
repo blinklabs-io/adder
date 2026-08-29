@@ -201,6 +201,40 @@ adder --output-log-format json 2>/dev/null | jq .
 adder > /dev/null
 ```
 
+### Target-aware notification stream
+
+Desktop integrations can reuse the same target-aware rules as `adder-tray`
+without linking a GUI toolkit. The `notify-json` output reserves stdout for
+versioned newline-delimited status and notification records and writes runtime
+logs to stderr:
+
+```bash
+adder \
+  --input chainsync \
+  --input-chainsync-network preview \
+  --output notify-json \
+  --output-notify-json-config ~/.config/adder/omarchy.json \
+  --api-address 127.0.0.1 \
+  --api-port 0
+```
+
+The Chainsync network must match `network.name` in the notification JSON. When
+using a custom node, pass the same `host:port` with
+`--input-chainsync-address`; Adder rejects mismatches before starting.
+
+Validate the configuration before starting or restarting a frontend:
+
+```bash
+adder notifications validate \
+  --config ~/.config/adder/omarchy.json \
+  --json
+```
+
+The JSON configuration has `schemaVersion: 1` and describes the Cardano
+network, monitored wallets/DReps/pools/assets/policies, alert categories, rate
+limit, and connection-staleness threshold. An empty target set is rejected
+unless `monitor.everything` is explicitly enabled.
+
 ## Configuration
 
 Adder supports multiple configuration methods for versatility: commandline
