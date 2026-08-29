@@ -39,7 +39,7 @@ jobs:
       - name: Set up MSYS2 MinGW64 (amd64 CGO for Fyne)
         if: env.WINDOWS_ARCH == 'amd64'
         id: msys2-amd64
-        uses: msys2/setup-msys2@v2
+        uses: msys2/setup-msys2@66cd2cce69caa17b53920067426061ca1de3a884 # v2.32.0 https://github.com/msys2/setup-msys2/releases/tag/v2.32.0
         with:
           msystem: MINGW64
           update: true
@@ -49,7 +49,7 @@ jobs:
       - name: Set up MSYS2 CLANGARM64 (arm64 CGO for Fyne)
         if: env.WINDOWS_ARCH == 'arm64'
         id: msys2-arm64
-        uses: msys2/setup-msys2@v2
+        uses: msys2/setup-msys2@66cd2cce69caa17b53920067426061ca1de3a884 # v2.32.0 https://github.com/msys2/setup-msys2/releases/tag/v2.32.0
         with:
           msystem: CLANGARM64
           update: true
