@@ -17,7 +17,7 @@ permissions:
 
 jobs:
   orchestrate:
-    uses: blinklabs-io/actions/.github/workflows/reuseable-publish-desktop.yml@6539da8cd0614aef85f2008ec646acb22d5caddf
+    uses: blinklabs-io/actions/.github/workflows/reuseable-publish-desktop.yml@a9498f1f0fe3613599747c43b6efcde52298cec1
     secrets:
       apple-app-specific-password: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
       apple-certificate: ${{ secrets.APPLE_CERTIFICATE }}
