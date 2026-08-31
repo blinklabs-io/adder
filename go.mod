@@ -7,9 +7,9 @@ require (
 	fyne.io/fyne/v2 v2.8.0
 	github.com/SundaeSwap-finance/kugo v1.3.1
 	github.com/SundaeSwap-finance/ogmigo/v6 v6.2.1
-	github.com/blinklabs-io/gouroboros v0.197.0
-	github.com/blinklabs-io/ouroboros-mock v0.16.1
-	github.com/blinklabs-io/plutigo v0.3.0
+	github.com/blinklabs-io/gouroboros v0.202.0
+	github.com/blinklabs-io/ouroboros-mock v0.18.0
+	github.com/blinklabs-io/plutigo v0.4.0
 	github.com/btcsuite/btcd/btcutil v1.2.0
 	github.com/gen2brain/beeep v0.11.2
 	github.com/go-telegram/bot v1.23.0
@@ -45,14 +45,14 @@ require (
 	github.com/KyleBanks/depth v1.2.1 // indirect
 	github.com/anthonynsimon/bild v0.14.0 // indirect
 	github.com/aws/aws-sdk-go v1.55.8 // indirect
-	github.com/bits-and-blooms/bitset v1.24.4 // indirect
+	github.com/bits-and-blooms/bitset v1.24.6 // indirect
 	github.com/btcsuite/btcd/btcec/v2 v2.5.0 // indirect
 	github.com/btcsuite/btcd/chaincfg/chainhash v1.2.0 // indirect
 	github.com/btcsuite/btcd/chainhash/v2 v2.0.0 // indirect
 	github.com/btcsuite/btcutil v1.0.2 // indirect
 	github.com/buger/jsonparser v1.2.0 // indirect
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
-	github.com/consensys/gnark-crypto v0.20.1 // indirect
+	github.com/consensys/gnark-crypto v0.21.0 // indirect
 	github.com/decred/dcrd/crypto/blake256 v1.1.0 // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.1 // indirect
 	github.com/esiqveland/notify v0.13.3 // indirect
