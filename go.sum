@@ -31,8 +31,8 @@ github.com/blinklabs-io/gouroboros v0.202.2 h1:rb21cE7YJwpbh/fEWxC5IpSig+zdDsuZU
 github.com/blinklabs-io/gouroboros v0.202.2/go.mod h1:y+bzoTL4JC1qu5m2NTERWuFl+fz6JPKBq22lQDIpjWs=
 github.com/blinklabs-io/ouroboros-mock v0.18.0 h1:m7f7jUhkxp6NlVF86BLxGDNaATjbhQXcWIFqJ4HFyh8=
 github.com/blinklabs-io/ouroboros-mock v0.18.0/go.mod h1:6YjKLLIaSTSrl8RJTg584f+W5NwniLNn/GHja2ijic0=
-github.com/blinklabs-io/plutigo v0.5.0 h1:qDb6ADY5f0LWfQBdr3tZTYGqJGgFdmDQI/iyjSz8CJs=
-github.com/blinklabs-io/plutigo v0.5.0/go.mod h1:ceskOZD5ZkkxhctkfvzRe3XEYdOzFYoxp11RqiG6oeU=
+github.com/blinklabs-io/plutigo v0.5.1 h1:cHmv2LII0fZggrOfp6wzW9t644HzTB6s7/vzHVpHJs8=
+github.com/blinklabs-io/plutigo v0.5.1/go.mod h1:ceskOZD5ZkkxhctkfvzRe3XEYdOzFYoxp11RqiG6oeU=
 github.com/btcsuite/btcd v0.20.1-beta/go.mod h1:wVuoA8VJLEcwgqHBwHmzLRazpKxTv13Px/pDuV7OomQ=
 github.com/btcsuite/btcd/btcec/v2 v2.5.0 h1:KioMXOWa76b86sTZZOmbzv/ldaQCmB8KFAyn5PbB8E8=
 github.com/btcsuite/btcd/btcec/v2 v2.5.0/go.mod h1:+K/MYXcLBtHEQjRbjHuJChuybk4LCgjdjgRwil+e+Kk=
