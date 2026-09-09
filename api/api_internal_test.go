@@ -203,6 +203,68 @@ func TestResponseRecorder_FlushAndHijack(t *testing.T) {
 	assert.Nil(t, rw)
 }
 
+type minimalResponseWriter struct {
+	header http.Header
+	code   int
+	body   []byte
+}
+
+func (m *minimalResponseWriter) Header() http.Header {
+	if m.header == nil {
+		m.header = make(http.Header)
+	}
+	return m.header
+}
+
+func (m *minimalResponseWriter) Write(b []byte) (int, error) {
+	m.body = append(m.body, b...)
+	return len(b), nil
+}
+
+func (m *minimalResponseWriter) WriteHeader(statusCode int) {
+	m.code = statusCode
+}
+
+type mockHijackerOnly struct {
+	*minimalResponseWriter
+	hijacked bool
+}
+
+func (m *mockHijackerOnly) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	m.hijacked = true
+	return nil, nil, nil
+}
+
+// TestResponseRecorder_HijackerOnly verifies that a ResponseWriter supporting
+// only Hijack (and not Flush) is correctly wrapped and can be hijacked.
+func TestResponseRecorder_HijackerOnly(t *testing.T) {
+	base := &mockHijackerOnly{minimalResponseWriter: &minimalResponseWriter{}}
+	rec := newResponseRecorder(base)
+
+	_, okFlusher := rec.(http.Flusher)
+	assert.False(t, okFlusher)
+	_, okHijacker := rec.(http.Hijacker)
+	assert.True(t, okHijacker)
+
+	conn, rw, err := rec.(http.Hijacker).Hijack()
+	assert.NoError(t, err)
+	assert.True(t, base.hijacked)
+	assert.Nil(t, conn)
+	assert.Nil(t, rw)
+}
+
+func TestAddRoute_UnsupportedMethod(t *testing.T) {
+	a := New(true)
+	a.AddRoute("INVALID", "/unsupported", func(w http.ResponseWriter, r *http.Request) {})
+
+	req, err := http.NewRequest(http.MethodGet, "/unsupported", nil)
+	require.NoError(t, err)
+	rr := httptest.NewRecorder()
+	a.Engine().ServeHTTP(rr, req)
+
+	assert.Equal(t, http.StatusNotFound, rr.Code)
+}
+
 // mockResponseWriterNoFlusher does NOT implement http.Flusher
 type mockResponseWriterNoFlusher struct {
 	http.ResponseWriter
