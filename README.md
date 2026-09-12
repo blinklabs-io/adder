@@ -800,3 +800,21 @@ Example — only governance events involving a specific DRep:
 adder --filter-type input.governance \
   --filter-drep drep1p4h4ea7y70ede2wy7x3t83x4umm63wwq68308f94cmt7szexmnr
 ```
+
+## Additional Documentation
+
+For more detailed information, setup manuals, and architecture details, see the
+following:
+
+- [Dingo-Adder Local N2C Connection Architecture](./docs/dingo-adder.md) —
+  Detailed description, text-based connection diagrams, and data flows of our
+  local UNIX socket orchestration.
+- [Dingo macOS Setup & QA Verification Guide](./docs/dingo-macos-setup.md) —
+  Concise setup and verification guide for running Dingo and Adder (on Docker
+  Compose and macOS Native container virtual machines).
+- [Governance Event Documentation](./docs/governance.md) — Detailed information
+  about governance schemas, supported actions, and fields.
+- [Adder Tray Filtering and Notification Semantics](./docs/adder-tray-filtering.md)
+  — Troubleshooting and detailed configuration guides for the system tray
+  application.
+
