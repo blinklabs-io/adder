@@ -1,0 +1,37 @@
+---
+# Preview network configuration for local testing with Dingo
+
+api:
+  address: 0.0.0.0
+  port: 8080
+
+logging:
+  level: debug
+
+input: chainsync
+output: log
+
+# Preview testnet transitions directly at epoch 0 with no Byron era
+shelley_trans_epoch: 0
+
+byron_genesis:
+  end_slot: 0
+  epoch_length: 86400
+  byron_slots_per_epoch: 86400
+
+shelley_genesis:
+  epoch_length: 86400
+
+plugins:
+  input:
+    chainsync:
+      network: preview
+      socket-path: /ipc/node.socket
+      intersect_tip: false # Start from Genesis to verify early block events
+      include_cbor: false
+      auto_reconnect: true
+      delay_confirmations: 0
+
+  output:
+    log:
+      level: info
