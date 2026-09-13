@@ -27,8 +27,11 @@ docker compose up --build -d
 
 ### Step A: Verify Connection and Intersect
 
-Verify that Dingo has booted and that Adder successfully connected to the UNIX
-domain socket and is processing blocks:
+By default, the `config-preview.yaml` configuration is configured with `intersect-tip: true`. This instructs Adder to perform a ChainSync intersection at the current tip of the Dingo node instead of starting from Genesis (slot 0).
+
+1. **First-Time Sync (Genesis Tip):** On a brand new, empty stack where Dingo starts with a clean database volume, the node's initial tip is Genesis (slot 0). Thus, the initial intersection occurs at genesis, and Adder begins streaming blocks sequentially starting from block 1.
+
+Verify that Dingo has booted, Adder successfully connected to the UNIX domain socket, completed the intersection handshake, and is processing blocks:
 
 ```bash
 docker compose logs adder | tail -n 20
@@ -41,6 +44,27 @@ You should see incoming block notifications with incrementing slot numbers:
 ```text
 adder-1  | 2026-08-29 05:02:49 BLOCK        slot=20         block=1        hash=cd619529...
 adder-1  | 2026-08-29 05:02:49 BLOCK        slot=40         block=2        hash=819b76c8...
+```
+
+2. **Verifying ChainSync Intersection (Active Tip):** To explicitly exercise and verify the intersection logic with a non-genesis tip, allow the stack to run and sync some blocks (e.g., until slot 100 or higher). Then, restart only the `adder` service:
+
+```bash
+docker compose restart adder
+```
+
+Now, check the logs again:
+
+```bash
+docker compose logs adder | tail -n 20
+```
+
+**Expected Output:**
+
+Rather than restarting from block 1 (slot 20), Adder query-intersects at the node's active synced tip, and immediately resumes streaming blocks from that point onward (e.g. starting at slot 120 or whatever the last synced block was):
+
+```text
+adder-1  | 2026-08-29 05:03:15 BLOCK        slot=120        block=6        hash=7d77b8f2...
+adder-1  | 2026-08-29 05:03:17 BLOCK        slot=140        block=7        hash=1a2b3c4d...
 ```
 
 ### Step B: The "Something Weird" Check (On-Demand Grep)
@@ -147,7 +171,7 @@ file on your Mac disk:
 go run ./cmd/adder --input chainsync \
   --input-chainsync-socket-path ~/dingo-ipc/node.socket \
   --input-chainsync-network preview \
-  --input-chainsync-intersect-tip=false \
+  --input-chainsync-intersect-tip=true \
   --output log
 ```
 

@@ -27,10 +27,10 @@ plugins:
     chainsync:
       network: preview
       socket-path: /ipc/node.socket
-      intersect_tip: false # Start from Genesis to verify early block events
-      include_cbor: false
-      auto_reconnect: true
-      delay_confirmations: 0
+      intersect-tip: true # Enable ChainSync intersection at the node's current tip
+      include-cbor: false
+      auto-reconnect: true
+      delay-confirmations: 0
 
   output:
     log:
