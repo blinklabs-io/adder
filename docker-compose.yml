@@ -1,0 +1,48 @@
+version: '3.8'
+
+services:
+  dingo:
+    # Check for latest Dingo releases: https://github.com/blinklabs-io/dingo/releases
+    image: ghcr.io/blinklabs-io/dingo:0.70.9
+    command: serve --socket-path /ipc/node.socket --network preview
+    volumes:
+      - dingo-ipc:/ipc
+      - dingo-data:/data
+    # ports:
+    #   # Node-to-Node (NtN) port: for syncing block data with Cardano network peers
+    #   # (Not used for local dingo-adder socket connection)
+    #   - "3001:3001"
+    #   # Node-to-Client (NtC) TCP port: alternative local connection endpoint for TCP-based clients
+    #   # (Not used for local dingo-adder socket connection)
+    #   - "3002:3002"
+    #   # Prometheus metrics port: exposes real-time node stats (block height, memory, sync progress)
+    #   # (Not used for local dingo-adder socket connection)
+    #   - "12798:12798"
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+  adder:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: --config /config/config-preview.yaml
+    user: "0"
+    volumes:
+      - dingo-ipc:/ipc
+      - ./config-preview.yaml:/config/config-preview.yaml:ro
+    depends_on:
+      - dingo
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+volumes:
+  dingo-ipc:
+  dingo-data:
