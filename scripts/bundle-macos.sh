@@ -2,6 +2,10 @@
 set -e
 
 # bundle-macos.sh - Creates a local Adder.app bundle for visual verification.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+cd "${REPO_ROOT}"
+
 APP_NAME="AdderTray"
 BUNDLE_DIR="${APP_NAME}.app"
 CONTENTS_DIR="${BUNDLE_DIR}/Contents"
@@ -18,9 +22,11 @@ echo "--- Cleaning old builds ---"
 rm -f adder adder-tray
 rm -rf "${BUNDLE_DIR}"
 
-echo "--- Building Adder Binaries ---"
-make build
-make build-tray
+VERSION="${VERSION:-$(git describe --tags --always 2>/dev/null || echo "dev")}"
+
+echo "--- Building Adder Binaries (${VERSION}) ---"
+make build VERSION="${VERSION}"
+make build-tray VERSION="${VERSION}"
 
 echo "--- Creating App Bundle Structure ---"
 mkdir -p "${MACOS_DIR}"
@@ -38,7 +44,7 @@ else
     echo "Warning: Adder.icns not found in .github/assets/"
 fi
 
-BASE_VERSION="1.5.0"
+BASE_VERSION="${VERSION#v}"
 TIMESTAMP=$(date +%Y%m%d.%H%M%S)
 GIT_HASH=$(git rev-parse --short HEAD 2>/dev/null || echo "nohash")
 BUILD_VER="${BASE_VERSION}-dev+${TIMESTAMP}.${GIT_HASH}"

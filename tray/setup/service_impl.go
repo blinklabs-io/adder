@@ -51,6 +51,9 @@ type ServiceConfig struct {
 	// LogDir is the directory for log output (used by platforms that
 	// do not support journal-style logging).
 	LogDir string
+	// AutoStart indicates whether the service should start automatically
+	// on system reboot / login.
+	AutoStart bool
 }
 
 // Validate checks that the ServiceConfig contains the minimum required fields.

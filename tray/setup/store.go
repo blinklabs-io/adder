@@ -107,15 +107,23 @@ func (s *LocalStore) SaveEngineAtomic(path string, cfg config.Config) error {
 	return config.SaveAtomic(path, &cfg)
 }
 
+func (s *LocalStore) trayPath() string {
+	if s.TrayConfigPath != "" {
+		return s.TrayConfigPath
+	}
+	return filepath.Join(ConfigDir(), "adder-tray.yaml")
+}
+
 func (s *LocalStore) LoadTray() (TrayConfig, error) {
 	cfg := TrayConfig{
 		APIAddress: "127.0.0.1",
 		APIPort:    8080,
 	}
-	if _, err := os.Stat(s.TrayConfigPath); os.IsNotExist(err) {
+	path := s.trayPath()
+	if _, err := os.Stat(path); os.IsNotExist(err) {
 		return cfg, nil
 	}
-	data, err := os.ReadFile(s.TrayConfigPath)
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return cfg, fmt.Errorf("reading tray config: %w", err)
 	}
@@ -126,9 +134,10 @@ func (s *LocalStore) LoadTray() (TrayConfig, error) {
 }
 
 func (s *LocalStore) SaveTrayAtomic(cfg TrayConfig) error {
-	dir := filepath.Dir(s.TrayConfigPath)
+	path := s.trayPath()
+	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("creating config directory: %w", err)
 	}
-	return config.SaveAtomic(s.TrayConfigPath, &cfg)
+	return config.SaveAtomic(path, &cfg)
 }

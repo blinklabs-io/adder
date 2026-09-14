@@ -663,6 +663,9 @@ exit 0
 	if runtime.GOOS == "darwin" {
 		name = "launchctl"
 		script = `#!/bin/sh
+if [ "$1" = "list" ] && [ -n "$2" ]; then
+  echo '"PID" = 12345;'
+fi
 exit 0
 `
 	}

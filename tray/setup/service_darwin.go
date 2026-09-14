@@ -49,9 +49,9 @@ const plistTemplate = `<?xml version="1.0" encoding="UTF-8"?>` + "\n" +
         {{- end}}
     </array>
     <key>RunAtLoad</key>
-    <true/>
+    <{{if .AutoStart}}true{{else}}false{{end}}/>
     <key>KeepAlive</key>
-    <true/>
+    <{{if .AutoStart}}true{{else}}false{{end}}/>
     <key>StandardOutPath</key>
     <string>{{.LogDir | xmlEscape}}/adder.stdout.log</string>
     <key>StandardErrorPath</key>
@@ -119,14 +119,28 @@ func registerService(cfg ServiceConfig) error {
 		return fmt.Errorf("writing plist file: %w", err)
 	}
 
-	// launchctl bootstrap can transiently fail with "Bootstrap failed: 5:
-	// Input/output error" when it races a just-completed bootout (launchd is
-	// still tearing down the old job). Retry that specific case a few times.
 	target := fmt.Sprintf("gui/%d", os.Getuid())
+	targetService := fmt.Sprintf("gui/%d/%s", os.Getuid(), launchAgentLabel)
+
+	// Unload the previous registration (if loaded) so the updated plist can be
+	// bootstrapped cleanly without "Bootstrap failed: 5".
+	_ = exec.Command("launchctl", "bootout", targetService).Run()
+
+	// Update macOS Login Items ("Open at Login") so the AdderTray menu bar
+	// icon also launches automatically on user login when AutoStart is requested.
+	updateDarwinLoginItem(cfg.AutoStart)
+
+	return bootstrapService(target, serviceUnitPath())
+}
+
+// bootstrapService wraps launchctl bootstrap with retries for transient
+// teardown races ("Bootstrap failed: 5: Input/output error").
+func bootstrapService(target, plistPath string) error {
 	var out []byte
-	for attempt := range 3 {
+	var err error
+	for attempt := range 5 {
 		out, err = exec.Command( //nolint:gosec // paths are generated internally
-			"launchctl", "bootstrap", target, serviceUnitPath(),
+			"launchctl", "bootstrap", target, plistPath,
 		).CombinedOutput()
 		if err == nil ||
 			strings.Contains(string(out), "service already bootstrapped") {
@@ -135,13 +149,24 @@ func registerService(cfg ServiceConfig) error {
 		if !strings.Contains(string(out), "Bootstrap failed: 5") {
 			break
 		}
+		// If the service is already loaded in launchd, bootstrap failed with 5
+		// because launchd rejects duplicate registration of an active service.
+		if isLoadedInLaunchd() {
+			return nil
+		}
 		time.Sleep(time.Duration(attempt+1) * 300 * time.Millisecond)
 	}
 	return fmt.Errorf("loading launch agent: %s: %w",
 		strings.TrimSpace(string(out)), err)
 }
 
+func isLoadedInLaunchd() bool {
+	return exec.Command("launchctl", "list", launchAgentLabel).Run() == nil
+}
+
 func unregisterService() error {
+	updateDarwinLoginItem(false)
+
 	target := fmt.Sprintf("gui/%d/%s", os.Getuid(), launchAgentLabel)
 	if out, err := exec.Command( //nolint:gosec // paths are generated internally
 		"launchctl", "bootout", target,
@@ -164,9 +189,10 @@ func serviceStatusCheck() (ServiceStatus, error) {
 		return ServiceNotRegistered, nil
 	}
 
-	if err := exec.Command(
+	out, err := exec.Command(
 		"launchctl", "list", launchAgentLabel,
-	).Run(); err == nil {
+	).Output()
+	if err == nil && strings.Contains(string(out), "\"PID\" = ") {
 		return ServiceRunning, nil
 	}
 
@@ -184,29 +210,34 @@ func startService() error {
 		return fmt.Errorf("service plist path is a directory: %s", plistPath)
 	}
 
-	// Check if already running to avoid "Bootstrap failed: 5" errors
-	if err := exec.Command(
-		"launchctl", "list", launchAgentLabel,
-	).Run(); err == nil {
+	// Check if already running to avoid redundant bootstrap/kickstart
+	status, err := serviceStatusCheck()
+	if err == nil && status == ServiceRunning {
 		return nil // Already running
 	}
 
 	target := fmt.Sprintf("gui/%d", os.Getuid())
-	cmd := exec.Command("launchctl", "bootstrap", target, plistPath)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		output := strings.TrimSpace(string(out))
-		// Fallback check for "already bootstrapped" in error output
-		if strings.Contains(output, "service already bootstrapped") ||
-			strings.Contains(output, "Bootstrap failed: 5") {
-			// Already started, this is fine
-		} else {
-			return fmt.Errorf("starting launch agent: %s: %w", output, err)
+	targetService := fmt.Sprintf("gui/%d/%s", os.Getuid(), launchAgentLabel)
+
+	// Ensure the service is loaded in launchd before kicking it off.
+	if !isLoadedInLaunchd() {
+		if err := bootstrapService(target, plistPath); err != nil {
+			return fmt.Errorf("starting launch agent: %w", err)
 		}
+	}
+
+	// Ensure the service process is started even if RunAtLoad is false
+	// or the service was already loaded in launchd but inactive.
+	if out, err := exec.Command( //nolint:gosec // arguments are internally controlled
+		"launchctl", "kickstart", "-p", targetService,
+	).CombinedOutput(); err != nil {
+		return fmt.Errorf("kickstarting launch agent: %s: %w",
+			strings.TrimSpace(string(out)), err)
 	}
 
 	// Verify that it's actually running after a short settling period
 	time.Sleep(500 * time.Millisecond)
-	status, err := serviceStatusCheck()
+	status, err = serviceStatusCheck()
 	if err != nil {
 		return fmt.Errorf("verifying service status: %w", err)
 	}
@@ -233,4 +264,45 @@ func stopService() error {
 func existingUnit() []byte {
 	data, _ := os.ReadFile(serviceUnitPath())
 	return data
+}
+
+func findAppBundlePath() string {
+	if exe, err := os.Executable(); err == nil {
+		if resolved, rerr := filepath.EvalSymlinks(exe); rerr == nil {
+			exe = resolved
+		}
+		if idx := strings.Index(exe, ".app"); idx != -1 {
+			return exe[:idx+4]
+		}
+	}
+	for _, candidate := range []string{
+		"/Applications/Adder.app",
+		"/Applications/AdderTray.app",
+	} {
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate
+		}
+	}
+	return ""
+}
+
+func updateDarwinLoginItem(enable bool) {
+	appPath := findAppBundlePath()
+	if appPath == "" {
+		return
+	}
+	appName := strings.TrimSuffix(filepath.Base(appPath), ".app")
+	// Always remove existing entry first to prevent duplicates
+	delScript := fmt.Sprintf(
+		`tell application "System Events" to delete (every login item whose name is %q or name is "Adder" or name is "AdderTray")`,
+		appName,
+	)
+	_ = exec.Command("osascript", "-e", delScript).Run() //nolint:gosec
+	if enable {
+		addScript := fmt.Sprintf(
+			`tell application "System Events" to make login item at end with properties {path:%q, hidden:false}`,
+			appPath,
+		)
+		_ = exec.Command("osascript", "-e", addScript).Run() //nolint:gosec
+	}
 }

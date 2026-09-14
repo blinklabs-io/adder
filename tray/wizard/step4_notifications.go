@@ -17,6 +17,9 @@ package wizard
 import (
 	"errors"
 	"fmt"
+	"log/slog"
+	"os/exec"
+	"runtime"
 	"strconv"
 	"time"
 
@@ -37,6 +40,11 @@ type notificationsStep struct {
 	verified     bool
 	verifyBox    *fyne.Container
 	verifyResult *widget.Label
+
+	// Startup & Background Activity
+	autoStartCheck *widget.Check
+	statusLabel    *widget.Label
+	settingsBtn    *widget.Button
 
 	// Rate-limit knobs live behind an "Advanced" accordion. Empty
 	// entries are interpreted as "use default" so a user who never
@@ -80,6 +88,16 @@ func (s *notificationsStep) createChecks() {
 		}
 	}
 	s.connection.SetChecked(initialConn)
+
+	initialAutoStart := true
+	if s.plan != nil {
+		initialAutoStart = s.plan.App.AutoStart
+	}
+	s.autoStartCheck = widget.NewCheck(
+		"Start Adder automatically on login / reboot",
+		func(bool) {},
+	)
+	s.autoStartCheck.SetChecked(initialAutoStart)
 }
 
 func (s *notificationsStep) createLayout() fyne.CanvasObject {
@@ -143,6 +161,24 @@ func (s *notificationsStep) createLayout() fyne.CanvasObject {
 		)
 	}
 
+	s.statusLabel = widget.NewLabel(getBackgroundActivityStatusText())
+	guidance := widget.NewLabel(
+		"To ensure Adder starts automatically, check system settings:\n" +
+			"System Settings > General > Login Items & Extensions > " +
+			"Open at Login / App Background Activity",
+	)
+	guidance.Wrapping = fyne.TextWrapWord
+
+	s.settingsBtn = widget.NewButtonWithIcon(
+		"Open Login Items Settings...",
+		theme.SettingsIcon(),
+		func() {
+			if err := openLoginItemsFunc(); err != nil {
+				slog.Warn("could not open login items settings", "error", err)
+			}
+		},
+	)
+
 	s.buildAdvancedRateLimit()
 
 	return container.NewVBox(
@@ -168,6 +204,16 @@ func (s *notificationsStep) createLayout() fyne.CanvasObject {
 		s.verifyResult,
 		s.verifyBox,
 		s.summaryLine,
+		widget.NewSeparator(),
+		widget.NewLabelWithStyle(
+			"Startup & Background Activity",
+			fyne.TextAlignLeading,
+			fyne.TextStyle{Bold: true},
+		),
+		s.autoStartCheck,
+		s.statusLabel,
+		guidance,
+		s.settingsBtn,
 		widget.NewSeparator(),
 		s.rateAdvanced,
 	)
@@ -344,5 +390,57 @@ func (s *notificationsStep) Apply(plan *setup.SetupPlan) {
 		); err == nil {
 			plan.App.NotifyRateWindow = d
 		}
+	}
+
+	if s.autoStartCheck != nil {
+		plan.App.AutoStart = s.autoStartCheck.Checked
+	}
+}
+
+func getBackgroundActivityStatusText() string {
+	status, err := setup.ServiceStatusCheck()
+	if err != nil {
+		return "Background Activity: Status unknown"
+	}
+	switch status {
+	case setup.ServiceRunning:
+		return "Background Activity: Registered & Running (io.blinklabs.adder)"
+	case setup.ServiceRegistered:
+		return "Background Activity: Registered (io.blinklabs.adder)"
+	case setup.ServiceNotRegistered:
+		return "Background Activity: Not registered"
+	default:
+		return "Background Activity: Status unknown"
+	}
+}
+
+var openLoginItemsFunc = openLoginItemsSettings
+
+func openLoginItemsSettings() error {
+	switch runtime.GOOS {
+	case "darwin":
+		cmd := exec.Command(
+			"open",
+			"x-apple.systempreferences:com.apple.LoginItems-Settings.extension",
+		)
+		if err := cmd.Run(); err != nil {
+			return exec.Command(
+				"open",
+				"-b",
+				"com.apple.systempreferences",
+			).Run()
+		}
+		return nil
+	case "windows":
+		return exec.Command(
+			"cmd",
+			"/c",
+			"start",
+			"ms-settings:startupapps",
+		).Run()
+	case "linux":
+		return exec.Command("xdg-open", "settings://").Start()
+	default:
+		return nil
 	}
 }

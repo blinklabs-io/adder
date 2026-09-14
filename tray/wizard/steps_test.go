@@ -755,3 +755,83 @@ func TestShowWizardCreatesWindow(t *testing.T) {
 
 	assert.NotNil(t, test.Canvas())
 }
+
+func TestNotificationsStepAutoStartHydrationAndApply(t *testing.T) {
+	test.NewApp()
+
+	// 1. Initialized with AutoStart: true
+	planTrue := &setup.SetupPlan{
+		Filter: setup.FilterConfig{MonitorEverything: true},
+		Notify: make(setup.NotificationPrefs),
+		App: setup.AppConfig{
+			AutoStart: true,
+		},
+	}
+	stepTrue := &notificationsStep{plan: planTrue}
+	stepTrue.Content()
+	require.NotNil(t, stepTrue.autoStartCheck)
+	assert.True(
+		t,
+		stepTrue.autoStartCheck.Checked,
+		"autoStartCheck should hydrate to true",
+	)
+
+	// Apply without modification
+	gotTrue := &setup.SetupPlan{App: setup.AppConfig{}}
+	stepTrue.Apply(gotTrue)
+	assert.True(t, gotTrue.App.AutoStart)
+
+	// 2. Initialized with AutoStart: false
+	planFalse := &setup.SetupPlan{
+		Filter: setup.FilterConfig{MonitorEverything: true},
+		Notify: make(setup.NotificationPrefs),
+		App: setup.AppConfig{
+			AutoStart: false,
+		},
+	}
+	stepFalse := &notificationsStep{plan: planFalse}
+	stepFalse.Content()
+	require.NotNil(t, stepFalse.autoStartCheck)
+	assert.False(
+		t,
+		stepFalse.autoStartCheck.Checked,
+		"autoStartCheck should hydrate to false",
+	)
+
+	// Toggle it to true and verify Apply
+	stepFalse.autoStartCheck.SetChecked(true)
+	gotFalse := &setup.SetupPlan{App: setup.AppConfig{}}
+	stepFalse.Apply(gotFalse)
+	assert.True(t, gotFalse.App.AutoStart)
+}
+
+func TestNotificationsStepStartupUIAndSettingsButton(t *testing.T) {
+	test.NewApp()
+	step := &notificationsStep{
+		plan: &setup.SetupPlan{
+			Filter: setup.FilterConfig{MonitorEverything: true},
+			Notify: make(setup.NotificationPrefs),
+		},
+	}
+	step.Content()
+
+	require.NotNil(t, step.statusLabel)
+	assert.NotEmpty(t, step.statusLabel.Text)
+	assert.Contains(t, step.statusLabel.Text, "Background Activity:")
+
+	require.NotNil(t, step.settingsBtn)
+	called := false
+	orig := openLoginItemsFunc
+	defer func() { openLoginItemsFunc = orig }()
+	openLoginItemsFunc = func() error {
+		called = true
+		return nil
+	}
+
+	step.settingsBtn.OnTapped()
+	assert.True(
+		t,
+		called,
+		"openLoginItemsFunc should be called when settings button is tapped",
+	)
+}

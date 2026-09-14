@@ -188,6 +188,9 @@ func NewWizard(
 				Config: make(map[string]string),
 			},
 			Notify: make(setup.NotificationPrefs),
+			App: setup.AppConfig{
+				AutoStart: true,
+			},
 		}
 	}
 
