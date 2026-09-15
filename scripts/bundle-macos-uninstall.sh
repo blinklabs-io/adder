@@ -40,14 +40,40 @@ pkill -f "${APP_NAME}" 2>/dev/null || true
 pkill -f "Contents/MacOS/adder" 2>/dev/null || true
 pkill -f "adder-tray" 2>/dev/null || true
 
+ERRORS=0
+
 echo "--- Removing from Login Items ---"
-osascript -e 'tell application "System Events" to delete (every login item whose name is "AdderTray" or name is "Adder")' 2>/dev/null || true
+if login_err=$(osascript -e 'tell application "System Events" to delete (every login item whose name is "AdderTray" or name is "Adder")' 2>&1); then
+    :
+else
+    echo "Warning: Failed to remove login items via osascript: ${login_err}" >&2
+    ERRORS=$((ERRORS + 1))
+fi
 
 echo "--- Unloading and removing LaunchAgent ---"
 if command -v launchctl >/dev/null 2>&1; then
     USER_ID=$(id -u)
-    launchctl bootout "gui/${USER_ID}/${LAUNCH_AGENT_LABEL}" 2>/dev/null || true
-    launchctl disable "gui/${USER_ID}/${LAUNCH_AGENT_LABEL}" 2>/dev/null || true
+    if bootout_out=$(launchctl bootout "gui/${USER_ID}/${LAUNCH_AGENT_LABEL}" 2>&1); then
+        :
+    else
+        if echo "${bootout_out}" | grep -Eqi "No such process|Could not find service|service not found"; then
+            :
+        else
+            echo "Warning: launchctl bootout failed: ${bootout_out}" >&2
+            ERRORS=$((ERRORS + 1))
+        fi
+    fi
+
+    if disable_out=$(launchctl disable "gui/${USER_ID}/${LAUNCH_AGENT_LABEL}" 2>&1); then
+        :
+    else
+        if echo "${disable_out}" | grep -Eqi "No such process|Could not find service|service not found"; then
+            :
+        else
+            echo "Warning: launchctl disable failed: ${disable_out}" >&2
+            ERRORS=$((ERRORS + 1))
+        fi
+    fi
 fi
 
 if [ -f "${LAUNCH_AGENT_FILE}" ]; then
@@ -82,6 +108,11 @@ else
     echo "Config: ${CONFIG_DIR}"
     echo "Logs:   ${LOG_DIR}"
     echo "To remove them as well, run: $0 --purge"
+fi
+
+if [ "${ERRORS}" -gt 0 ]; then
+    echo "--- WARNING: AdderTray uninstall completed with ${ERRORS} error(s) ---" >&2
+    exit 1
 fi
 
 echo "--- SUCCESS: AdderTray uninstalled successfully ---"

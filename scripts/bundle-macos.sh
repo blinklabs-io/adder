@@ -44,10 +44,16 @@ else
     echo "Warning: Adder.icns not found in .github/assets/"
 fi
 
-BASE_VERSION="${VERSION#v}"
+GIT_VERSION="${VERSION}"
+STRIPPED_VERSION="${VERSION#v}"
+if [[ "${STRIPPED_VERSION}" =~ ^[0-9]+(\.[0-9]+)+ ]]; then
+    BASE_VERSION="${BASH_REMATCH[0]}"
+else
+    BASE_VERSION="1.0.0"
+fi
 TIMESTAMP=$(date +%Y%m%d.%H%M%S)
 GIT_HASH=$(git rev-parse --short HEAD 2>/dev/null || echo "nohash")
-BUILD_VER="${BASE_VERSION}-dev+${TIMESTAMP}.${GIT_HASH}"
+BUILD_VER="${BASE_VERSION}"
 
 echo "--- Generating Info.plist (Version: ${BASE_VERSION}, Build: ${BUILD_VER}) ---"
 cat <<EOF > "${CONTENTS_DIR}/Info.plist"
@@ -71,6 +77,8 @@ cat <<EOF > "${CONTENTS_DIR}/Info.plist"
     <string>${BASE_VERSION}</string>
     <key>CFBundleVersion</key>
     <string>${BUILD_VER}</string>
+    <key>AdderGitVersion</key>
+    <string>${GIT_VERSION}</string>
     <key>LSUIElement</key>
     <false/>
     <key>NSHighResolutionCapable</key>

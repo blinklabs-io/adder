@@ -439,7 +439,7 @@ func openLoginItemsSettings() error {
 			"ms-settings:startupapps",
 		).Run()
 	case "linux":
-		return exec.Command("xdg-open", "settings://").Start()
+		return exec.Command("xdg-open", "settings://").Run()
 	default:
 		return nil
 	}

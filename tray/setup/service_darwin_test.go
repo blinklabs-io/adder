@@ -88,6 +88,8 @@ func TestFindAppBundlePath(t *testing.T) {
 func TestUpdateDarwinLoginItemNoPanic(t *testing.T) {
 	// Should execute gracefully without panicking
 	assert.NotPanics(t, func() {
-		updateDarwinLoginItem(false)
+		_ = updateDarwinLoginItem(false)
 	})
+	err := updateDarwinLoginItem(false)
+	assert.NoError(t, err)
 }

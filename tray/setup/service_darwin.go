@@ -19,6 +19,7 @@ package setup
 import (
 	"bytes"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -128,7 +129,9 @@ func registerService(cfg ServiceConfig) error {
 
 	// Update macOS Login Items ("Open at Login") so the AdderTray menu bar
 	// icon also launches automatically on user login when AutoStart is requested.
-	updateDarwinLoginItem(cfg.AutoStart)
+	if err := updateDarwinLoginItem(cfg.AutoStart); err != nil {
+		return fmt.Errorf("updating login item: %w", err)
+	}
 
 	return bootstrapService(target, serviceUnitPath())
 }
@@ -165,23 +168,27 @@ func isLoadedInLaunchd() bool {
 }
 
 func unregisterService() error {
-	updateDarwinLoginItem(false)
+	var errs []error
+	if err := updateDarwinLoginItem(false); err != nil {
+		errs = append(errs, err)
+	}
 
 	target := fmt.Sprintf("gui/%d/%s", os.Getuid(), launchAgentLabel)
 	if out, err := exec.Command( //nolint:gosec // paths are generated internally
 		"launchctl", "bootout", target,
 	).CombinedOutput(); err != nil {
-		if !strings.Contains(string(out), "Could not find service") {
-			return fmt.Errorf("unloading launch agent: %s: %w",
-				strings.TrimSpace(string(out)), err)
+		if !strings.Contains(string(out), "Could not find service") &&
+			!strings.Contains(string(out), "No such process") {
+			errs = append(errs, fmt.Errorf("unloading launch agent: %s: %w",
+				strings.TrimSpace(string(out)), err))
 		}
 	}
 
 	if err := os.Remove(serviceUnitPath()); err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("removing plist file: %w", err)
+		errs = append(errs, fmt.Errorf("removing plist file: %w", err))
 	}
 
-	return nil
+	return errors.Join(errs...)
 }
 
 func serviceStatusCheck() (ServiceStatus, error) {
@@ -286,10 +293,10 @@ func findAppBundlePath() string {
 	return ""
 }
 
-func updateDarwinLoginItem(enable bool) {
+func updateDarwinLoginItem(enable bool) error {
 	appPath := findAppBundlePath()
 	if appPath == "" {
-		return
+		return nil
 	}
 	appName := strings.TrimSuffix(filepath.Base(appPath), ".app")
 	// Always remove existing entry first to prevent duplicates
@@ -297,12 +304,29 @@ func updateDarwinLoginItem(enable bool) {
 		`tell application "System Events" to delete (every login item whose name is %q or name is "Adder" or name is "AdderTray")`,
 		appName,
 	)
-	_ = exec.Command("osascript", "-e", delScript).Run() //nolint:gosec
+	if out, err := exec.Command( //nolint:gosec
+		"osascript", "-e", delScript,
+	).CombinedOutput(); err != nil {
+		return fmt.Errorf(
+			"removing login item: %s: %w",
+			strings.TrimSpace(string(out)),
+			err,
+		)
+	}
 	if enable {
 		addScript := fmt.Sprintf(
 			`tell application "System Events" to make login item at end with properties {path:%q, hidden:false}`,
 			appPath,
 		)
-		_ = exec.Command("osascript", "-e", addScript).Run() //nolint:gosec
+		if out, err := exec.Command( //nolint:gosec
+			"osascript", "-e", addScript,
+		).CombinedOutput(); err != nil {
+			return fmt.Errorf(
+				"adding login item: %s: %w",
+				strings.TrimSpace(string(out)),
+				err,
+			)
+		}
 	}
+	return nil
 }
