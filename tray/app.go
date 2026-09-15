@@ -116,6 +116,8 @@ type App struct {
 	// it (wizard-finish, status observer, producer, Stats ticker,
 	// Shutdown).
 	notifyEngine atomic.Pointer[notifications.Engine]
+
+	aboutWindow fyne.Window
 }
 
 // NewApp creates and initialises the tray application.
@@ -540,9 +542,7 @@ func (a *App) setupTray() {
 		if err := setup.StartService(); err != nil {
 			slog.Error("failed to start service", "error", err)
 		}
-		if err := a.conn.Connect(); err != nil {
-			slog.Error("failed to connect", "error", err)
-		}
+		_ = a.conn.Reconnect()
 	})
 	mStop := fyne.NewMenuItem("Stop", func() {
 		a.intentionalStop.Store(true)
@@ -553,12 +553,11 @@ func (a *App) setupTray() {
 	})
 	mRestart := fyne.NewMenuItem("Restart", func() {
 		a.intentionalStop.Store(false)
-		a.conn.Disconnect()
 		_ = setup.StopService()
 		if err := setup.StartService(); err != nil {
 			slog.Error("failed to start service", "error", err)
 		}
-		_ = a.conn.Connect()
+		_ = a.conn.Reconnect()
 	})
 
 	mReconfigure := fyne.NewMenuItem("Reconfigure...", func() {
@@ -591,7 +590,7 @@ func (a *App) setupTray() {
 	})
 
 	mAbout := fyne.NewMenuItem("About", func() {
-		openURL("https://github.com/blinklabs-io/adder")
+		a.showAbout()
 	})
 	mQuit := fyne.NewMenuItem("Quit", func() {
 		// Shutdown orchestrates the right teardown order before
@@ -1256,4 +1255,16 @@ func openURL(url string) {
 // hide it.
 func suppressInitialFire(first *atomic.Bool, s Status) bool {
 	return first.Swap(false) && s == StatusStopped
+}
+
+func (a *App) showAbout() {
+	if a.aboutWindow != nil {
+		a.aboutWindow.RequestFocus()
+		return
+	}
+	win := ShowAbout(a.fyneApp)
+	a.aboutWindow = win
+	win.SetOnClosed(func() {
+		a.aboutWindow = nil
+	})
 }

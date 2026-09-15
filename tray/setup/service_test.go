@@ -76,7 +76,10 @@ func TestEnsureRegisteredAction(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			spy := &spyRegistrar{unit: tt.existing}
-			mgr := &OSManager{reg: spy}
+			mgr := &OSManager{
+				reg:       spy,
+				AutoStart: &cfg.AutoStart,
+			}
 			if err := mgr.EnsureRegistered(
 				cfg.BinaryPath, cfg.ConfigPath,
 			); err != nil {

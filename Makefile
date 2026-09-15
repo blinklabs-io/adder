@@ -11,7 +11,9 @@ BINARIES=$(shell cd $(ROOT_DIR)/cmd && ls -1 | grep -v ^common | grep -v ^adder-
 GOMODULE=$(shell grep ^module $(ROOT_DIR)/go.mod | awk '{ print $$2 }')
 
 # Set version strings based on git tag and current ref
-GO_LDFLAGS_CONTENT=-s -w -X '$(GOMODULE)/internal/version.Version=$(shell git describe --tags --exact-match 2>/dev/null)' -X '$(GOMODULE)/internal/version.CommitHash=$(shell git rev-parse --short HEAD)'
+VERSION ?= $(shell git describe --tags --exact-match 2>/dev/null)
+COMMIT_HASH ?= $(shell git rev-parse --short HEAD 2>/dev/null)
+GO_LDFLAGS_CONTENT=-s -w -X '$(GOMODULE)/internal/version.Version=$(VERSION)' -X '$(GOMODULE)/internal/version.CommitHash=$(COMMIT_HASH)'
 GO_LDFLAGS=-ldflags "$(GO_LDFLAGS_CONTENT)"
 
 # adder-tray must link against the Windows GUI subsystem so launching it
@@ -29,7 +31,7 @@ build: $(BINARIES)
 
 # Create a local Adder.app for macOS
 bundle-macos:
-	./bundle-macos.sh
+	./scripts/bundle-macos.sh
 
 # Build a (signed + notarized when secrets are set) macOS .pkg installer
 # containing both adder and adder-tray inside Adder.app. See

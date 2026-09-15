@@ -57,6 +57,10 @@ type OSManager struct {
 	// reg is the registration backend; nil means the real platform functions
 	// (osRegistrar). Tests inject a fake to observe skip vs repair.
 	reg registrar
+	// AutoStart overrides the autostart setting when non-nil.
+	// When nil, EnsureRegistered attempts to read AutoStart from the persisted
+	// TrayConfig, defaulting to false if unavailable.
+	AutoStart *bool
 }
 
 // registrar returns the injected backend, or the real OS-backed default so a
@@ -68,11 +72,22 @@ func (m *OSManager) registrar() registrar {
 	return osRegistrar{}
 }
 
+func (m *OSManager) autoStartPreference() bool {
+	if m.AutoStart != nil {
+		return *m.AutoStart
+	}
+	if tray, err := (&LocalStore{}).LoadTray(); err == nil {
+		return tray.AutoStart
+	}
+	return false
+}
+
 func (m *OSManager) EnsureRegistered(binPath, cfgPath string) error {
 	cfg := ServiceConfig{
 		BinaryPath: binPath,
 		ConfigPath: cfgPath,
 		LogDir:     LogDir(),
+		AutoStart:  m.autoStartPreference(),
 	}
 
 	desired, err := renderUnit(cfg)
@@ -109,6 +124,7 @@ func (m *OSManager) RestartIfConfigChanged(binPath, cfgPath string) error {
 		BinaryPath: binPath,
 		ConfigPath: cfgPath,
 		LogDir:     LogDir(),
+		AutoStart:  m.autoStartPreference(),
 	}
 
 	desired, err := renderUnit(cfg)
