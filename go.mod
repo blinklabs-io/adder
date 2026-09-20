@@ -9,7 +9,7 @@ require (
 	github.com/SundaeSwap-finance/ogmigo/v6 v6.2.1
 	github.com/blinklabs-io/gouroboros v0.204.1
 	github.com/blinklabs-io/ouroboros-mock v0.19.0
-	github.com/blinklabs-io/plutigo v0.5.1
+	github.com/blinklabs-io/plutigo v0.6.1
 	github.com/btcsuite/btcd/btcutil v1.2.0
 	github.com/gen2brain/beeep v0.11.2
 	github.com/go-telegram/bot v1.25.0
