@@ -63,12 +63,12 @@ func GetIcon(size uint, tint color.Color) fyne.Resource {
 		return fyne.NewStaticResource("fallback_"+name, data)
 	}
 
-	// Resize using golang.org/x/image/draw (CatmullRom for high quality)
+	// Resize preserving aspect ratio and centering within the square icon.
 	rect := image.Rect(0, 0, int(size), int(size))
 	img := image.NewRGBA(rect)
 	xdraw.CatmullRom.Scale(
 		img,
-		rect,
+		fitRect(baseLogo.Bounds(), int(size)),
 		baseLogo,
 		baseLogo.Bounds(),
 		xdraw.Over,
@@ -112,12 +112,12 @@ func GetGrayscaleIcon(size uint) fyne.Resource {
 		return GetIcon(size, color.Gray{Y: 128})
 	}
 
-	// Resize using golang.org/x/image/draw
+	// Resize preserving aspect ratio and centering within the square icon.
 	rect := image.Rect(0, 0, int(size), int(size))
 	img := image.NewRGBA(rect)
 	xdraw.CatmullRom.Scale(
 		img,
-		rect,
+		fitRect(baseLogo.Bounds(), int(size)),
 		baseLogo,
 		baseLogo.Bounds(),
 		xdraw.Over,
@@ -205,4 +205,25 @@ func generateFallbackImage(size uint, c color.Color) image.Image {
 	img := image.NewRGBA(image.Rect(0, 0, int(size), int(size)))
 	draw.Draw(img, img.Bounds(), &image.Uniform{c}, image.Point{}, draw.Src)
 	return img
+}
+
+func fitRect(srcBounds image.Rectangle, size int) image.Rectangle {
+	srcW := srcBounds.Dx()
+	srcH := srcBounds.Dy()
+	if srcW <= 0 || srcH <= 0 || size <= 0 {
+		return image.Rect(0, 0, size, size)
+	}
+
+	var dstW, dstH int
+	if srcW > srcH {
+		dstW = size
+		dstH = (srcH * size) / srcW
+	} else {
+		dstH = size
+		dstW = (srcW * size) / srcH
+	}
+
+	offsetX := (size - dstW) / 2
+	offsetY := (size - dstH) / 2
+	return image.Rect(offsetX, offsetY, offsetX+dstW, offsetY+dstH)
 }

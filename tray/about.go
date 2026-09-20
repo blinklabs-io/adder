@@ -45,7 +45,7 @@ func formatAboutVersion() string {
 func ShowAbout(fyneApp fyne.App) fyne.Window {
 	win := fyneApp.NewWindow("About Adder")
 
-	icon := canvas.NewImageFromResource(assets.GetIcon(64, nil))
+	icon := canvas.NewImageFromResource(assets.GetFullResource())
 	icon.FillMode = canvas.ImageFillContain
 	icon.SetMinSize(fyne.NewSize(64, 64))
 	iconBox := container.NewCenter(icon)

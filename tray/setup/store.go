@@ -46,6 +46,10 @@ type TrayConfig struct {
 	// NotifyRateWindow is the limiter window. Zero is resolved to
 	// DefaultNotifyRateWindow at load time.
 	NotifyRateWindow time.Duration `yaml:"notify_rate_window,omitempty"`
+
+	// SkippedVersion records a release tag the user chose to skip in the
+	// update checker.
+	SkippedVersion string `yaml:"skipped_version,omitempty"`
 }
 
 // Default values for the notification rate limiter. Used when the

@@ -117,7 +117,9 @@ type App struct {
 	// Shutdown).
 	notifyEngine atomic.Pointer[notifications.Engine]
 
-	aboutWindow fyne.Window
+	aboutWindow   fyne.Window
+	updateWindow  fyne.Window
+	updateChecker UpdateChecker
 }
 
 // NewApp creates and initialises the tray application.
@@ -188,11 +190,12 @@ func NewApp(fyneApp fyne.App) (*App, error) {
 	}
 
 	a := &App{
-		config:    cfg,
-		fyneApp:   fyneApp,
-		blockIcon: blockPath,
-		govIcon:   govPath,
-		txIcon:    txPath,
+		config:        cfg,
+		fyneApp:       fyneApp,
+		blockIcon:     blockPath,
+		govIcon:       govPath,
+		txIcon:        txPath,
+		updateChecker: NewGitHubUpdateChecker(""),
 		conn: NewConnectionManager(
 			WithConnectionAddress(cfg.APIAddress),
 			WithConnectionPort(cfg.APIPort),
@@ -589,6 +592,9 @@ func (a *App) setupTray() {
 		openFolder(LogDir())
 	})
 
+	mCheckUpdates := fyne.NewMenuItem("Check for Updates...", func() {
+		a.showCheckForUpdates()
+	})
 	mAbout := fyne.NewMenuItem("About", func() {
 		a.showAbout()
 	})
@@ -614,6 +620,7 @@ func (a *App) setupTray() {
 		mShowConfig,
 		mShowLogs,
 		fyne.NewMenuItemSeparator(),
+		mCheckUpdates,
 		mAbout,
 		mQuit,
 	)
@@ -1267,4 +1274,41 @@ func (a *App) showAbout() {
 	win.SetOnClosed(func() {
 		a.aboutWindow = nil
 	})
+}
+
+func (a *App) showCheckForUpdates() {
+	if a.updateWindow != nil {
+		a.updateWindow.RequestFocus()
+		return
+	}
+	checker := a.updateChecker
+	if checker == nil {
+		checker = NewGitHubUpdateChecker("")
+	}
+	win := ShowUpdateWindow(
+		a.fyneApp,
+		checker,
+		WithOnRelaunch(func() {
+			a.Shutdown()
+		}),
+		WithOnSkip(func(ver string) {
+			a.configMu.Lock()
+			a.config.SkippedVersion = ver
+			cfg := a.config
+			a.configMu.Unlock()
+			if a.runner != nil && a.runner.Store != nil {
+				if err := a.runner.Store.SaveTrayAtomic(cfg); err != nil {
+					slog.Error("failed to save skipped version", "error", err)
+				}
+			} else {
+				if err := SaveConfig(cfg); err != nil {
+					slog.Error("failed to save skipped version", "error", err)
+				}
+			}
+		}),
+		WithOnClosed(func() {
+			a.updateWindow = nil
+		}),
+	)
+	a.updateWindow = win
 }

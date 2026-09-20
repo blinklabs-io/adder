@@ -31,6 +31,7 @@ type mockStore struct {
 	saved         bool
 	loadEngineErr error
 	saveEngineErr error
+	loadTrayErr   error
 	saveTrayErr   error
 }
 
@@ -49,7 +50,13 @@ func (m *mockStore) SaveEngineAtomic(path string, cfg config.Config) error {
 	m.saved = true
 	return nil
 }
-func (m *mockStore) LoadTray() (TrayConfig, error) { return m.tray, nil }
+
+func (m *mockStore) LoadTray() (TrayConfig, error) {
+	if m.loadTrayErr != nil {
+		return TrayConfig{}, m.loadTrayErr
+	}
+	return m.tray, nil
+}
 func (m *mockStore) SaveTrayAtomic(cfg TrayConfig) error {
 	if m.saveTrayErr != nil {
 		return m.saveTrayErr
@@ -142,6 +149,28 @@ func TestApplyDoesNotTouchHostServicesWithFakeManager(t *testing.T) {
 	assert.Equal(t, uint(8080), conn.port)
 }
 
+func TestApplyPreservesSkippedVersion(t *testing.T) {
+	store := &mockStore{
+		tray: TrayConfig{
+			SkippedVersion: "v0.44.0",
+		},
+	}
+	runner := &SetupRunner{
+		Store:   store,
+		Service: &mockService{},
+		Conn:    &mockConnector{},
+		Finder:  &mockFinder{path: "/tmp/adder"},
+	}
+
+	result, err := runner.Apply(context.Background(), SetupPlan{
+		Network: NetworkConfig{Name: "mainnet"},
+		Filter:  FilterConfig{MonitorEverything: true},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "v0.44.0", result.TrayConfig.SkippedVersion)
+	assert.Equal(t, "v0.44.0", store.tray.SkippedVersion)
+}
+
 // TestApplySurfacesRegisterErrorAndSkipsRestart guards the wizard flow
 // that previously failed on Windows: EnsureRegistered must run before
 // RestartIfConfigChanged, and a registration failure is a soft error
@@ -177,6 +206,7 @@ func TestApplyReturnsStoreErrorsBeforeServiceWork(t *testing.T) {
 	}{
 		{name: "load engine", store: &mockStore{loadEngineErr: wantErr}},
 		{name: "save engine", store: &mockStore{saveEngineErr: wantErr}},
+		{name: "load tray", store: &mockStore{loadTrayErr: wantErr}},
 		{name: "save tray", store: &mockStore{saveTrayErr: wantErr}},
 	}
 
@@ -197,6 +227,9 @@ func TestApplyReturnsStoreErrorsBeforeServiceWork(t *testing.T) {
 			require.Error(t, err)
 			assert.ErrorIs(t, err, wantErr)
 			assert.False(t, svc.running)
+			if tc.name == "load tray" {
+				assert.False(t, tc.store.saved, "engine config must not be saved if loading tray config fails")
+			}
 		})
 	}
 }

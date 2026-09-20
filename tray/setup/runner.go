@@ -85,12 +85,17 @@ func (r *SetupRunner) Apply(
 	slog.Info("applying setup plan")
 	var result ApplyResult
 
-	// 1. Prepare engine config
+	// 1. Prepare engine and tray configs
 	engineCfg, err := r.Store.LoadEngine(filepath.Join(ConfigDir(), "config.yaml"))
 	if err != nil {
 		return result, err
 	}
 	engineCfg = plan.ToEngineConfig(engineCfg)
+
+	existingTray, err := r.Store.LoadTray()
+	if err != nil {
+		return result, fmt.Errorf("loading tray config: %w", err)
+	}
 
 	// 2. Save Engine Config
 	engineCfgPath := filepath.Join(ConfigDir(), "config.yaml")
@@ -113,6 +118,7 @@ func (r *SetupRunner) Apply(
 		Filter:           CloneFilter(plan.Filter),
 		NotifyRateLimit:  plan.App.NotifyRateLimit,
 		NotifyRateWindow: plan.App.NotifyRateWindow,
+		SkippedVersion:   existingTray.SkippedVersion,
 	}
 	if err := r.Store.SaveTrayAtomic(trayCfg); err != nil {
 		return result, fmt.Errorf("saving tray config: %w", err)

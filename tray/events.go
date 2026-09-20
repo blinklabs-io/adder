@@ -233,7 +233,10 @@ func (c *EventClient) connectLoop() {
 
 // dial connects to the WS endpoint.
 func (c *EventClient) dial(replay bool) (*websocket.Conn, error) {
-	conn, _, err := websocket.DefaultDialer.Dial(c.wsURL(replay), nil)
+	conn, resp, err := websocket.DefaultDialer.Dial(c.wsURL(replay), nil)
+	if resp != nil && resp.Body != nil {
+		defer resp.Body.Close()
+	}
 	if err != nil {
 		return nil, fmt.Errorf("dialing ws: %w", err)
 	}

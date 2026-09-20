@@ -111,6 +111,10 @@ fi
 rm -rf "${DEST_APP}"
 cp -R "${BUNDLE_DIR}" /Applications/
 
+if command -v launchctl >/dev/null 2>&1; then
+    launchctl enable "gui/$(id -u)/io.blinklabs.adder" 2>/dev/null || true
+fi
+
 echo "--- SUCCESS: ${APP_NAME}.app installed to /Applications ---"
 echo "To verify the installed build version (QA), run:"
 echo "  defaults read \"${DEST_APP}/Contents/Info\" CFBundleVersion"
