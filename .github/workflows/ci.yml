@@ -1,0 +1,76 @@
+# Generated automatically by org-governance-bot. Do not edit manually.
+name: "ci"
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+    tags:
+      - v*
+      - v*.*.*
+
+jobs:
+  go-test:
+    needs: [golangci-lint]
+    uses: blinklabs-io/actions/.github/workflows/reuseable-go-test.yml@main
+    with:
+      go-versions: '["1.26.x"]'
+      platforms: '["ubuntu-latest","windows-latest"]'
+      pre-test-command: make build
+      system-dependencies: libgl1-mesa-dev xorg-dev libwayland-dev libxkbcommon-dev wayland-protocols
+      test-env: LANG=en_US.UTF-8
+      test-flags: -v -timeout 10m
+      windows-test-packages: ./tray/setup/...
+  golangci-lint:
+    uses: blinklabs-io/actions/.github/workflows/reuseable-golangci-lint.yml@main
+    with:
+      cgo-enabled: true
+      go-version: 1.26.x
+      system-dependencies: libgl1-mesa-dev xorg-dev libwayland-dev libxkbcommon-dev wayland-protocols
+  nilaway:
+    needs: [golangci-lint]
+    uses: blinklabs-io/actions/.github/workflows/reuseable-nilaway.yml@main
+    with:
+      cgo-enabled: true
+      exclude-pkgs: github.com/go-gl/glfw
+      go-version: 1.26.x
+      include-pkgs: github.com/blinklabs-io/adder
+      system-dependencies: libgl1-mesa-dev xorg-dev libwayland-dev libxkbcommon-dev wayland-protocols
+  ci-docker:
+    needs: [go-test, nilaway]
+    if: github.event_name == 'pull_request'
+    uses: blinklabs-io/actions/.github/workflows/reuseable-ci-docker-multiarch.yml@main
+    with:
+      image-name: blinklabs-io/adder
+  publish:
+    needs: [go-test, nilaway]
+    if: github.event_name == 'push'
+    uses: blinklabs-io/actions/.github/workflows/reuseable-publish-desktop.yml@394a5619291089536fd1a22361de7b8ea6703ac8
+    permissions:
+      attestations: write
+      contents: write
+      id-token: write
+      packages: write
+      security-events: write
+    secrets:
+      apple-app-specific-password: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+      apple-certificate: ${{ secrets.APPLE_CERTIFICATE }}
+      apple-certificate-password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+      apple-id: ${{ secrets.APPLE_ID }}
+      apple-installer-certificate: ${{ secrets.APPLE_INSTALLER_CERTIFICATE }}
+      apple-installer-certificate-password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+      apple-keychain-password: ${{ secrets.APPLE_KEYCHAIN_PASSWORD }}
+      apple-team-id: ${{ secrets.APPLE_TEAM_ID }}
+      certificate-chain: ${{ secrets.CERTIFICATE_CHAIN }}
+      certificate-key-name: ${{ secrets.CERTIFICATE_KEY_NAME }}
+      certificate-keystore: ${{ secrets.CERTIFICATE_KEYSTORE }}
+      certificate-sa-credentials: ${{ secrets.CERTIFICATE_SA_CREDENTIALS }}
+      certificate-store-type: ${{ secrets.CERTIFICATE_STORE_TYPE }}
+      docker-password: ${{ secrets.DOCKER_PASSWORD }}
+    with:
+      application-name: adder
+      description: Adder is a tool for tailing the Cardano blockchain and emitting events
+      docker-image: blinklabs/adder
+      go-version: 1.26.x
+      windows-signing-name: Adder
