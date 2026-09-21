@@ -127,6 +127,11 @@ func (c *GitHubUpdateChecker) CheckLatestRelease(
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		bodyStr := strings.TrimSpace(string(bodyBytes))
+		if bodyStr != "" {
+			return nil, fmt.Errorf("release check failed: HTTP %d: %s", resp.StatusCode, bodyStr)
+		}
 		return nil, fmt.Errorf("release check failed: HTTP %d", resp.StatusCode)
 	}
 
@@ -173,7 +178,10 @@ func IsUpdateAvailable(currentVer, latestTag string) (available bool, isDev bool
 	return semver.Compare(normLatest, normCurrent) > 0, false
 }
 
-// FindAssetForPlatform matches a release asset for the target OS and architecture.
+// FindAssetForPlatform matches a release installer asset for the target OS and
+// architecture. Only platform package installers (.pkg on darwin, .msi on
+// windows) are returned. Platforms that only distribute tarballs (Linux,
+// FreeBSD) return nil so the application directs the user to the release page.
 func FindAssetForPlatform(
 	assets []ReleaseAsset,
 	goos, goarch string,
@@ -184,8 +192,6 @@ func FindAssetForPlatform(
 		expectedExt = ".pkg"
 	case "windows":
 		expectedExt = ".msi"
-	case "linux", "freebsd":
-		expectedExt = ".tar.gz"
 	default:
 		return nil
 	}
@@ -225,6 +231,21 @@ func isAlphaNum(b byte) bool {
 	return (b >= '0' && b <= '9') || (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z')
 }
 
+func isValidSHA256Digest(digest string) bool {
+	digest = strings.TrimSpace(digest)
+	hexStr := strings.TrimPrefix(strings.ToLower(digest), "sha256:")
+	if len(hexStr) != 64 {
+		return false
+	}
+	for i := 0; i < len(hexStr); i++ {
+		c := hexStr[i]
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return false
+		}
+	}
+	return true
+}
+
 // DownloadAsset downloads a release asset to destPath with progress reporting
 // and optional checksum integrity verification.
 func DownloadAsset(
@@ -235,6 +256,10 @@ func DownloadAsset(
 	expectedDigest string,
 	progress func(downloaded, total int64),
 ) error {
+	if expectedDigest != "" && !isValidSHA256Digest(expectedDigest) {
+		return fmt.Errorf("invalid SHA-256 digest format: %q", expectedDigest)
+	}
+
 	if client == nil {
 		client = http.DefaultClient
 	}
@@ -257,6 +282,11 @@ func DownloadAsset(
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		bodyStr := strings.TrimSpace(string(bodyBytes))
+		if bodyStr != "" {
+			return fmt.Errorf("download failed: HTTP %d: %s", resp.StatusCode, bodyStr)
+		}
 		return fmt.Errorf("download failed: HTTP %d", resp.StatusCode)
 	}
 
@@ -365,8 +395,7 @@ var installerLauncher = func(filePath string) error {
 		// #nosec G204 -- filePath is a downloaded installer verified by checksum
 		return exec.Command("msiexec.exe", "/i", filePath).Start()
 	default:
-		// #nosec G204 -- filePath is a downloaded installer verified by checksum
-		return exec.Command("xdg-open", filepath.Dir(filePath)).Start()
+		return fmt.Errorf("automatic installation is not supported on %s", runtime.GOOS)
 	}
 }
 
@@ -378,9 +407,10 @@ var onCheckDone func()
 type UpdateWindowOption func(*updateWindowConfig)
 
 type updateWindowConfig struct {
-	onRelaunch func()
-	onSkip     func(version string)
-	onClosed   func()
+	onRelaunch     func()
+	onSkip         func(version string)
+	onClosed       func()
+	targetPlatform [2]string
 }
 
 // WithOnRelaunch sets the callback invoked when the user confirms relaunching
@@ -481,13 +511,6 @@ func ShowUpdateWindow(
 	progressBox := container.NewVBox(progressBar, progressLabel)
 	progressBox.Hide()
 
-	autoCheck := widget.NewCheck(
-		"Automatically download and install updates in the future",
-		nil,
-	)
-	autoCheck.SetChecked(true)
-	autoCheck.Hide()
-
 	skipBtn := widget.NewButton("Skip This Version", nil)
 	skipBtn.Hide()
 
@@ -508,7 +531,7 @@ func ShowUpdateWindow(
 	)
 
 	bodyStack := container.NewStack(framedBox, progressBox)
-	bottomBox := container.NewVBox(autoCheck, buttonBox)
+	bottomBox := buttonBox
 
 	content := container.NewBorder(
 		header,
@@ -533,7 +556,6 @@ func ShowUpdateWindow(
 			subtitleLabel.SetText("Checking for updates…")
 			framedBox.Hide()
 			progressBox.Hide()
-			autoCheck.Hide()
 			skipBtn.Hide()
 			installBtn.Hide()
 			closeBtn.SetText("Cancel")
@@ -569,7 +591,6 @@ func ShowUpdateWindow(
 					)
 					framedBox.Hide()
 					progressBox.Hide()
-					autoCheck.Hide()
 					skipBtn.Hide()
 					installBtn.SetText("Retry")
 					installBtn.Importance = widget.MediumImportance
@@ -605,7 +626,6 @@ func ShowUpdateWindow(
 					))
 					framedBox.Hide()
 					progressBox.Hide()
-					autoCheck.Hide()
 					skipBtn.Hide()
 					installBtn.Hide()
 					closeBtn.SetText("OK")
@@ -630,7 +650,13 @@ func ShowUpdateWindow(
 			}
 			notesText = strings.Join(lines, "\n")
 
-			asset := FindAssetForPlatform(info.Assets, runtime.GOOS, runtime.GOARCH)
+			targetOS := runtime.GOOS
+			targetArch := runtime.GOARCH
+			if cfg.targetPlatform[0] != "" {
+				targetOS = cfg.targetPlatform[0]
+				targetArch = cfg.targetPlatform[1]
+			}
+			asset := FindAssetForPlatform(info.Assets, targetOS, targetArch)
 
 			fyne.Do(func() {
 				if ctx.Err() != nil {
@@ -664,7 +690,6 @@ func ShowUpdateWindow(
 
 				framedBox.Show()
 				progressBox.Hide()
-				autoCheck.Show()
 
 				skipBtn.OnTapped = func() {
 					if cfg.onSkip != nil {
@@ -675,6 +700,11 @@ func ShowUpdateWindow(
 				skipBtn.Show()
 
 				if asset == nil {
+					subtitleLabel.SetText(fmt.Sprintf(
+						"Adder %s is now available (you have %s). Automatic installation is not supported on your platform. You can download and install the update manually.",
+						info.TagName,
+						curVer,
+					))
 					installBtn.SetText("Open Release Page")
 					installBtn.Importance = widget.HighImportance
 					installBtn.OnTapped = func() {
@@ -695,6 +725,21 @@ func ShowUpdateWindow(
 
 				var startDownload func()
 				startDownload = func() {
+					if !isValidSHA256Digest(asset.Digest) {
+						slog.Error("missing or unsupported checksum digest for update asset", "asset", asset.Name, "digest", asset.Digest)
+						fyne.Do(func() {
+							titleLabel.SetText("Update Verification Failed")
+							subtitleLabel.SetText("The release asset does not have a valid SHA-256 digest.")
+							closeBtn.SetText("Close")
+							closeBtn.Importance = widget.MediumImportance
+							closeBtn.OnTapped = func() { win.Close() }
+							closeBtn.Show()
+							buttonBox.Refresh()
+							content.Refresh()
+						})
+						return
+					}
+
 					assetName := filepath.Base(asset.Name)
 					if assetName == "." || assetName == ".." ||
 						assetName != asset.Name ||
@@ -723,7 +768,6 @@ func ShowUpdateWindow(
 						subtitleLabel.SetText("Please wait while the update is downloaded…")
 						framedBox.Hide()
 						progressBox.Show()
-						autoCheck.Hide()
 						skipBtn.Hide()
 						installBtn.Hide()
 						progressBar.SetValue(0)
@@ -788,7 +832,14 @@ func ShowUpdateWindow(
 							return
 						}
 
+						if dlCtx.Err() != nil || ctx.Err() != nil {
+							return
+						}
+
 						fyne.Do(func() {
+							if dlCtx.Err() != nil || ctx.Err() != nil {
+								return
+							}
 							titleLabel.SetText("A new version of Adder is ready to install!")
 							subtitleLabel.SetText(fmt.Sprintf(
 								"Adder %s has been downloaded and the installer was launched. Adder will now quit to complete installation.",
@@ -809,6 +860,9 @@ func ShowUpdateWindow(
 							buttonBox.Refresh()
 							content.Refresh()
 
+							if dlCtx.Err() != nil || ctx.Err() != nil {
+								return
+							}
 							if lerr := installerLauncher(targetFile); lerr != nil {
 								slog.Error("failed to launch installer", "error", lerr)
 								titleLabel.SetText("Failed to launch installer")

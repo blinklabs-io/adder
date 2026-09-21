@@ -28,6 +28,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -174,12 +175,10 @@ func TestFindAssetForPlatform(t *testing.T) {
 	assert.Equal(t, "adder-v0.44.0-windows-amd64.msi", winAmd.Name)
 
 	linuxAmd := FindAssetForPlatform(assets, "linux", "amd64")
-	require.NotNil(t, linuxAmd)
-	assert.Equal(t, "adder-v0.44.0-linux-amd64.tar.gz", linuxAmd.Name)
+	assert.Nil(t, linuxAmd)
 
 	freebsdAmd := FindAssetForPlatform(assets, "freebsd", "amd64")
-	require.NotNil(t, freebsdAmd)
-	assert.Equal(t, "adder-v0.44.0-freebsd-amd64.tar.gz", freebsdAmd.Name)
+	assert.Nil(t, freebsdAmd)
 
 	unsupportedOS := FindAssetForPlatform(assets, "solaris", "amd64")
 	assert.Nil(t, unsupportedOS)
@@ -188,16 +187,16 @@ func TestFindAssetForPlatform(t *testing.T) {
 	assert.Nil(t, unsupportedArch)
 
 	// Ensure prefix matching like "arm" does not match "arm64"
-	armMismatch := FindAssetForPlatform(assets, "linux", "arm")
-	assert.Nil(t, armMismatch)
+	darwinArmMismatch := FindAssetForPlatform(assets, "darwin", "arm")
+	assert.Nil(t, darwinArmMismatch)
 
 	// Add an explicit arm asset and verify it matches arm and not arm64
 	assetsWithArm := append(assets, ReleaseAsset{
-		Name: "adder-v0.44.0-linux-arm.tar.gz",
+		Name: "adder-0.44.0-darwin-arm.pkg",
 	})
-	linuxArm := FindAssetForPlatform(assetsWithArm, "linux", "arm")
-	require.NotNil(t, linuxArm)
-	assert.Equal(t, "adder-v0.44.0-linux-arm.tar.gz", linuxArm.Name)
+	darwinArmMatch := FindAssetForPlatform(assetsWithArm, "darwin", "arm")
+	require.NotNil(t, darwinArmMatch)
+	assert.Equal(t, "adder-0.44.0-darwin-arm.pkg", darwinArmMatch.Name)
 }
 
 func TestGitHubUpdateChecker(t *testing.T) {
@@ -239,6 +238,7 @@ func TestGitHubUpdateCheckerError(t *testing.T) {
 	server := httptest.NewServer(
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte("Not Found: release not available"))
 		}),
 	)
 	defer server.Close()
@@ -250,7 +250,47 @@ func TestGitHubUpdateCheckerError(t *testing.T) {
 
 	_, err := checker.CheckLatestRelease(context.Background())
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "HTTP 404")
+	assert.Contains(t, err.Error(), "HTTP 404: Not Found: release not available")
+}
+
+func TestDownloadAsset_HTTPError(t *testing.T) {
+	server := httptest.NewServer(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusForbidden)
+			_, _ = w.Write([]byte("rate limit exceeded"))
+		}),
+	)
+	defer server.Close()
+
+	tmpDir := t.TempDir()
+	destPath := filepath.Join(tmpDir, "test.pkg")
+
+	err := DownloadAsset(
+		context.Background(),
+		server.Client(),
+		server.URL,
+		destPath,
+		"sha256:0000000000000000000000000000000000000000000000000000000000000000",
+		nil,
+	)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "HTTP 403: rate limit exceeded")
+}
+
+func TestDownloadAsset_InvalidDigestFormat(t *testing.T) {
+	tmpDir := t.TempDir()
+	destPath := filepath.Join(tmpDir, "test.pkg")
+
+	err := DownloadAsset(
+		context.Background(),
+		nil,
+		"https://example.com/asset.pkg",
+		destPath,
+		"not-a-valid-digest",
+		nil,
+	)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid SHA-256 digest format")
 }
 
 func TestDownloadAsset(t *testing.T) {
@@ -568,6 +608,7 @@ func TestShowUpdateWindow_UpdateAvailable(t *testing.T) {
 	win := ShowUpdateWindow(
 		app,
 		checker,
+		withTargetPlatform("darwin", "arm64"),
 		WithOnSkip(func(ver string) {
 			skippedVersion = ver
 		}),
@@ -624,9 +665,13 @@ func TestShowUpdateWindow_InstallAndRelaunch(t *testing.T) {
 	}()
 	version.Version = "v0.43.0"
 
+	payload := []byte("mock installer")
+	h := sha256.Sum256(payload)
+	validDigest := "sha256:" + hex.EncodeToString(h[:])
+
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("mock installer"))
+		_, _ = w.Write(payload)
 	}))
 	defer server.Close()
 
@@ -643,7 +688,12 @@ func TestShowUpdateWindow_InstallAndRelaunch(t *testing.T) {
 			HTMLURL: "https://github.com/blinklabs-io/adder/releases/tag/v0.44.0",
 			Body:    "* Test release notes",
 			Assets: []ReleaseAsset{
-				testHostAsset(server.URL),
+				{
+					Name:               "adder-0.44.0-darwin-arm64.pkg",
+					BrowserDownloadURL: server.URL + "/test.pkg",
+					Size:               int64(len(payload)),
+					Digest:             validDigest,
+				},
 			},
 		},
 	}
@@ -662,6 +712,7 @@ func TestShowUpdateWindow_InstallAndRelaunch(t *testing.T) {
 	win := ShowUpdateWindow(
 		app,
 		checker,
+		withTargetPlatform("darwin", "arm64"),
 		WithOnRelaunch(func() {
 			relaunchedCh <- struct{}{}
 		}),
@@ -709,6 +760,230 @@ func TestShowUpdateWindow_InstallAndRelaunch(t *testing.T) {
 	}
 }
 
+func TestShowUpdateWindow_ManualInstallFlow(t *testing.T) {
+	origVer := version.Version
+	defer func() {
+		version.Version = origVer
+	}()
+	version.Version = "v0.43.0"
+
+	checker := &mockUpdateChecker{
+		info: &ReleaseInfo{
+			TagName: "v0.44.0",
+			Name:    "v0.44.0",
+			HTMLURL: "https://github.com/blinklabs-io/adder/releases/tag/v0.44.0",
+			Body:    "* Test release notes",
+			Assets: []ReleaseAsset{
+				{
+					Name:               "adder_0.44.0_linux_amd64.tar.gz",
+					BrowserDownloadURL: "https://example.com/adder.tar.gz",
+					Size:               1024,
+				},
+			},
+		},
+	}
+
+	done := make(chan struct{})
+	origHook := onCheckDone
+	onCheckDone = func() {
+		close(done)
+	}
+	defer func() {
+		onCheckDone = origHook
+	}()
+
+	app := test.NewApp()
+	win := ShowUpdateWindow(
+		app,
+		checker,
+		withTargetPlatform("linux", "amd64"),
+	)
+	require.NotNil(t, win)
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for check to complete")
+	}
+
+	var openBtn *widget.Button
+	require.Eventually(t, func() bool {
+		fyne.Do(func() {
+			openBtn = findButton(win.Content(), "Open Release Page")
+		})
+		return openBtn != nil
+	}, 2*time.Second, 10*time.Millisecond)
+	require.NotNil(t, openBtn)
+	fyne.Do(func() {
+		assert.Nil(t, findButton(win.Content(), "Install and Relaunch"))
+		openBtn.OnTapped()
+	})
+}
+
+func TestShowUpdateWindow_InvalidDigest(t *testing.T) {
+	origVer := version.Version
+	defer func() {
+		version.Version = origVer
+	}()
+	version.Version = "v0.43.0"
+
+	checker := &mockUpdateChecker{
+		info: &ReleaseInfo{
+			TagName: "v0.44.0",
+			Name:    "v0.44.0",
+			HTMLURL: "https://github.com/blinklabs-io/adder/releases/tag/v0.44.0",
+			Body:    "* Test release notes",
+			Assets: []ReleaseAsset{
+				{
+					Name:               "adder-0.44.0-darwin-arm64.pkg",
+					BrowserDownloadURL: "https://example.com/test.pkg",
+					Size:               1024,
+					Digest:             "invalid-digest",
+				},
+			},
+		},
+	}
+
+	done := make(chan struct{})
+	origHook := onCheckDone
+	onCheckDone = func() {
+		close(done)
+	}
+	defer func() {
+		onCheckDone = origHook
+	}()
+
+	app := test.NewApp()
+	win := ShowUpdateWindow(app, checker, withTargetPlatform("darwin", "arm64"))
+	require.NotNil(t, win)
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for check to complete")
+	}
+
+	var installBtn *widget.Button
+	require.Eventually(t, func() bool {
+		fyne.Do(func() {
+			installBtn = findButton(win.Content(), "Install and Relaunch")
+		})
+		return installBtn != nil
+	}, 2*time.Second, 10*time.Millisecond)
+
+	fyne.Do(func() {
+		installBtn.OnTapped()
+	})
+
+	var closeBtn *widget.Button
+	require.Eventually(t, func() bool {
+		fyne.Do(func() {
+			closeBtn = findButton(win.Content(), "Close")
+		})
+		return closeBtn != nil
+	}, 2*time.Second, 10*time.Millisecond)
+	require.NotNil(t, closeBtn)
+}
+
+func TestShowUpdateWindow_DownloadCanceledNoLaunch(t *testing.T) {
+	origVer := version.Version
+	origLauncher := installerLauncher
+	defer func() {
+		version.Version = origVer
+		installerLauncher = origLauncher
+	}()
+	version.Version = "v0.43.0"
+
+	launched := make(chan struct{}, 1)
+	installerLauncher = func(path string) error {
+		launched <- struct{}{}
+		return nil
+	}
+
+	started := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		close(started)
+		<-r.Context().Done()
+	}))
+	defer server.Close()
+
+	payloadHash := sha256.Sum256([]byte("dummy"))
+	validDigest := "sha256:" + hex.EncodeToString(payloadHash[:])
+
+	checker := &mockUpdateChecker{
+		info: &ReleaseInfo{
+			TagName: "v0.44.0",
+			Name:    "v0.44.0",
+			HTMLURL: "https://github.com/blinklabs-io/adder/releases/tag/v0.44.0",
+			Body:    "* Test release notes",
+			Assets: []ReleaseAsset{
+				{
+					Name:               "adder-0.44.0-darwin-arm64.pkg",
+					BrowserDownloadURL: server.URL + "/test.pkg",
+					Size:               5,
+					Digest:             validDigest,
+				},
+			},
+		},
+	}
+
+	var checkDoneWg sync.WaitGroup
+	checkDoneWg.Add(1)
+	origHook := onCheckDone
+	onCheckDone = func() {
+		checkDoneWg.Done()
+	}
+	defer func() {
+		checkDoneWg.Wait()
+		onCheckDone = origHook
+	}()
+
+	app := test.NewApp()
+	win := ShowUpdateWindow(app, checker, withTargetPlatform("darwin", "arm64"))
+	require.NotNil(t, win)
+
+	checkDoneWg.Wait()
+
+	var installBtn *widget.Button
+	require.Eventually(t, func() bool {
+		fyne.Do(func() {
+			installBtn = findButton(win.Content(), "Install and Relaunch")
+		})
+		return installBtn != nil
+	}, 2*time.Second, 10*time.Millisecond)
+
+	fyne.Do(func() {
+		installBtn.OnTapped()
+	})
+
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for download to start")
+	}
+
+	var cancelBtn *widget.Button
+	require.Eventually(t, func() bool {
+		fyne.Do(func() {
+			cancelBtn = findButton(win.Content(), "Cancel")
+		})
+		return cancelBtn != nil
+	}, 2*time.Second, 10*time.Millisecond)
+
+	checkDoneWg.Add(1)
+	fyne.Do(func() {
+		cancelBtn.OnTapped()
+	})
+
+	select {
+	case <-launched:
+		t.Fatal("installer launcher should not be called when download was canceled")
+	case <-time.After(300 * time.Millisecond):
+	}
+
+	checkDoneWg.Wait()
+}
+
 func findButton(obj fyne.CanvasObject, text string) *widget.Button {
 	if btn, ok := obj.(*widget.Button); ok {
 		if btn.Text == text {
@@ -728,16 +1003,21 @@ func findButton(obj fyne.CanvasObject, text string) *widget.Button {
 func testHostAsset(baseURL string) ReleaseAsset {
 	var ext string
 	switch runtime.GOOS {
-	case "darwin":
-		ext = ".pkg"
 	case "windows":
 		ext = ".msi"
 	default:
-		ext = ".tar.gz"
+		ext = ".pkg"
 	}
 	return ReleaseAsset{
 		Name:               fmt.Sprintf("adder_0.44.0_%s_%s%s", runtime.GOOS, runtime.GOARCH, ext),
 		BrowserDownloadURL: baseURL + "/test" + ext,
 		Size:               14,
+		Digest:             "sha256:ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+	}
+}
+
+func withTargetPlatform(goos, goarch string) UpdateWindowOption {
+	return func(c *updateWindowConfig) {
+		c.targetPlatform = [2]string{goos, goarch}
 	}
 }
