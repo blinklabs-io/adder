@@ -29,6 +29,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -42,13 +43,15 @@ import (
 )
 
 type mockUpdateChecker struct {
-	info *ReleaseInfo
-	err  error
+	info  *ReleaseInfo
+	err   error
+	calls atomic.Int32
 }
 
 func (m *mockUpdateChecker) CheckLatestRelease(
 	ctx context.Context,
 ) (*ReleaseInfo, error) {
+	m.calls.Add(1)
 	if m.err != nil {
 		return nil, m.err
 	}
@@ -574,6 +577,341 @@ func TestAppShowCheckForUpdatesWithOnSkipPersistsConfig(t *testing.T) {
 	assert.Equal(t, "v0.44.0", loaded.SkippedVersion)
 }
 
+func TestShowUpdateWindow_CheckWeekly_UpToDate(t *testing.T) {
+	origVer := version.Version
+	defer func() {
+		version.Version = origVer
+	}()
+	version.Version = "v0.44.0"
+
+	checker := &mockUpdateChecker{
+		info: &ReleaseInfo{
+			TagName: "v0.44.0",
+			Name:    "v0.44.0",
+			HTMLURL: "https://github.com/blinklabs-io/adder/releases/tag/v0.44.0",
+		},
+	}
+
+	done := make(chan struct{})
+	origHook := onCheckDone
+	onCheckDone = func() {
+		close(done)
+	}
+	defer func() {
+		onCheckDone = origHook
+	}()
+
+	var toggled atomic.Bool
+	toggled.Store(true)
+
+	app := test.NewApp()
+	win := ShowUpdateWindow(
+		app,
+		checker,
+		WithCheckWeekly(true, func(checked bool) {
+			toggled.Store(checked)
+		}),
+	)
+	require.NotNil(t, win)
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for check to complete")
+	}
+
+	var chk *widget.Check
+	require.Eventually(t, func() bool {
+		fyne.Do(func() {
+			chk = findCheck(win.Content(), "Check for updates weekly")
+		})
+		return chk != nil && chk.Visible()
+	}, 2*time.Second, 10*time.Millisecond)
+
+	if chk == nil {
+		t.Fatal("expected checkbox to be found")
+	}
+	assert.True(t, chk.Checked)
+	fyne.Do(func() {
+		chk.SetChecked(false)
+	})
+	assert.False(t, toggled.Load())
+
+	win.Close()
+}
+
+func TestShowUpdateWindow_CheckWeekly_UpdateAvailable(t *testing.T) {
+	origVer := version.Version
+	defer func() {
+		version.Version = origVer
+	}()
+	version.Version = "v0.43.0"
+
+	checker := &mockUpdateChecker{
+		info: &ReleaseInfo{
+			TagName: "v0.44.0",
+			Name:    "v0.44.0",
+			HTMLURL: "https://github.com/blinklabs-io/adder/releases/tag/v0.44.0",
+		},
+	}
+
+	done := make(chan struct{})
+	origHook := onCheckDone
+	onCheckDone = func() {
+		close(done)
+	}
+	defer func() {
+		onCheckDone = origHook
+	}()
+
+	var toggled atomic.Bool
+	app := test.NewApp()
+	win := ShowUpdateWindow(
+		app,
+		checker,
+		WithCheckWeekly(false, func(checked bool) {
+			toggled.Store(checked)
+		}),
+	)
+	require.NotNil(t, win)
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for check to complete")
+	}
+
+	var chk *widget.Check
+	require.Eventually(t, func() bool {
+		fyne.Do(func() {
+			chk = findCheck(win.Content(), "Check for updates weekly")
+		})
+		return chk != nil && chk.Visible()
+	}, 2*time.Second, 10*time.Millisecond)
+
+	if chk == nil {
+		t.Fatal("expected checkbox to be found")
+	}
+	assert.False(t, chk.Checked)
+	fyne.Do(func() {
+		chk.SetChecked(true)
+	})
+	assert.True(t, toggled.Load())
+
+	win.Close()
+}
+
+func TestAppShowCheckForUpdates_CheckWeeklyPersistsConfig(t *testing.T) {
+	origVer := version.Version
+	defer func() {
+		version.Version = origVer
+	}()
+	version.Version = "v0.44.0"
+
+	checker := &mockUpdateChecker{
+		info: &ReleaseInfo{
+			TagName: "v0.44.0",
+			Name:    "v0.44.0",
+			HTMLURL: "https://github.com/blinklabs-io/adder/releases/tag/v0.44.0",
+		},
+	}
+
+	done := make(chan struct{})
+	origHook := onCheckDone
+	onCheckDone = func() {
+		close(done)
+	}
+	defer func() {
+		onCheckDone = origHook
+	}()
+
+	store := &setup.LocalStore{
+		TrayConfigPath: filepath.Join(t.TempDir(), "adder-tray.yaml"),
+	}
+	app := test.NewApp()
+	a := &App{
+		fyneApp:       app,
+		updateChecker: checker,
+		runner: &setup.SetupRunner{
+			Store: store,
+		},
+		config: TrayConfig{
+			CheckUpdatesWeekly: true,
+		},
+	}
+
+	a.showCheckForUpdates()
+	require.NotNil(t, a.updateWindow)
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for check to complete")
+	}
+
+	var chk *widget.Check
+	require.Eventually(t, func() bool {
+		fyne.Do(func() {
+			chk = findCheck(a.updateWindow.Content(), "Check for updates weekly")
+		})
+		return chk != nil && chk.Visible()
+	}, 2*time.Second, 10*time.Millisecond)
+
+	require.NotNil(t, chk)
+	assert.True(t, chk.Checked)
+
+	fyne.Do(func() {
+		chk.SetChecked(false)
+	})
+
+	assert.False(t, a.Config().CheckUpdatesWeekly)
+
+	loaded, err := store.LoadTray()
+	require.NoError(t, err)
+	assert.False(t, loaded.CheckUpdatesWeekly)
+
+	a.updateWindow.Close()
+}
+
+func TestPeriodicUpdateChecker_Scenarios(t *testing.T) {
+	origVer := version.Version
+	defer func() {
+		version.Version = origVer
+	}()
+	version.Version = "v0.43.0"
+
+	app := test.NewApp()
+
+	t.Run("disabled does not run check", func(t *testing.T) {
+		checker := &mockUpdateChecker{
+			info: &ReleaseInfo{TagName: "v0.44.0"},
+		}
+		a := &App{
+			fyneApp:       app,
+			updateChecker: checker,
+			config: TrayConfig{
+				CheckUpdatesWeekly: false,
+			},
+		}
+		a.checkWeeklyUpdates()
+		assert.Equal(t, int32(0), checker.calls.Load())
+		assert.Nil(t, a.updateWindow)
+	})
+
+	t.Run("within weekly interval skips check", func(t *testing.T) {
+		checker := &mockUpdateChecker{
+			info: &ReleaseInfo{TagName: "v0.44.0"},
+		}
+		a := &App{
+			fyneApp:       app,
+			updateChecker: checker,
+			config: TrayConfig{
+				CheckUpdatesWeekly: true,
+				LastUpdateCheck:    time.Now().Add(-2 * 24 * time.Hour),
+			},
+		}
+		a.checkWeeklyUpdates()
+		assert.Equal(t, int32(0), checker.calls.Load())
+		assert.Nil(t, a.updateWindow)
+	})
+
+	t.Run("elapsed due with skipped version does not prompt", func(t *testing.T) {
+		checker := &mockUpdateChecker{
+			info: &ReleaseInfo{
+				TagName: "v0.44.0",
+				Name:    "v0.44.0",
+				HTMLURL: "https://github.com/blinklabs-io/adder/releases/tag/v0.44.0",
+			},
+		}
+		store := &setup.LocalStore{
+			TrayConfigPath: filepath.Join(t.TempDir(), "adder-tray.yaml"),
+		}
+		past := time.Now().Add(-8 * 24 * time.Hour)
+		a := &App{
+			fyneApp:       app,
+			updateChecker: checker,
+			runner: &setup.SetupRunner{
+				Store: store,
+			},
+			config: TrayConfig{
+				CheckUpdatesWeekly: true,
+				LastUpdateCheck:    past,
+				SkippedVersion:     "v0.44.0",
+			},
+		}
+		a.checkWeeklyUpdates()
+		assert.Equal(t, int32(1), checker.calls.Load())
+		assert.True(t, a.Config().LastUpdateCheck.After(past))
+		assert.Nil(t, a.updateWindow)
+	})
+
+	t.Run("elapsed due opens update window", func(t *testing.T) {
+		done := make(chan struct{})
+		origHook := onCheckDone
+		onCheckDone = func() { close(done) }
+		defer func() { onCheckDone = origHook }()
+
+		checker := &mockUpdateChecker{
+			info: &ReleaseInfo{
+				TagName: "v0.44.0",
+				Name:    "v0.44.0",
+				HTMLURL: "https://github.com/blinklabs-io/adder/releases/tag/v0.44.0",
+			},
+		}
+		store := &setup.LocalStore{
+			TrayConfigPath: filepath.Join(t.TempDir(), "adder-tray.yaml"),
+		}
+		past := time.Now().Add(-8 * 24 * time.Hour)
+		a := &App{
+			fyneApp:       app,
+			updateChecker: checker,
+			runner: &setup.SetupRunner{
+				Store: store,
+			},
+			config: TrayConfig{
+				CheckUpdatesWeekly: true,
+				LastUpdateCheck:    past,
+			},
+		}
+		a.checkWeeklyUpdates()
+		assert.True(t, a.Config().LastUpdateCheck.After(past))
+
+		require.Eventually(t, func() bool {
+			return a.updateWindow != nil
+		}, 2*time.Second, 10*time.Millisecond)
+
+		select {
+		case <-done:
+		case <-time.After(2 * time.Second):
+			t.Fatal("timed out waiting for check to complete")
+		}
+
+		assert.Equal(t, int32(2), checker.calls.Load())
+
+		a.updateWindow.Close()
+	})
+}
+
+func TestPeriodicUpdateChecker_Shutdown(t *testing.T) {
+	app := test.NewApp()
+	a := &App{
+		fyneApp:  app,
+		quitChan: make(chan struct{}),
+	}
+	stopped := make(chan struct{})
+	go func() {
+		a.startPeriodicUpdateChecker()
+		close(stopped)
+	}()
+
+	close(a.quitChan)
+	select {
+	case <-stopped:
+	case <-time.After(1 * time.Second):
+		t.Fatal("startPeriodicUpdateChecker failed to stop on quitChan close")
+	}
+}
+
 func TestShowUpdateWindow_UpdateAvailable(t *testing.T) {
 	origVer := version.Version
 	defer func() {
@@ -1020,4 +1358,20 @@ func withTargetPlatform(goos, goarch string) UpdateWindowOption {
 	return func(c *updateWindowConfig) {
 		c.targetPlatform = [2]string{goos, goarch}
 	}
+}
+
+func findCheck(obj fyne.CanvasObject, text string) *widget.Check {
+	if chk, ok := obj.(*widget.Check); ok {
+		if chk.Text == text {
+			return chk
+		}
+	}
+	if c, ok := obj.(*fyne.Container); ok {
+		for _, child := range c.Objects {
+			if res := findCheck(child, text); res != nil {
+				return res
+			}
+		}
+	}
+	return nil
 }

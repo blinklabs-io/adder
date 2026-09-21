@@ -38,6 +38,7 @@ import (
 	"github.com/blinklabs-io/adder/event"
 	"github.com/blinklabs-io/adder/internal/explorer"
 	"github.com/blinklabs-io/adder/internal/ui/assets"
+	"github.com/blinklabs-io/adder/internal/version"
 	"github.com/blinklabs-io/adder/tray/notifications"
 	"github.com/blinklabs-io/adder/tray/setup"
 	"github.com/blinklabs-io/adder/tray/wizard"
@@ -656,6 +657,8 @@ func (a *App) setupTray() {
 	// Log non-zero drop deltas every 30s so suppressed notifications
 	// are visible to operators. Terminates on quitChan close.
 	go a.surfaceNotificationStats(eng)
+
+	go a.startPeriodicUpdateChecker()
 
 	// Status observer: updates the status menu item and routes
 	// connection alerts through the engine. initialFire suppresses
@@ -1276,6 +1279,18 @@ func (a *App) showAbout() {
 	})
 }
 
+func (a *App) persistTrayConfig(cfg TrayConfig, desc string) {
+	if a.runner != nil && a.runner.Store != nil {
+		if err := a.runner.Store.SaveTrayAtomic(cfg); err != nil {
+			slog.Error("failed to save "+desc, "error", err)
+		}
+	} else {
+		if err := SaveConfig(cfg); err != nil {
+			slog.Error("failed to save "+desc, "error", err)
+		}
+	}
+}
+
 func (a *App) showCheckForUpdates() {
 	if a.updateWindow != nil {
 		a.updateWindow.RequestFocus()
@@ -1288,6 +1303,13 @@ func (a *App) showCheckForUpdates() {
 	win := ShowUpdateWindow(
 		a.fyneApp,
 		checker,
+		WithCheckWeekly(a.Config().CheckUpdatesWeekly, func(enabled bool) {
+			a.configMu.Lock()
+			a.config.CheckUpdatesWeekly = enabled
+			cfg := a.config
+			a.configMu.Unlock()
+			a.persistTrayConfig(cfg, "check updates weekly preference")
+		}),
 		WithOnRelaunch(func() {
 			a.Shutdown()
 		}),
@@ -1296,19 +1318,92 @@ func (a *App) showCheckForUpdates() {
 			a.config.SkippedVersion = ver
 			cfg := a.config
 			a.configMu.Unlock()
-			if a.runner != nil && a.runner.Store != nil {
-				if err := a.runner.Store.SaveTrayAtomic(cfg); err != nil {
-					slog.Error("failed to save skipped version", "error", err)
-				}
-			} else {
-				if err := SaveConfig(cfg); err != nil {
-					slog.Error("failed to save skipped version", "error", err)
-				}
-			}
+			a.persistTrayConfig(cfg, "skipped version")
 		}),
 		WithOnClosed(func() {
 			a.updateWindow = nil
 		}),
 	)
 	a.updateWindow = win
+}
+
+func (a *App) startPeriodicUpdateChecker() {
+	select {
+	case <-a.quitChan:
+		return
+	case <-time.After(10 * time.Second):
+		a.checkWeeklyUpdates()
+	}
+
+	ticker := time.NewTicker(1 * time.Hour)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-a.quitChan:
+			return
+		case <-ticker.C:
+			a.checkWeeklyUpdates()
+		}
+	}
+}
+
+func (a *App) checkWeeklyUpdates() {
+	a.configMu.Lock()
+	enabled := a.config.CheckUpdatesWeekly
+	lastCheck := a.config.LastUpdateCheck
+	skippedVer := a.config.SkippedVersion
+	a.configMu.Unlock()
+
+	if !enabled {
+		return
+	}
+
+	const weeklyInterval = 7 * 24 * time.Hour
+	if !lastCheck.IsZero() && time.Since(lastCheck) < weeklyInterval {
+		return
+	}
+
+	checker := a.updateChecker
+	if checker == nil {
+		checker = NewGitHubUpdateChecker("")
+	}
+
+	checkCtx, cancel := context.WithTimeout(
+		context.Background(),
+		30*time.Second,
+	)
+	defer cancel()
+
+	info, err := checker.CheckLatestRelease(checkCtx)
+	if err != nil {
+		if !errors.Is(err, context.Canceled) {
+			slog.Debug("background update check failed", "error", err)
+		}
+		return
+	}
+
+	a.configMu.Lock()
+	a.config.LastUpdateCheck = time.Now()
+	cfg := a.config
+	a.configMu.Unlock()
+	a.persistTrayConfig(cfg, "last update check timestamp")
+
+	curVer := version.Version
+	if curVer == "" {
+		curVer = "devel"
+	}
+
+	available, _ := IsUpdateAvailable(curVer, info.TagName)
+	if !available {
+		return
+	}
+
+	if skippedVer != "" && info.TagName == skippedVer {
+		return
+	}
+
+	fyne.Do(func() {
+		a.showCheckForUpdates()
+	})
 }

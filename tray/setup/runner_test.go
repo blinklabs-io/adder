@@ -150,9 +150,12 @@ func TestApplyDoesNotTouchHostServicesWithFakeManager(t *testing.T) {
 }
 
 func TestApplyPreservesSkippedVersion(t *testing.T) {
+	checkTime := time.Date(2026, 9, 20, 12, 0, 0, 0, time.UTC)
 	store := &mockStore{
 		tray: TrayConfig{
-			SkippedVersion: "v0.44.0",
+			SkippedVersion:     "v0.44.0",
+			CheckUpdatesWeekly: true,
+			LastUpdateCheck:    checkTime,
 		},
 	}
 	runner := &SetupRunner{
@@ -165,8 +168,39 @@ func TestApplyPreservesSkippedVersion(t *testing.T) {
 	result, err := runner.Apply(context.Background(), SetupPlan{
 		Network: NetworkConfig{Name: "mainnet"},
 		Filter:  FilterConfig{MonitorEverything: true},
+		App:     AppConfig{CheckUpdatesWeekly: true},
 	})
 	require.NoError(t, err)
+	assert.Equal(t, "v0.44.0", result.TrayConfig.SkippedVersion)
+	assert.Equal(t, "v0.44.0", store.tray.SkippedVersion)
+	assert.True(t, result.TrayConfig.CheckUpdatesWeekly)
+	assert.True(t, store.tray.CheckUpdatesWeekly)
+	assert.Equal(t, checkTime, result.TrayConfig.LastUpdateCheck)
+	assert.Equal(t, checkTime, store.tray.LastUpdateCheck)
+}
+
+func TestApplyUpdatesCheckUpdatesWeekly(t *testing.T) {
+	store := &mockStore{
+		tray: TrayConfig{
+			SkippedVersion:     "v0.44.0",
+			CheckUpdatesWeekly: true,
+		},
+	}
+	runner := &SetupRunner{
+		Store:   store,
+		Service: &mockService{},
+		Conn:    &mockConnector{},
+		Finder:  &mockFinder{path: "/tmp/adder"},
+	}
+
+	result, err := runner.Apply(context.Background(), SetupPlan{
+		Network: NetworkConfig{Name: "mainnet"},
+		Filter:  FilterConfig{MonitorEverything: true},
+		App:     AppConfig{CheckUpdatesWeekly: false},
+	})
+	require.NoError(t, err)
+	assert.False(t, result.TrayConfig.CheckUpdatesWeekly)
+	assert.False(t, store.tray.CheckUpdatesWeekly)
 	assert.Equal(t, "v0.44.0", result.TrayConfig.SkippedVersion)
 	assert.Equal(t, "v0.44.0", store.tray.SkippedVersion)
 }

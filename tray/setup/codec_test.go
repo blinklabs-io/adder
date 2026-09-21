@@ -41,7 +41,7 @@ func TestSetupPlanRoundTrip(t *testing.T) {
 				},
 				API:    APIConfig{Address: "127.0.0.1", Port: 8080},
 				Notify: NotificationPrefs{},
-				App:    AppConfig{AutoStart: true},
+				App:    AppConfig{AutoStart: true, CheckUpdatesWeekly: true},
 			},
 		},
 		{
@@ -62,7 +62,7 @@ func TestSetupPlanRoundTrip(t *testing.T) {
 				},
 				API:    APIConfig{Address: "0.0.0.0", Port: 9090},
 				Notify: NotificationPrefs{"Votes cast": true},
-				App:    AppConfig{AutoStart: false},
+				App:    AppConfig{AutoStart: false, CheckUpdatesWeekly: false},
 			},
 		},
 		{
@@ -78,7 +78,7 @@ func TestSetupPlanRoundTrip(t *testing.T) {
 				},
 				API:    APIConfig{Address: "localhost", Port: 8081},
 				Notify: NotificationPrefs{"Blocks minted": true},
-				App:    AppConfig{AutoStart: true},
+				App:    AppConfig{AutoStart: true, CheckUpdatesWeekly: true},
 			},
 		},
 		{
@@ -99,7 +99,7 @@ func TestSetupPlanRoundTrip(t *testing.T) {
 				},
 				API:    APIConfig{Address: "127.0.0.1", Port: 8082},
 				Notify: NotificationPrefs{"Pool parameter changes": true},
-				App:    AppConfig{AutoStart: false},
+				App:    AppConfig{AutoStart: false, CheckUpdatesWeekly: false},
 			},
 		},
 		{
@@ -120,7 +120,7 @@ func TestSetupPlanRoundTrip(t *testing.T) {
 				},
 				API:    APIConfig{Address: "127.0.0.1", Port: 8080},
 				Notify: NotificationPrefs{},
-				App:    AppConfig{AutoStart: false},
+				App:    AppConfig{AutoStart: false, CheckUpdatesWeekly: true},
 			},
 		},
 	}
@@ -131,9 +131,10 @@ func TestSetupPlanRoundTrip(t *testing.T) {
 			// here; Filter rides on the tray-side config now).
 			engine := tc.plan.ToEngineConfig(*config.GetConfig())
 			tray := TrayConfig{
-				AutoStart:   tc.plan.App.AutoStart,
-				NotifyPrefs: tc.plan.Notify,
-				Filter:      tc.plan.Filter,
+				AutoStart:          tc.plan.App.AutoStart,
+				CheckUpdatesWeekly: tc.plan.App.CheckUpdatesWeekly,
+				NotifyPrefs:        tc.plan.Notify,
+				Filter:             tc.plan.Filter,
 			}
 
 			// Engine Config + Tray -> Plan
@@ -152,6 +153,11 @@ func TestSetupPlanRoundTrip(t *testing.T) {
 			assert.Equal(t, tc.plan.API.Address, got.API.Address)
 			assert.Equal(t, tc.plan.API.Port, got.API.Port)
 			assert.Equal(t, tc.plan.App.AutoStart, got.App.AutoStart)
+			assert.Equal(
+				t,
+				tc.plan.App.CheckUpdatesWeekly,
+				got.App.CheckUpdatesWeekly,
+			)
 			assert.Equal(t, tc.plan.Notify, got.Notify)
 			// Engine config must NOT carry the per-target filter
 			// knobs; tray config is the matching authority.
@@ -195,7 +201,8 @@ func TestSetupPlanFromEngineConfigHandlesCustomAddressAndLogDefaults(
 	}
 
 	got := SetupPlanFromEngineConfig(engine, TrayConfig{
-		AutoStart: true,
+		AutoStart:          true,
+		CheckUpdatesWeekly: true,
 		NotifyPrefs: map[string]bool{
 			NotifyPrefConnectionIssues: true,
 		},
@@ -211,6 +218,7 @@ func TestSetupPlanFromEngineConfigHandlesCustomAddressAndLogDefaults(
 	assert.Empty(t, got.Filter.Pools)
 	assert.Equal(t, "none", got.Output.Type)
 	assert.True(t, got.App.AutoStart)
+	assert.True(t, got.App.CheckUpdatesWeekly)
 	assert.True(t, got.Notify[NotifyPrefConnectionIssues])
 }
 

@@ -110,15 +110,17 @@ func (r *SetupRunner) Apply(
 	notify := make(map[string]bool, len(plan.Notify))
 	maps.Copy(notify, plan.Notify)
 	trayCfg := TrayConfig{
-		APIAddress:       engineCfg.Api.ListenAddress,
-		APIPort:          engineCfg.Api.ListenPort,
-		AdderConfig:      engineCfgPath,
-		AutoStart:        plan.App.AutoStart,
-		NotifyPrefs:      notify,
-		Filter:           CloneFilter(plan.Filter),
-		NotifyRateLimit:  plan.App.NotifyRateLimit,
-		NotifyRateWindow: plan.App.NotifyRateWindow,
-		SkippedVersion:   existingTray.SkippedVersion,
+		APIAddress:         engineCfg.Api.ListenAddress,
+		APIPort:            engineCfg.Api.ListenPort,
+		AdderConfig:        engineCfgPath,
+		AutoStart:          plan.App.AutoStart,
+		NotifyPrefs:        notify,
+		Filter:             CloneFilter(plan.Filter),
+		NotifyRateLimit:    plan.App.NotifyRateLimit,
+		NotifyRateWindow:   plan.App.NotifyRateWindow,
+		SkippedVersion:     existingTray.SkippedVersion,
+		CheckUpdatesWeekly: plan.App.CheckUpdatesWeekly,
+		LastUpdateCheck:    existingTray.LastUpdateCheck,
 	}
 	if err := r.Store.SaveTrayAtomic(trayCfg); err != nil {
 		return result, fmt.Errorf("saving tray config: %w", err)

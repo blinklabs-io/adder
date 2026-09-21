@@ -102,9 +102,10 @@ func SetupPlanFromEngineConfig(c config.Config, tray TrayConfig) SetupPlan {
 			Port:    c.Api.ListenPort,
 		},
 		App: AppConfig{
-			AutoStart:        tray.AutoStart,
-			NotifyRateLimit:  tray.NotifyRateLimit,
-			NotifyRateWindow: tray.NotifyRateWindow,
+			AutoStart:          tray.AutoStart,
+			CheckUpdatesWeekly: tray.CheckUpdatesWeekly,
+			NotifyRateLimit:    tray.NotifyRateLimit,
+			NotifyRateWindow:   tray.NotifyRateWindow,
 		},
 		Notify: notify,
 	}

@@ -74,8 +74,9 @@ func TestReconfigurePlanLoadsSavedEngineConfig(t *testing.T) {
 	}
 	app := &App{
 		config: TrayConfig{
-			AdderConfig: savedPath,
-			AutoStart:   true,
+			AdderConfig:        savedPath,
+			AutoStart:          true,
+			CheckUpdatesWeekly: true,
 			NotifyPrefs: map[string]bool{
 				setup.NotifyPrefVotesCast: true,
 			},
@@ -101,6 +102,7 @@ func TestReconfigurePlanLoadsSavedEngineConfig(t *testing.T) {
 	assert.Equal(t, sourcePlan.API.Address, got.API.Address)
 	assert.Equal(t, sourcePlan.API.Port, got.API.Port)
 	assert.True(t, got.App.AutoStart)
+	assert.True(t, got.App.CheckUpdatesWeekly)
 	assert.True(t, got.Notify[setup.NotifyPrefVotesCast])
 }
 

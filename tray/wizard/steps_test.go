@@ -835,3 +835,54 @@ func TestNotificationsStepStartupUIAndSettingsButton(t *testing.T) {
 		"openLoginItemsFunc should be called when settings button is tapped",
 	)
 }
+
+func TestNotificationsStepCheckUpdatesWeeklyHydrationAndApply(
+	t *testing.T,
+) {
+	test.NewApp()
+
+	// 1. Initialized with CheckUpdatesWeekly: true
+	planTrue := &setup.SetupPlan{
+		Filter: setup.FilterConfig{MonitorEverything: true},
+		Notify: make(setup.NotificationPrefs),
+		App: setup.AppConfig{
+			CheckUpdatesWeekly: true,
+		},
+	}
+	stepTrue := &notificationsStep{plan: planTrue}
+	stepTrue.Content()
+	require.NotNil(t, stepTrue.checkUpdatesWeekly)
+	assert.True(
+		t,
+		stepTrue.checkUpdatesWeekly.Checked,
+		"checkUpdatesWeekly should hydrate to true",
+	)
+
+	// Apply without modification
+	gotTrue := &setup.SetupPlan{App: setup.AppConfig{}}
+	stepTrue.Apply(gotTrue)
+	assert.True(t, gotTrue.App.CheckUpdatesWeekly)
+
+	// 2. Initialized with CheckUpdatesWeekly: false
+	planFalse := &setup.SetupPlan{
+		Filter: setup.FilterConfig{MonitorEverything: true},
+		Notify: make(setup.NotificationPrefs),
+		App: setup.AppConfig{
+			CheckUpdatesWeekly: false,
+		},
+	}
+	stepFalse := &notificationsStep{plan: planFalse}
+	stepFalse.Content()
+	require.NotNil(t, stepFalse.checkUpdatesWeekly)
+	assert.False(
+		t,
+		stepFalse.checkUpdatesWeekly.Checked,
+		"checkUpdatesWeekly should hydrate to false",
+	)
+
+	// Toggle it to true and verify Apply
+	stepFalse.checkUpdatesWeekly.SetChecked(true)
+	gotFalse := &setup.SetupPlan{App: setup.AppConfig{}}
+	stepFalse.Apply(gotFalse)
+	assert.True(t, gotFalse.App.CheckUpdatesWeekly)
+}

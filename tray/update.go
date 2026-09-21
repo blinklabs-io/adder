@@ -411,6 +411,8 @@ type updateWindowConfig struct {
 	onSkip         func(version string)
 	onClosed       func()
 	targetPlatform [2]string
+	checkWeekly    bool
+	onCheckWeekly  func(bool)
 }
 
 // WithOnRelaunch sets the callback invoked when the user confirms relaunching
@@ -432,6 +434,15 @@ func WithOnSkip(fn func(version string)) UpdateWindowOption {
 func WithOnClosed(fn func()) UpdateWindowOption {
 	return func(c *updateWindowConfig) {
 		c.onClosed = fn
+	}
+}
+
+// WithCheckWeekly sets the initial state and callback for the weekly update
+// check preference in the update window.
+func WithCheckWeekly(initial bool, onToggle func(bool)) UpdateWindowOption {
+	return func(c *updateWindowConfig) {
+		c.checkWeekly = initial
+		c.onCheckWeekly = onToggle
 	}
 }
 
@@ -523,6 +534,17 @@ func ShowUpdateWindow(
 		win.Close()
 	})
 
+	checkWeekly := widget.NewCheck(
+		"Check for updates weekly",
+		func(checked bool) {
+			if cfg.onCheckWeekly != nil {
+				cfg.onCheckWeekly(checked)
+			}
+		},
+	)
+	checkWeekly.SetChecked(cfg.checkWeekly)
+	checkWeekly.Hide()
+
 	buttonBox := container.NewHBox(
 		skipBtn,
 		layout.NewSpacer(),
@@ -531,7 +553,7 @@ func ShowUpdateWindow(
 	)
 
 	bodyStack := container.NewStack(framedBox, progressBox)
-	bottomBox := buttonBox
+	bottomBox := container.NewVBox(checkWeekly, buttonBox)
 
 	content := container.NewBorder(
 		header,
@@ -556,6 +578,7 @@ func ShowUpdateWindow(
 			subtitleLabel.SetText("Checking for updates…")
 			framedBox.Hide()
 			progressBox.Hide()
+			checkWeekly.Hide()
 			skipBtn.Hide()
 			installBtn.Hide()
 			closeBtn.SetText("Cancel")
@@ -591,6 +614,7 @@ func ShowUpdateWindow(
 					)
 					framedBox.Hide()
 					progressBox.Hide()
+					checkWeekly.Hide()
 					skipBtn.Hide()
 					installBtn.SetText("Retry")
 					installBtn.Importance = widget.MediumImportance
@@ -626,6 +650,7 @@ func ShowUpdateWindow(
 					))
 					framedBox.Hide()
 					progressBox.Hide()
+					checkWeekly.Show()
 					skipBtn.Hide()
 					installBtn.Hide()
 					closeBtn.SetText("OK")
@@ -690,6 +715,7 @@ func ShowUpdateWindow(
 
 				framedBox.Show()
 				progressBox.Hide()
+				checkWeekly.Show()
 
 				skipBtn.OnTapped = func() {
 					if cfg.onSkip != nil {
@@ -730,6 +756,7 @@ func ShowUpdateWindow(
 						fyne.Do(func() {
 							titleLabel.SetText("Update Verification Failed")
 							subtitleLabel.SetText("The release asset does not have a valid SHA-256 digest.")
+							checkWeekly.Hide()
 							closeBtn.SetText("Close")
 							closeBtn.Importance = widget.MediumImportance
 							closeBtn.OnTapped = func() { win.Close() }
@@ -768,6 +795,7 @@ func ShowUpdateWindow(
 						subtitleLabel.SetText("Please wait while the update is downloaded…")
 						framedBox.Hide()
 						progressBox.Show()
+						checkWeekly.Hide()
 						skipBtn.Hide()
 						installBtn.Hide()
 						progressBar.SetValue(0)
@@ -819,6 +847,7 @@ func ShowUpdateWindow(
 								titleLabel.SetText("Download Failed")
 								subtitleLabel.SetText(dlErr.Error())
 								progressBox.Hide()
+								checkWeekly.Hide()
 								closeBtn.SetText("Close")
 								closeBtn.Importance = widget.MediumImportance
 								closeBtn.OnTapped = func() { win.Close() }
