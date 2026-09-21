@@ -26,7 +26,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -927,7 +926,12 @@ func TestShowUpdateWindow_UpdateAvailable(t *testing.T) {
 			Body: `• Fixes a regression where cycle sizes were not being reset between corner and half actions.
 • Fixes a bug with incorrect window width when cycling between displays.`,
 			Assets: []ReleaseAsset{
-				testHostAsset("https://github.com/blinklabs-io/adder/releases/download/v0.44.0"),
+				{
+					Name:               "adder-0.44.0-darwin-arm64.pkg",
+					BrowserDownloadURL: "https://github.com/blinklabs-io/adder/releases/download/v0.44.0/test.pkg",
+					Size:               14,
+					Digest:             "sha256:ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+				},
 			},
 		},
 	}
@@ -1336,22 +1340,6 @@ func findButton(obj fyne.CanvasObject, text string) *widget.Button {
 		}
 	}
 	return nil
-}
-
-func testHostAsset(baseURL string) ReleaseAsset {
-	var ext string
-	switch runtime.GOOS {
-	case "windows":
-		ext = ".msi"
-	default:
-		ext = ".pkg"
-	}
-	return ReleaseAsset{
-		Name:               fmt.Sprintf("adder_0.44.0_%s_%s%s", runtime.GOOS, runtime.GOARCH, ext),
-		BrowserDownloadURL: baseURL + "/test" + ext,
-		Size:               14,
-		Digest:             "sha256:ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
-	}
 }
 
 func withTargetPlatform(goos, goarch string) UpdateWindowOption {
