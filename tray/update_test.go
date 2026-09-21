@@ -188,6 +188,9 @@ func TestFindAssetForPlatform(t *testing.T) {
 	unsupportedArch := FindAssetForPlatform(assets, "freebsd", "riscv64")
 	assert.Nil(t, unsupportedArch)
 
+	emptyArch := FindAssetForPlatform(assets, "darwin", "")
+	assert.Nil(t, emptyArch)
+
 	// Ensure prefix matching like "arm" does not match "arm64"
 	darwinArmMismatch := FindAssetForPlatform(assets, "darwin", "arm")
 	assert.Nil(t, darwinArmMismatch)
@@ -295,6 +298,17 @@ func TestDownloadAsset_InvalidDigestFormat(t *testing.T) {
 	assert.Contains(t, err.Error(), "invalid SHA-256 digest format")
 }
 
+func TestIsValidSHA256Digest(t *testing.T) {
+	assert.True(t, isValidSHA256Digest("sha256:ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"))
+	assert.True(t, isValidSHA256Digest("SHA256:BA7816BF8F01CFEA414140DE5DAE2223B00361A396177A9CB410FF61F20015AD"))
+	assert.True(t, isValidSHA256Digest("  sha256:ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad  "))
+	assert.True(t, isValidSHA256Digest("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"))
+	assert.False(t, isValidSHA256Digest(""))
+	assert.False(t, isValidSHA256Digest("sha256:"))
+	assert.False(t, isValidSHA256Digest("sha256:short"))
+	assert.False(t, isValidSHA256Digest("sha256:zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"))
+}
+
 func TestDownloadAsset(t *testing.T) {
 	payload := []byte("fake binary payload content for testing")
 
@@ -335,6 +349,35 @@ func TestDownloadAsset(t *testing.T) {
 	data, err := os.ReadFile(destPath)
 	require.NoError(t, err)
 	assert.Equal(t, payload, data)
+}
+
+func TestDownloadAsset_DigestNormalization(t *testing.T) {
+	payload := []byte("fake binary payload content for testing")
+
+	server := httptest.NewServer(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/octet-stream")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(payload)
+		}),
+	)
+	defer server.Close()
+
+	destPath := filepath.Join(t.TempDir(), "test.pkg")
+	payloadHash := sha256.Sum256(payload)
+	// Uppercase prefix and spaces around hash
+	validDigest := "  SHA256:" + strings.ToUpper(hex.EncodeToString(payloadHash[:])) + "  "
+
+	err := DownloadAsset(
+		context.Background(),
+		server.Client(),
+		server.URL,
+		destPath,
+		validDigest,
+		nil,
+	)
+	require.NoError(t, err)
+	assert.FileExists(t, destPath)
 }
 
 func TestDownloadAsset_DigestMismatch(t *testing.T) {

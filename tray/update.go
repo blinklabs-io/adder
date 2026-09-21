@@ -211,6 +211,9 @@ func FindAssetForPlatform(
 }
 
 func containsArchToken(name, arch string) bool {
+	if arch == "" {
+		return false
+	}
 	for idx := 0; ; {
 		pos := strings.Index(name[idx:], arch)
 		if pos < 0 {
@@ -231,9 +234,15 @@ func isAlphaNum(b byte) bool {
 	return (b >= '0' && b <= '9') || (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z')
 }
 
+func normalizeDigest(digest string) string {
+	return strings.TrimPrefix(
+		strings.ToLower(strings.TrimSpace(digest)),
+		"sha256:",
+	)
+}
+
 func isValidSHA256Digest(digest string) bool {
-	digest = strings.TrimSpace(digest)
-	hexStr := strings.TrimPrefix(strings.ToLower(digest), "sha256:")
+	hexStr := normalizeDigest(digest)
 	if len(hexStr) != 64 {
 		return false
 	}
@@ -358,9 +367,7 @@ func DownloadAsset(
 	}
 
 	if expectedDigest != "" {
-		expectedHash := strings.ToLower(
-			strings.TrimPrefix(expectedDigest, "sha256:"),
-		)
+		expectedHash := normalizeDigest(expectedDigest)
 		actualHash := hex.EncodeToString(hasher.Sum(nil))
 		if expectedHash != actualHash {
 			cleanup()
