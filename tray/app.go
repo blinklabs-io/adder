@@ -118,7 +118,9 @@ type App struct {
 	// Shutdown).
 	notifyEngine atomic.Pointer[notifications.Engine]
 
-	aboutWindow   fyne.Window
+	aboutWindow fyne.Window
+	// updateWinMu serializes creation and focus checks for updateWindow.
+	updateWinMu   sync.Mutex
 	updateWindow  fyne.Window
 	updateChecker UpdateChecker
 }
@@ -1292,8 +1294,11 @@ func (a *App) persistTrayConfig(cfg TrayConfig, desc string) {
 }
 
 func (a *App) showCheckForUpdates() {
+	a.updateWinMu.Lock()
 	if a.updateWindow != nil {
-		a.updateWindow.RequestFocus()
+		win := a.updateWindow
+		a.updateWinMu.Unlock()
+		win.RequestFocus()
 		return
 	}
 	checker := a.updateChecker
@@ -1321,10 +1326,13 @@ func (a *App) showCheckForUpdates() {
 			a.persistTrayConfig(cfg, "skipped version")
 		}),
 		WithOnClosed(func() {
+			a.updateWinMu.Lock()
 			a.updateWindow = nil
+			a.updateWinMu.Unlock()
 		}),
 	)
 	a.updateWindow = win
+	a.updateWinMu.Unlock()
 }
 
 func (a *App) startPeriodicUpdateChecker() {
