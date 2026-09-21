@@ -3,7 +3,7 @@ module github.com/blinklabs-io/adder
 go 1.26.0
 
 require (
-	connectrpc.com/connect v1.20.0
+	connectrpc.com/connect v1.21.0
 	fyne.io/fyne/v2 v2.8.1
 	github.com/SundaeSwap-finance/kugo v1.3.1
 	github.com/SundaeSwap-finance/ogmigo/v6 v6.2.1
