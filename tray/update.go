@@ -541,15 +541,13 @@ func ShowUpdateWindow(
 		win.Close()
 	})
 
-	checkWeekly := widget.NewCheck(
-		"Check for updates weekly",
-		func(checked bool) {
-			if cfg.onCheckWeekly != nil {
-				cfg.onCheckWeekly(checked)
-			}
-		},
-	)
-	checkWeekly.SetChecked(cfg.checkWeekly)
+	checkWeekly := widget.NewCheck("Check for updates weekly", nil)
+	checkWeekly.Checked = cfg.checkWeekly
+	checkWeekly.OnChanged = func(checked bool) {
+		if cfg.onCheckWeekly != nil {
+			cfg.onCheckWeekly(checked)
+		}
+	}
 	checkWeekly.Hide()
 
 	buttonBox := container.NewHBox(

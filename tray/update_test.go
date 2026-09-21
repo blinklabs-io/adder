@@ -643,6 +643,7 @@ func TestShowUpdateWindow_CheckWeekly_UpToDate(t *testing.T) {
 		onCheckDone = origHook
 	}()
 
+	var callCount atomic.Int32
 	var toggled atomic.Bool
 	toggled.Store(true)
 
@@ -651,10 +652,12 @@ func TestShowUpdateWindow_CheckWeekly_UpToDate(t *testing.T) {
 		app,
 		checker,
 		WithCheckWeekly(true, func(checked bool) {
+			callCount.Add(1)
 			toggled.Store(checked)
 		}),
 	)
 	require.NotNil(t, win)
+	assert.Equal(t, int32(0), callCount.Load())
 
 	select {
 	case <-done:
