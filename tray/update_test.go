@@ -15,6 +15,7 @@
 package tray
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -22,6 +23,7 @@ import (
 	"errors"
 	"fmt"
 	"image/png"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -40,6 +42,12 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+type roundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
 
 type mockUpdateChecker struct {
 	info  *ReleaseInfo
@@ -258,6 +266,99 @@ func TestGitHubUpdateCheckerError(t *testing.T) {
 	assert.Contains(t, err.Error(), "HTTP 404: Not Found: release not available")
 }
 
+func TestGitHubUpdateChecker_TokenGating(t *testing.T) {
+	t.Setenv("GITHUB_TOKEN", "secret-test-token")
+
+	var receivedAuth string
+	server := httptest.NewServer(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			receivedAuth = r.Header.Get("Authorization")
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(ReleaseInfo{TagName: "v0.44.0"})
+		}),
+	)
+	defer server.Close()
+
+	// 1. Non-GitHub BaseURL (e.g. test server URL): Token must NOT be sent.
+	checker := &GitHubUpdateChecker{
+		BaseURL:    server.URL,
+		HTTPClient: server.Client(),
+	}
+	_, err := checker.CheckLatestRelease(context.Background())
+	require.NoError(t, err)
+	assert.Empty(t, receivedAuth, "token should not be sent to non-github BaseURL")
+
+	// 2. Default api.github.com URL: Token MUST be attached.
+	captured := make(chan *http.Request, 1)
+	client := &http.Client{
+		Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			captured <- req
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     make(http.Header),
+				Body:       io.NopCloser(strings.NewReader(`{"tag_name":"v0.44.0"}`)),
+			}, nil
+		}),
+	}
+	ghChecker := &GitHubUpdateChecker{
+		Repo:       "blinklabs-io/adder",
+		HTTPClient: client,
+	}
+	_, err = ghChecker.CheckLatestRelease(context.Background())
+	require.NoError(t, err)
+	select {
+	case req := <-captured:
+		assert.Equal(t, "Bearer secret-test-token", req.Header.Get("Authorization"))
+		assert.Equal(t, "api.github.com", req.URL.Hostname())
+	default:
+		t.Fatal("expected request was not sent")
+	}
+}
+
+func TestGitHubUpdateChecker_PayloadSizeLimit(t *testing.T) {
+	t.Run("content length exceeds limit", func(t *testing.T) {
+		server := httptest.NewServer(
+			http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Length", fmt.Sprintf("%d", maxReleasePayloadSize+1))
+				w.WriteHeader(http.StatusOK)
+			}),
+		)
+		defer server.Close()
+
+		checker := &GitHubUpdateChecker{
+			BaseURL:    server.URL,
+			HTTPClient: server.Client(),
+		}
+		_, err := checker.CheckLatestRelease(context.Background())
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "exceeds limit")
+	})
+
+	t.Run("payload stream exceeds limit", func(t *testing.T) {
+		server := httptest.NewServer(
+			http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(`{"tag_name":"v1.0.0","body":"`))
+				chunk := bytes.Repeat([]byte("a"), 64*1024)
+				for range (maxReleasePayloadSize / (64 * 1024)) + 2 {
+					_, _ = w.Write(chunk)
+				}
+				_, _ = w.Write([]byte(`"}`))
+			}),
+		)
+		defer server.Close()
+
+		checker := &GitHubUpdateChecker{
+			BaseURL:    server.URL,
+			HTTPClient: server.Client(),
+		}
+		_, err := checker.CheckLatestRelease(context.Background())
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "decoding release payload")
+	})
+}
+
 func TestDownloadAsset_HTTPError(t *testing.T) {
 	server := httptest.NewServer(
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -472,6 +573,130 @@ func TestDownloadAssetCancel(t *testing.T) {
 	assert.True(t, errors.Is(err, context.Canceled))
 	assert.NoFileExists(t, destPath)
 	assert.NoFileExists(t, destPath+".part")
+}
+
+func TestDownloadAsset_SizeLimits(t *testing.T) {
+	t.Run("content length exceeds limit", func(t *testing.T) {
+		server := httptest.NewServer(
+			http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/octet-stream")
+				w.Header().Set("Content-Length", fmt.Sprintf("%d", maxAssetDownloadSize+1))
+				w.WriteHeader(http.StatusOK)
+			}),
+		)
+		defer server.Close()
+
+		tmpDir := t.TempDir()
+		destPath := filepath.Join(tmpDir, "test.pkg")
+
+		err := DownloadAsset(
+			context.Background(),
+			server.Client(),
+			server.URL,
+			destPath,
+			"",
+			nil,
+		)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "exceeds maximum allowed size")
+		assert.NoFileExists(t, destPath)
+	})
+
+	t.Run("chunked stream exceeds max allowed size", func(t *testing.T) {
+		orig := maxAssetDownloadSize
+		maxAssetDownloadSize = 50
+		defer func() { maxAssetDownloadSize = orig }()
+
+		server := httptest.NewServer(
+			http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/octet-stream")
+				w.WriteHeader(http.StatusOK)
+				if f, ok := w.(http.Flusher); ok {
+					f.Flush()
+				}
+				_, _ = w.Write(bytes.Repeat([]byte("x"), 100))
+			}),
+		)
+		defer server.Close()
+
+		tmpDir := t.TempDir()
+		destPath := filepath.Join(tmpDir, "test.pkg")
+
+		err := DownloadAsset(
+			context.Background(),
+			server.Client(),
+			server.URL,
+			destPath,
+			"",
+			nil,
+		)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "download exceeded maximum allowed size")
+		assert.NoFileExists(t, destPath)
+		assert.NoFileExists(t, destPath+".part")
+	})
+
+	t.Run("empty response rejected", func(t *testing.T) {
+		server := httptest.NewServer(
+			http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/octet-stream")
+				w.WriteHeader(http.StatusOK)
+			}),
+		)
+		defer server.Close()
+
+		tmpDir := t.TempDir()
+		destPath := filepath.Join(tmpDir, "test.pkg")
+
+		err := DownloadAsset(
+			context.Background(),
+			server.Client(),
+			server.URL,
+			destPath,
+			"",
+			nil,
+		)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "received empty file")
+		assert.NoFileExists(t, destPath)
+		assert.NoFileExists(t, destPath+".part")
+	})
+
+	t.Run("chunked transfer within limits succeeds", func(t *testing.T) {
+		data := []byte("chunked-download-content-test")
+		hasher := sha256.New()
+		_, _ = hasher.Write(data)
+		expectedHash := hex.EncodeToString(hasher.Sum(nil))
+
+		server := httptest.NewServer(
+			http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/octet-stream")
+				w.WriteHeader(http.StatusOK)
+				if f, ok := w.(http.Flusher); ok {
+					f.Flush()
+				}
+				_, _ = w.Write(data)
+			}),
+		)
+		defer server.Close()
+
+		tmpDir := t.TempDir()
+		destPath := filepath.Join(tmpDir, "test.pkg")
+
+		err := DownloadAsset(
+			context.Background(),
+			server.Client(),
+			server.URL,
+			destPath,
+			expectedHash,
+			nil,
+		)
+		require.NoError(t, err)
+		assert.FileExists(t, destPath)
+		readData, err := os.ReadFile(destPath)
+		require.NoError(t, err)
+		assert.Equal(t, data, readData)
+	})
 }
 
 func TestShowUpdateWindow(t *testing.T) {

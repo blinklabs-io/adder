@@ -45,6 +45,11 @@ import (
 
 const defaultReleaseRepo = "blinklabs-io/adder"
 
+var (
+	maxReleasePayloadSize int64 = 10 * 1024 * 1024  // 10 MB
+	maxAssetDownloadSize  int64 = 500 * 1024 * 1024 // 500 MB
+)
+
 // ReleaseAsset represents an artifact asset attached to a GitHub release.
 type ReleaseAsset struct {
 	Name               string `json:"name"`
@@ -112,7 +117,11 @@ func (c *GitHubUpdateChecker) CheckLatestRelease(
 	req.Header.Set("User-Agent", "adder-tray/"+v)
 	req.Header.Set("Accept", "application/vnd.github+json")
 	if tok := os.Getenv("GITHUB_TOKEN"); tok != "" {
-		req.Header.Set("Authorization", "Bearer "+tok)
+		if parsed, err := url.Parse(apiURL); err == nil &&
+			parsed.Scheme == "https" &&
+			strings.EqualFold(parsed.Hostname(), "api.github.com") {
+			req.Header.Set("Authorization", "Bearer "+tok)
+		}
 	}
 
 	client := c.HTTPClient
@@ -135,8 +144,16 @@ func (c *GitHubUpdateChecker) CheckLatestRelease(
 		return nil, fmt.Errorf("release check failed: HTTP %d", resp.StatusCode)
 	}
 
+	if resp.ContentLength > maxReleasePayloadSize {
+		return nil, fmt.Errorf(
+			"release payload size %d exceeds limit of %d bytes",
+			resp.ContentLength,
+			maxReleasePayloadSize,
+		)
+	}
+
 	var info ReleaseInfo
-	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxReleasePayloadSize)).Decode(&info); err != nil {
 		return nil, fmt.Errorf("decoding release payload: %w", err)
 	}
 
@@ -299,6 +316,14 @@ func DownloadAsset(
 		return fmt.Errorf("download failed: HTTP %d", resp.StatusCode)
 	}
 
+	if resp.ContentLength > maxAssetDownloadSize {
+		return fmt.Errorf(
+			"asset size %d exceeds maximum allowed size (%d bytes)",
+			resp.ContentLength,
+			maxAssetDownloadSize,
+		)
+	}
+
 	if err := os.MkdirAll(filepath.Dir(destPath), 0o700); err != nil {
 		return fmt.Errorf("creating target directory: %w", err)
 	}
@@ -320,6 +345,12 @@ func DownloadAsset(
 	}
 
 	total := resp.ContentLength
+	limit := int64(maxAssetDownloadSize)
+	if total > 0 {
+		limit = total
+	}
+
+	bodyReader := io.LimitReader(resp.Body, limit+1)
 	buf := make([]byte, 64*1024)
 	var downloaded int64
 	var lastReport time.Time
@@ -334,8 +365,21 @@ func DownloadAsset(
 		default:
 		}
 
-		n, rerr := resp.Body.Read(buf)
+		n, rerr := bodyReader.Read(buf)
 		if n > 0 {
+			if downloaded+int64(n) > limit {
+				cleanup()
+				if total > 0 {
+					return fmt.Errorf(
+						"download exceeded expected size of %d bytes",
+						total,
+					)
+				}
+				return fmt.Errorf(
+					"download exceeded maximum allowed size of %d bytes",
+					maxAssetDownloadSize,
+				)
+			}
 			if _, werr := mw.Write(buf[:n]); werr != nil {
 				cleanup()
 				return fmt.Errorf("writing download data: %w", werr)
@@ -364,6 +408,11 @@ func DownloadAsset(
 			downloaded,
 			total,
 		)
+	}
+
+	if downloaded == 0 {
+		cleanup()
+		return errors.New("download failed: received empty file")
 	}
 
 	if expectedDigest != "" {
