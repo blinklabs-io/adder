@@ -384,19 +384,33 @@ func TestDownloadAsset_HTTPError(t *testing.T) {
 }
 
 func TestDownloadAsset_InvalidDigestFormat(t *testing.T) {
-	tmpDir := t.TempDir()
-	destPath := filepath.Join(tmpDir, "test.pkg")
+	tests := []struct {
+		name   string
+		digest string
+	}{
+		{name: "empty digest", digest: ""},
+		{name: "invalid text", digest: "not-a-valid-digest"},
+		{name: "short hash", digest: "sha256:short"},
+		{name: "invalid characters", digest: "sha256:zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"},
+	}
 
-	err := DownloadAsset(
-		context.Background(),
-		nil,
-		"https://example.com/asset.pkg",
-		destPath,
-		"not-a-valid-digest",
-		nil,
-	)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "invalid SHA-256 digest format")
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			tmpDir := t.TempDir()
+			destPath := filepath.Join(tmpDir, "test.pkg")
+
+			err := DownloadAsset(
+				context.Background(),
+				nil,
+				"https://example.com/asset.pkg",
+				destPath,
+				tc.digest,
+				nil,
+			)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "invalid SHA-256 digest format")
+		})
+	}
 }
 
 func TestIsValidSHA256Digest(t *testing.T) {
@@ -524,12 +538,13 @@ func TestDownloadAsset_Truncated(t *testing.T) {
 	tmpDir := t.TempDir()
 	destPath := filepath.Join(tmpDir, "test.pkg")
 
+	validDigest := "sha256:0000000000000000000000000000000000000000000000000000000000000000"
 	err := DownloadAsset(
 		context.Background(),
 		server.Client(),
 		server.URL,
 		destPath,
-		"",
+		validDigest,
 		nil,
 	)
 	require.Error(t, err)
@@ -561,12 +576,13 @@ func TestDownloadAssetCancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel immediately
 
+	validDigest := "sha256:0000000000000000000000000000000000000000000000000000000000000000"
 	err := DownloadAsset(
 		ctx,
 		server.Client(),
 		server.URL,
 		destPath,
-		"",
+		validDigest,
 		nil,
 	)
 	require.Error(t, err)
@@ -576,6 +592,8 @@ func TestDownloadAssetCancel(t *testing.T) {
 }
 
 func TestDownloadAsset_SizeLimits(t *testing.T) {
+	dummyDigest := "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+
 	t.Run("content length exceeds limit", func(t *testing.T) {
 		server := httptest.NewServer(
 			http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -594,7 +612,7 @@ func TestDownloadAsset_SizeLimits(t *testing.T) {
 			server.Client(),
 			server.URL,
 			destPath,
-			"",
+			dummyDigest,
 			nil,
 		)
 		require.Error(t, err)
@@ -627,7 +645,7 @@ func TestDownloadAsset_SizeLimits(t *testing.T) {
 			server.Client(),
 			server.URL,
 			destPath,
-			"",
+			dummyDigest,
 			nil,
 		)
 		require.Error(t, err)
@@ -653,7 +671,7 @@ func TestDownloadAsset_SizeLimits(t *testing.T) {
 			server.Client(),
 			server.URL,
 			destPath,
-			"",
+			dummyDigest,
 			nil,
 		)
 		require.Error(t, err)

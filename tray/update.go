@@ -273,7 +273,7 @@ func isValidSHA256Digest(digest string) bool {
 }
 
 // DownloadAsset downloads a release asset to destPath with progress reporting
-// and optional checksum integrity verification.
+// and checksum integrity verification.
 func DownloadAsset(
 	ctx context.Context,
 	client *http.Client,
@@ -282,7 +282,7 @@ func DownloadAsset(
 	expectedDigest string,
 	progress func(downloaded, total int64),
 ) error {
-	if expectedDigest != "" && !isValidSHA256Digest(expectedDigest) {
+	if !isValidSHA256Digest(expectedDigest) {
 		return fmt.Errorf("invalid SHA-256 digest format: %q", expectedDigest)
 	}
 
@@ -415,17 +415,15 @@ func DownloadAsset(
 		return errors.New("download failed: received empty file")
 	}
 
-	if expectedDigest != "" {
-		expectedHash := normalizeDigest(expectedDigest)
-		actualHash := hex.EncodeToString(hasher.Sum(nil))
-		if expectedHash != actualHash {
-			cleanup()
-			return fmt.Errorf(
-				"checksum verification failed: expected sha256:%s, got sha256:%s",
-				expectedHash,
-				actualHash,
-			)
-		}
+	expectedHash := normalizeDigest(expectedDigest)
+	actualHash := hex.EncodeToString(hasher.Sum(nil))
+	if expectedHash != actualHash {
+		cleanup()
+		return fmt.Errorf(
+			"checksum verification failed: expected sha256:%s, got sha256:%s",
+			expectedHash,
+			actualHash,
+		)
 	}
 
 	if err := file.Close(); err != nil {
