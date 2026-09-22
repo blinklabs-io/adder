@@ -1,15 +1,15 @@
 module github.com/blinklabs-io/adder
 
-go 1.26.0
+go 1.26.5
 
 require (
 	connectrpc.com/connect v1.20.0
 	fyne.io/fyne/v2 v2.8.1
 	github.com/SundaeSwap-finance/kugo v1.3.1
 	github.com/SundaeSwap-finance/ogmigo/v6 v6.2.1
-	github.com/blinklabs-io/gouroboros v0.204.1
-	github.com/blinklabs-io/ouroboros-mock v0.19.0
-	github.com/blinklabs-io/plutigo v0.6.1
+	github.com/blinklabs-io/gouroboros v0.205.2-0.20260915141342-0b10fb560c2f
+	github.com/blinklabs-io/ouroboros-mock v0.20.3
+	github.com/blinklabs-io/plutigo v0.7.0
 	github.com/btcsuite/btcd/btcutil v1.2.0
 	github.com/gen2brain/beeep v0.11.2
 	github.com/go-telegram/bot v1.27.0
@@ -102,7 +102,7 @@ require (
 	github.com/x448/float16 v0.8.4 // indirect
 	github.com/yuin/goldmark v1.8.2 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
-	golang.org/x/crypto v0.55.0 // indirect
+	golang.org/x/crypto v0.57.0 // indirect
 	golang.org/x/net v0.58.0 // indirect
 	golang.org/x/sync v0.23.0 // indirect
 	golang.org/x/text v0.42.0 // indirect
