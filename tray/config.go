@@ -34,11 +34,12 @@ type TrayConfig = setup.TrayConfig
 // DefaultConfig returns a TrayConfig with sensible defaults.
 func DefaultConfig() TrayConfig {
 	return TrayConfig{
-		APIAddress:  "127.0.0.1",
-		APIPort:     8080,
-		AdderConfig: "",
-		AutoStart:   false,
-		NotifyPrefs: make(map[string]bool),
+		APIAddress:         "127.0.0.1",
+		APIPort:            8080,
+		AdderConfig:        "",
+		AutoStart:          false,
+		NotifyPrefs:        make(map[string]bool),
+		CheckUpdatesWeekly: true,
 	}
 }
 

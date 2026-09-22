@@ -57,6 +57,7 @@ func TestLocalStoreLoadTrayMissingUsesDefaults(t *testing.T) {
 	assert.Equal(t, "127.0.0.1", got.APIAddress)
 	assert.Equal(t, uint(8080), got.APIPort)
 	assert.Empty(t, got.AdderConfig)
+	assert.True(t, got.CheckUpdatesWeekly)
 }
 
 func TestLocalStoreLoadTrayParseError(t *testing.T) {

@@ -45,6 +45,7 @@ func TestDefaultConfig(t *testing.T) {
 	assert.Equal(t, uint(8080), cfg.APIPort)
 	assert.Equal(t, "", cfg.AdderConfig)
 	assert.False(t, cfg.AutoStart)
+	assert.True(t, cfg.CheckUpdatesWeekly)
 	assert.NotNil(t, cfg.NotifyPrefs)
 	assert.Empty(t, cfg.NotifyPrefs)
 }

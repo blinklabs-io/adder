@@ -46,6 +46,9 @@ type notificationsStep struct {
 	statusLabel    *widget.Label
 	settingsBtn    *widget.Button
 
+	// Software Updates
+	checkUpdatesWeekly *widget.Check
+
 	// Rate-limit knobs live behind an "Advanced" accordion. Empty
 	// entries are interpreted as "use default" so a user who never
 	// opens Advanced still gets sensible behaviour.
@@ -98,6 +101,16 @@ func (s *notificationsStep) createChecks() {
 		func(bool) {},
 	)
 	s.autoStartCheck.SetChecked(initialAutoStart)
+
+	initialCheckWeekly := true
+	if s.plan != nil {
+		initialCheckWeekly = s.plan.App.CheckUpdatesWeekly
+	}
+	s.checkUpdatesWeekly = widget.NewCheck(
+		"Check for updates weekly",
+		func(bool) {},
+	)
+	s.checkUpdatesWeekly.SetChecked(initialCheckWeekly)
 }
 
 func (s *notificationsStep) createLayout() fyne.CanvasObject {
@@ -214,6 +227,13 @@ func (s *notificationsStep) createLayout() fyne.CanvasObject {
 		s.statusLabel,
 		guidance,
 		s.settingsBtn,
+		widget.NewSeparator(),
+		widget.NewLabelWithStyle(
+			"Software Updates",
+			fyne.TextAlignLeading,
+			fyne.TextStyle{Bold: true},
+		),
+		s.checkUpdatesWeekly,
 		widget.NewSeparator(),
 		s.rateAdvanced,
 	)
@@ -394,6 +414,9 @@ func (s *notificationsStep) Apply(plan *setup.SetupPlan) {
 
 	if s.autoStartCheck != nil {
 		plan.App.AutoStart = s.autoStartCheck.Checked
+	}
+	if s.checkUpdatesWeekly != nil {
+		plan.App.CheckUpdatesWeekly = s.checkUpdatesWeekly.Checked
 	}
 }
 

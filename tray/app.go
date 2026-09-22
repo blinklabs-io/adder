@@ -38,6 +38,7 @@ import (
 	"github.com/blinklabs-io/adder/event"
 	"github.com/blinklabs-io/adder/internal/explorer"
 	"github.com/blinklabs-io/adder/internal/ui/assets"
+	"github.com/blinklabs-io/adder/internal/version"
 	"github.com/blinklabs-io/adder/tray/notifications"
 	"github.com/blinklabs-io/adder/tray/setup"
 	"github.com/blinklabs-io/adder/tray/wizard"
@@ -118,6 +119,10 @@ type App struct {
 	notifyEngine atomic.Pointer[notifications.Engine]
 
 	aboutWindow fyne.Window
+	// updateWinMu serializes creation and focus checks for updateWindow.
+	updateWinMu   sync.Mutex
+	updateWindow  fyne.Window
+	updateChecker UpdateChecker
 }
 
 // NewApp creates and initialises the tray application.
@@ -188,11 +193,12 @@ func NewApp(fyneApp fyne.App) (*App, error) {
 	}
 
 	a := &App{
-		config:    cfg,
-		fyneApp:   fyneApp,
-		blockIcon: blockPath,
-		govIcon:   govPath,
-		txIcon:    txPath,
+		config:        cfg,
+		fyneApp:       fyneApp,
+		blockIcon:     blockPath,
+		govIcon:       govPath,
+		txIcon:        txPath,
+		updateChecker: NewGitHubUpdateChecker(""),
 		conn: NewConnectionManager(
 			WithConnectionAddress(cfg.APIAddress),
 			WithConnectionPort(cfg.APIPort),
@@ -589,6 +595,9 @@ func (a *App) setupTray() {
 		openFolder(LogDir())
 	})
 
+	mCheckUpdates := fyne.NewMenuItem("Check for Updates...", func() {
+		a.showCheckForUpdates()
+	})
 	mAbout := fyne.NewMenuItem("About", func() {
 		a.showAbout()
 	})
@@ -614,6 +623,7 @@ func (a *App) setupTray() {
 		mShowConfig,
 		mShowLogs,
 		fyne.NewMenuItemSeparator(),
+		mCheckUpdates,
 		mAbout,
 		mQuit,
 	)
@@ -649,6 +659,8 @@ func (a *App) setupTray() {
 	// Log non-zero drop deltas every 30s so suppressed notifications
 	// are visible to operators. Terminates on quitChan close.
 	go a.surfaceNotificationStats(eng)
+
+	go a.startPeriodicUpdateChecker()
 
 	// Status observer: updates the status menu item and routes
 	// connection alerts through the engine. initialFire suppresses
@@ -1266,5 +1278,140 @@ func (a *App) showAbout() {
 	a.aboutWindow = win
 	win.SetOnClosed(func() {
 		a.aboutWindow = nil
+	})
+}
+
+func (a *App) persistTrayConfig(cfg TrayConfig, desc string) {
+	if a.runner != nil && a.runner.Store != nil {
+		if err := a.runner.Store.SaveTrayAtomic(cfg); err != nil {
+			slog.Error("failed to save "+desc, "error", err)
+		}
+	} else {
+		if err := SaveConfig(cfg); err != nil {
+			slog.Error("failed to save "+desc, "error", err)
+		}
+	}
+}
+
+func (a *App) showCheckForUpdates() {
+	a.updateWinMu.Lock()
+	if a.updateWindow != nil {
+		win := a.updateWindow
+		a.updateWinMu.Unlock()
+		win.RequestFocus()
+		return
+	}
+	checker := a.updateChecker
+	if checker == nil {
+		checker = NewGitHubUpdateChecker("")
+	}
+	win := ShowUpdateWindow(
+		a.fyneApp,
+		checker,
+		WithCheckWeekly(a.Config().CheckUpdatesWeekly, func(enabled bool) {
+			a.configMu.Lock()
+			a.config.CheckUpdatesWeekly = enabled
+			cfg := a.config
+			a.configMu.Unlock()
+			a.persistTrayConfig(cfg, "check updates weekly preference")
+		}),
+		WithOnRelaunch(func() {
+			a.Shutdown()
+		}),
+		WithOnSkip(func(ver string) {
+			a.configMu.Lock()
+			a.config.SkippedVersion = ver
+			cfg := a.config
+			a.configMu.Unlock()
+			a.persistTrayConfig(cfg, "skipped version")
+		}),
+		WithOnClosed(func() {
+			a.updateWinMu.Lock()
+			a.updateWindow = nil
+			a.updateWinMu.Unlock()
+		}),
+	)
+	a.updateWindow = win
+	a.updateWinMu.Unlock()
+}
+
+func (a *App) startPeriodicUpdateChecker() {
+	select {
+	case <-a.quitChan:
+		return
+	case <-time.After(10 * time.Second):
+		a.checkWeeklyUpdates()
+	}
+
+	ticker := time.NewTicker(1 * time.Hour)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-a.quitChan:
+			return
+		case <-ticker.C:
+			a.checkWeeklyUpdates()
+		}
+	}
+}
+
+func (a *App) checkWeeklyUpdates() {
+	a.configMu.Lock()
+	enabled := a.config.CheckUpdatesWeekly
+	lastCheck := a.config.LastUpdateCheck
+	skippedVer := a.config.SkippedVersion
+	a.configMu.Unlock()
+
+	if !enabled {
+		return
+	}
+
+	const weeklyInterval = 7 * 24 * time.Hour
+	if !lastCheck.IsZero() && time.Since(lastCheck) < weeklyInterval {
+		return
+	}
+
+	checker := a.updateChecker
+	if checker == nil {
+		checker = NewGitHubUpdateChecker("")
+	}
+
+	checkCtx, cancel := context.WithTimeout(
+		context.Background(),
+		30*time.Second,
+	)
+	defer cancel()
+
+	info, err := checker.CheckLatestRelease(checkCtx)
+	if err != nil {
+		if !errors.Is(err, context.Canceled) {
+			slog.Debug("background update check failed", "error", err)
+		}
+		return
+	}
+
+	a.configMu.Lock()
+	a.config.LastUpdateCheck = time.Now()
+	cfg := a.config
+	a.configMu.Unlock()
+	a.persistTrayConfig(cfg, "last update check timestamp")
+
+	curVer := version.Version
+	if curVer == "" {
+		curVer = "devel"
+	}
+
+	available, _ := IsUpdateAvailable(curVer, info.TagName)
+	if !available {
+		return
+	}
+
+	if skippedVer != "" && info.TagName == skippedVer {
+		return
+	}
+
+	fyne.Do(func() {
+		a.showCheckForUpdates()
 	})
 }

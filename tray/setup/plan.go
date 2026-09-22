@@ -202,7 +202,8 @@ type NotificationPrefs map[string]bool
 
 // AppConfig defines tray-specific application settings.
 type AppConfig struct {
-	AutoStart bool
+	AutoStart          bool
+	CheckUpdatesWeekly bool
 	// NotifyRateLimit / NotifyRateWindow override the engine's
 	// notification rate limiter. Zero values resolve to
 	// DefaultNotifyRateLimit / DefaultNotifyRateWindow at engine

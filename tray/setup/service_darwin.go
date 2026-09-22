@@ -126,6 +126,7 @@ func registerService(cfg ServiceConfig) error {
 	// Unload the previous registration (if loaded) so the updated plist can be
 	// bootstrapped cleanly without "Bootstrap failed: 5".
 	_ = exec.Command("launchctl", "bootout", targetService).Run()
+	_ = exec.Command("launchctl", "enable", targetService).Run()
 
 	// Update macOS Login Items ("Open at Login") so the AdderTray menu bar
 	// icon also launches automatically on user login when AutoStart is requested.
@@ -139,6 +140,9 @@ func registerService(cfg ServiceConfig) error {
 // bootstrapService wraps launchctl bootstrap with retries for transient
 // teardown races ("Bootstrap failed: 5: Input/output error").
 func bootstrapService(target, plistPath string) error {
+	targetService := fmt.Sprintf("%s/%s", target, launchAgentLabel)
+	_ = exec.Command("launchctl", "enable", targetService).Run()
+
 	var out []byte
 	var err error
 	for attempt := range 5 {
@@ -157,6 +161,7 @@ func bootstrapService(target, plistPath string) error {
 		if isLoadedInLaunchd() {
 			return nil
 		}
+		_ = exec.Command("launchctl", "enable", targetService).Run()
 		time.Sleep(time.Duration(attempt+1) * 300 * time.Millisecond)
 	}
 	return fmt.Errorf("loading launch agent: %s: %w",
@@ -225,6 +230,8 @@ func startService() error {
 
 	target := fmt.Sprintf("gui/%d", os.Getuid())
 	targetService := fmt.Sprintf("gui/%d/%s", os.Getuid(), launchAgentLabel)
+
+	_ = exec.Command("launchctl", "enable", targetService).Run()
 
 	// Ensure the service is loaded in launchd before kicking it off.
 	if !isLoadedInLaunchd() {

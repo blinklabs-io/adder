@@ -189,7 +189,8 @@ func NewWizard(
 			},
 			Notify: make(setup.NotificationPrefs),
 			App: setup.AppConfig{
-				AutoStart: true,
+				AutoStart:          true,
+				CheckUpdatesWeekly: true,
 			},
 		}
 	}

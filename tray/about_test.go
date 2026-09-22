@@ -15,6 +15,9 @@
 package tray
 
 import (
+	"image/png"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"fyne.io/fyne/v2/test"
@@ -67,6 +70,12 @@ func TestShowAbout(t *testing.T) {
 
 	verStr := formatAboutVersion()
 	assert.Equal(t, "Version: v1.2.3 (commit: deadbeef)", verStr)
+
+	img := win.Canvas().Capture()
+	if f, err := os.Create(filepath.Join(t.TempDir(), "about_window.png")); err == nil {
+		_ = png.Encode(f, img)
+		_ = f.Close()
+	}
 
 	win.Close()
 }

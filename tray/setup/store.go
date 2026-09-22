@@ -46,6 +46,15 @@ type TrayConfig struct {
 	// NotifyRateWindow is the limiter window. Zero is resolved to
 	// DefaultNotifyRateWindow at load time.
 	NotifyRateWindow time.Duration `yaml:"notify_rate_window,omitempty"`
+
+	// SkippedVersion records a release tag the user chose to skip in the
+	// update checker.
+	SkippedVersion string `yaml:"skipped_version,omitempty"`
+	// CheckUpdatesWeekly controls whether adder-tray checks for updates
+	// automatically once a week.
+	CheckUpdatesWeekly bool `yaml:"check_updates_weekly"`
+	// LastUpdateCheck records the timestamp of the last update check.
+	LastUpdateCheck time.Time `yaml:"last_update_check,omitempty"`
 }
 
 // Default values for the notification rate limiter. Used when the
@@ -116,8 +125,9 @@ func (s *LocalStore) trayPath() string {
 
 func (s *LocalStore) LoadTray() (TrayConfig, error) {
 	cfg := TrayConfig{
-		APIAddress: "127.0.0.1",
-		APIPort:    8080,
+		APIAddress:         "127.0.0.1",
+		APIPort:            8080,
+		CheckUpdatesWeekly: true,
 	}
 	path := s.trayPath()
 	if _, err := os.Stat(path); os.IsNotExist(err) {
