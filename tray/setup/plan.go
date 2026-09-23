@@ -187,7 +187,7 @@ func ClonePlan(p SetupPlan) SetupPlan {
 
 // OutputConfig defines the external event destination.
 type OutputConfig struct {
-	Type   string            // none, log, webhook, telegram
+	Type   string            // log, webhook, telegram
 	Config map[string]string // Key-value pairs for plugin options
 }
 

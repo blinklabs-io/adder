@@ -15,11 +15,11 @@
 package notify
 
 import (
+	"context"
 	_ "embed"
 	"fmt"
 	"log/slog"
 	"os"
-	"sync"
 
 	"github.com/blinklabs-io/adder/event"
 	"github.com/blinklabs-io/adder/plugin"
@@ -30,11 +30,8 @@ import (
 var icon []byte
 
 type NotifyOutput struct {
-	wg        sync.WaitGroup
-	errorChan chan error
-	eventChan chan event.Event
-	logger    plugin.Logger
-	title     string
+	plugin.Base
+	title string
 }
 
 func New(options ...NotifyOptionFunc) *NotifyOutput {
@@ -47,10 +44,25 @@ func New(options ...NotifyOptionFunc) *NotifyOutput {
 	return n
 }
 
+// Role identifies this plugin as a pipeline output.
+func (n *NotifyOutput) Role() plugin.PluginType { return plugin.PluginTypeOutput }
+
 // Start the notify output
 func (n *NotifyOutput) Start() error {
-	n.eventChan = make(chan event.Event, 10)
-	n.errorChan = make(chan error)
+	return n.StartContext(context.Background())
+}
+
+// StartContext starts the plugin with ctx governing setup and run operations.
+// Call Stop to wait for workers and release resources, including after cancellation.
+func (n *NotifyOutput) StartContext(ctx context.Context) error {
+	return n.StartRun(ctx,
+		plugin.BaseConfig{HasInput: true, DrainOnStop: true},
+		n.start,
+		plugin.ShutdownHooks{},
+	)
+}
+
+func (n *NotifyOutput) start(ctx context.Context) error {
 	// Write our icon asset
 	userCacheDir, err := os.UserCacheDir()
 	if err != nil {
@@ -71,12 +83,10 @@ func (n *NotifyOutput) Start() error {
 	if err := os.WriteFile(filename, icon, 0o600); err != nil {
 		return fmt.Errorf("failed to write icon file: %w", err)
 	}
-	eventChan := n.eventChan
-	n.wg.Add(1)
-	go func(eventChan <-chan event.Event) {
-		defer n.wg.Done()
+	in := n.Input()
+	n.Go(func() {
 		for {
-			evt, ok := <-eventChan
+			evt, ok := <-in
 			// Channel has been closed, which means we're shutting down
 			if !ok {
 				return
@@ -108,7 +118,11 @@ func (n *NotifyOutput) Start() error {
 					filename,
 				)
 				if err != nil {
-					slog.Error("failed to send block notification", "error", err)
+					slog.Error(
+						"failed to send block notification",
+						"error",
+						err,
+					)
 					continue
 				}
 			case event.TypeRollback:
@@ -128,7 +142,11 @@ func (n *NotifyOutput) Start() error {
 					filename,
 				)
 				if err != nil {
-					slog.Error("failed to send rollback notification", "error", err)
+					slog.Error(
+						"failed to send rollback notification",
+						"error",
+						err,
+					)
 					continue
 				}
 			case event.TypeTransaction:
@@ -159,7 +177,11 @@ func (n *NotifyOutput) Start() error {
 					filename,
 				)
 				if err != nil {
-					slog.Error("failed to send transaction notification", "error", err)
+					slog.Error(
+						"failed to send transaction notification",
+						"error",
+						err,
+					)
 					continue
 				}
 			default:
@@ -169,40 +191,24 @@ func (n *NotifyOutput) Start() error {
 					filename,
 				)
 				if err != nil {
-					slog.Error("failed to send notification", "error", err, "event_type", evt.Type)
+					slog.Error(
+						"failed to send notification",
+						"error",
+						err,
+						"event_type",
+						evt.Type,
+					)
 					continue
 				}
 			}
 		}
-	}(eventChan)
+	})
 	return nil
 }
 
-// Stop the embedded output
+// Stop the notify output
 func (n *NotifyOutput) Stop() error {
-	if n.eventChan != nil {
-		close(n.eventChan)
-		n.wg.Wait()
-		n.eventChan = nil
-	}
-	if n.errorChan != nil {
-		close(n.errorChan)
-		n.errorChan = nil
-	}
-	return nil
+	return n.Shutdown(plugin.ShutdownHooks{})
 }
 
-// ErrorChan returns the plugin's error channel
-func (n *NotifyOutput) ErrorChan() <-chan error {
-	return n.errorChan
-}
-
-// InputChan returns the input event channel
-func (n *NotifyOutput) InputChan() chan<- event.Event {
-	return n.eventChan
-}
-
-// OutputChan always returns nil
-func (n *NotifyOutput) OutputChan() <-chan event.Event {
-	return nil
-}
+var _ plugin.ManagedPlugin = (*NotifyOutput)(nil)

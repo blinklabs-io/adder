@@ -1,6 +1,6 @@
 # macOS `.pkg` installer
 
-This directory builds a signed and notarized macOS installer package that
+This directory builds a macOS installer package, optionally signed and notarized, that
 installs **both** the `adder` CLI and the `adder-tray` GUI inside a single
 `Adder.app` bundle.
 
@@ -34,11 +34,13 @@ in-bundle binary so `adder` is on `$PATH` for shell use, creating
 (the primary payload is the GUI app in `/Applications`). If `/usr/local` is
 read-only — locked-down or MDM-managed Macs — the symlink is skipped with a
 warning and the CLI remains runnable at
-`/Applications/Adder.app/Contents/MacOS/adder`. The script also refuses to
-overwrite a pre-existing `/usr/local/bin/adder` that isn't already ours (a
-Homebrew formula, another tool, or a user symlink), leaving it untouched.
+`/Applications/Adder.app/Contents/MacOS/adder`. The script preserves an existing non-Adder path when its target exists.
+A dangling symlink can be replaced by its absent-path check.
 
-To uninstall: `sudo rm -rf /Applications/Adder.app /usr/local/bin/adder`.
+To uninstall, disable configured autostart through the tray and quit it. Remove
+`/Applications/Adder.app`; remove `/usr/local/bin/adder` only after checking
+that the symlink points into that bundle. User configuration and logs remain
+in their separate directories.
 
 ## What the installer does NOT do
 
@@ -54,7 +56,7 @@ To uninstall: `sudo rm -rf /Applications/Adder.app /usr/local/bin/adder`.
 # Local, unsigned (dev): signing/notarization steps warn and skip.
 ./packaging/macos/build-pkg.sh
 
-# Local, ad-hoc signed (dev): app runs AND notifications work (see note below).
+# Local, ad-hoc signed (dev): signs binaries and bundle.
 ADHOC=1 ./packaging/macos/build-pkg.sh   # or: make pkg-macos-adhoc
 
 # Signed + notarized (CI / release): set the env vars below.
@@ -76,7 +78,7 @@ The artifact is written to `dist/adder-<version>-darwin-<arch>.pkg`
 | -------------------- | ------------ | ----------------------------------------- | ------- |
 | `VERSION`            | optional     | `git describe --tags --always --dirty` (leading `v` stripped) | Installer / app version. For releases set a clean semver (e.g. `0.42.0`); `CFBundleVersion` must be ≤3 dot-separated integers, so the raw `git describe` form (`0.42.0-36-g…`) is only suitable for local dev builds. |
 | `ARCH`               | optional     | `uname -m`                                | Accepts `arm64`/`aarch64` or `amd64`/`x86_64`. Maps to `GOARCH`; the pkg filename uses Go arch naming (`arm64`/`amd64`) to match the CI matrix `arch`. |
-| `ADHOC`              | optional     | _(unset → skip)_                          | `1`/`true` → ad-hoc sign the `.app` when `SIGNING_IDENTITY` is unset. Local/dev only; not notarizable. Needed for working notifications (see below). Ignored when `SIGNING_IDENTITY` is set. |
+| `ADHOC`              | optional     | _(unset → skip)_                          | `1`/`true` → ad-hoc sign the `.app` when `SIGNING_IDENTITY` is unset. Local/dev only; not notarizable. See the local notification setup below. Ignored when `SIGNING_IDENTITY` is set. |
 | `SIGNING_IDENTITY`   | code signing | _(unset → skip)_                          | **Developer ID Application** identity. Signs the binaries and `.app` with hardened runtime. |
 | `INSTALLER_IDENTITY` | pkg signing  | _(unset → skip)_                          | **Developer ID Installer** identity. Signs the `.pkg` via `productsign`. |
 | `TEAM_ID`            | notarization | _(unset)_                                 | Apple Developer Team ID. Required for the Apple-ID notarization fallback. |
@@ -92,32 +94,21 @@ The artifact is written to `dist/adder-<version>-darwin-<arch>.pkg`
 The script uses `set -euo pipefail` and treats all signing/notary vars as
 optional (`${VAR:-}`):
 
-- **`SIGNING_IDENTITY` unset** → binaries and `.app` are not code-signed (warns).
+- **`SIGNING_IDENTITY` unset** → release signing is skipped; `ADHOC=1` still enables local ad-hoc signing.
 - **`INSTALLER_IDENTITY` unset** → the unsigned `.pkg` is copied to the final
   name and `productsign` is skipped (warns). Notarization is then also skipped.
 - **No notary credentials** (`NOTARY_PROFILE`, or `APPLE_ID` + `APPLE_APP_PASSWORD`
   + `TEAM_ID`) → notarization and stapling are skipped (warns).
 
-So a plain local run always yields a working **unsigned** pkg, while CI with the
-secrets set yields a **signed + notarized + stapled** pkg.
+Without credentials the build produces an unsigned package. Signing and
+notarization run only when configured and must succeed before the script
+reports completion.
 
 ### Ad-hoc signing and notifications (`ADHOC=1`)
 
-A fully **unsigned** local build installs and launches, but the tray's
-notification permission prompt never appears. macOS notification authorization
-keys off the bundle's code-signing identity: on Apple Silicon the Go linker
-already stamps each binary with an automatic ad-hoc signature, but that does
-**not** bind `Info.plist` or seal `Resources/`, so the bundle reports
-`Identifier=a.out` and the notification center refuses to prompt.
-
-`ADHOC=1` runs `codesign --force --sign -` on the binaries **and the bundle**
-(inside-out), which binds `Info.plist` and gives the app its real
-`io.blinklabs.adder` identifier. That is enough for first-run notification
-authorization to fire. The `.pkg` itself stays unsigned (ad-hoc cannot satisfy
-`productsign`/notarization), so install it via `sudo installer -pkg <pkg>
--target /` and expect `spctl --type install` to reject it — that "accepted"
-verdict only comes from the CI signed + notarized build. `ADHOC` is ignored when
-`SIGNING_IDENTITY` is set (the real Developer ID signature supersedes it).
+The ad-hoc path signs both binaries and then the bundle, binding its metadata
+for local notification setup. It does not produce a notarized release. Use the
+wizard's test notification to check OS permission on the installed bundle.
 
 ## Required credentials / secrets
 
@@ -183,62 +174,6 @@ spctl -a -vv --type install dist/adder-0.42.0-darwin-arm64.pkg
 # => ... accepted
 ```
 
-## Known / benign: AppleDouble entries in the payload
-
-`pkgutil --payload-files` on the built pkg lists `._*` (AppleDouble) entries
-alongside the real files, e.g. `._adder`, `._Info.plist`. This is normal
-`pkgbuild` behavior — these carry extended attributes into the cpio payload and
-are reconstructed onto the real files at install time; no `._*` files land on
-disk. Apple's own packages contain them.
-
-Relatedly, macOS (Sequoia and later) stamps a kernel-managed
-`com.apple.provenance` extended attribute on Go-built binaries that `xattr -c`
-cannot remove. It is benign and tolerated by notarization. The build strips all
-*removable* xattrs (quarantine, resource forks, Finder info) before signing,
-which are the attributes that actually break `codesign` sealing.
-
-## CI wiring
-
-The release workflow `.github/workflows/publish.yml` runs `build-pkg.sh` from
-the `build-binaries` matrix on a native macOS runner per arch (arm64 on
-`macos-15`, amd64 on `macos-15-intel`) and uploads each signed + notarized `.pkg` as a
-release asset. Building inline on native runners avoids cross-compiling the
-CGO/Fyne `adder-tray`. Each darwin job:
-
-1. Imports both Developer ID certificates into a temporary keychain via
-   `security create-keychain` / `security import` (Application cert under
-   `APPLE_CERTIFICATE`, Installer cert under `APPLE_INSTALLER_CERTIFICATE`).
-2. Stores notarytool credentials with `xcrun notarytool store-credentials`
-   under the profile name `adder-notary`.
-3. Exports `SIGNING_IDENTITY`, `INSTALLER_IDENTITY`, `TEAM_ID`,
-   `NOTARY_PROFILE`, `VERSION`, `ARCH` and runs `./packaging/macos/build-pkg.sh`.
-4. Asserts `spctl -a -vv --type install dist/adder-*.pkg` reports both
-   `accepted` and `source=Notarized Developer ID`; fails the job otherwise.
-5. Uploads `dist/adder-<version>-darwin-arm64.pkg` as a release asset and
-   attests it with `actions/attest`.
-
-### Required GitHub Actions secrets
-
-| Secret                                   | Format                                | Used for                                  |
-| ---------------------------------------- | ------------------------------------- | ----------------------------------------- |
-| `APPLE_CERTIFICATE`                      | base64 of Developer ID Application `.p12` | `codesign` binaries + `.app` |
-| `APPLE_CERTIFICATE_PASSWORD`             | string                                | password for the Application `.p12` |
-| `APPLE_INSTALLER_CERTIFICATE`            | base64 of Developer ID Installer `.p12`   | `productsign` the `.pkg` |
-| `APPLE_INSTALLER_CERTIFICATE_PASSWORD`   | string                                | password for the Installer `.p12` |
-| `APPLE_KEYCHAIN_PASSWORD`                | string                                | password of the temporary CI keychain |
-| `APPLE_ID`                               | email                                 | notarytool auth |
-| `APPLE_APP_SPECIFIC_PASSWORD`            | app-specific password                 | notarytool auth |
-| `APPLE_TEAM_ID`                          | 10-char team ID                       | notarytool auth + identity string |
-
-To export the Installer cert as a `.p12` from the keychain on a Mac that
-already has it installed:
-
-```bash
-security export -k login.keychain -t identities -f pkcs12 \
-    -P "<password>" -o installer.p12 \
-    "Developer ID Installer: Blink Labs Software (<TEAM_ID>)"
-base64 -i installer.p12 | pbcopy   # paste into the GitHub secret
-```
 
 > Note: the `adder-tray` build requires CGO (Fyne). Build on a native macOS
 > runner for the target architecture; cross-compiling CGO needs a matching SDK

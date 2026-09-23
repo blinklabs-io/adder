@@ -239,7 +239,7 @@ func pbGovActionData(prop *cardanopb.GovernanceActionProposal) event.GovActionDa
 		for _, nc := range uca.GetNewCommitteeCredentials() {
 			d.MembersToAdd = append(d.MembersToAdd, event.CommitteeMember{
 				Credential: pbStakeCredentialHex(nc.GetCommitteeColdCredential()),
-				Epoch:      uint(nc.GetExpiresEpoch()),
+				Epoch:      uint64(nc.GetExpiresEpoch()),
 			})
 		}
 		if qt := uca.GetNewCommitteeThreshold(); qt != nil {

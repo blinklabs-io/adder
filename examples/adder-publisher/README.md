@@ -54,17 +54,10 @@ go run main.go
 
 ## Expected Output
 
-The program will output:
-- ChainSync status updates showing sync progress
-- Events for each block, transaction, and other blockchain activities
+The callback logs `received event` with a `type` attribute; the status callback logs `chainsync status update`. All events emitted by this chainsync instance reach the callback while it is running.
 
-Example:
-```text
-ChainSync status update: {Status: syncing, Tip: 12345678}
-Received event: input.block
-Received event: input.transaction
-...
-```
+The example handles SIGINT/SIGTERM, observes `Failed()` separately from
+diagnostic `ErrorChan()` messages, and calls `Stop()` before returning.
 
 ## Code Structure
 

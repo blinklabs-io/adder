@@ -15,61 +15,38 @@
 package pipeline
 
 import (
+	"context"
 	"errors"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
 	"github.com/blinklabs-io/adder/event"
+	"github.com/blinklabs-io/adder/plugin"
 )
 
-// fakeInput is an input plugin that emits events on demand via emit().
-// It owns its output and error channels and recreates them on Start so
-// the pipeline can be restarted.
-type fakeInput struct {
-	outputChan chan event.Event
-	errorChan  chan error
-	stopOnce   sync.Once
+type fakeInput struct{ plugin.Base }
+
+func (*fakeInput) Role() plugin.PluginType { return plugin.PluginTypeInput }
+func (f *fakeInput) StartContext(ctx context.Context) error {
+	return f.StartRun(
+		ctx,
+		plugin.BaseConfig{HasOutput: true},
+		func(context.Context) error { return nil },
+		plugin.ShutdownHooks{},
+	)
 }
 
-func (f *fakeInput) Start() error {
-	f.outputChan = make(chan event.Event)
-	f.errorChan = make(chan error)
-	f.stopOnce = sync.Once{}
-	return nil
-}
+func (f *fakeInput) Stop() error          { return f.Shutdown(plugin.ShutdownHooks{}) }
+func (f *fakeInput) emit(evt event.Event) { f.Emit(evt) }
+func (f *fakeInput) emitError(err error)  { f.SendError(err) }
 
-func (f *fakeInput) Stop() error {
-	f.stopOnce.Do(func() {
-		close(f.outputChan)
-		close(f.errorChan)
-	})
-	return nil
-}
-
-func (f *fakeInput) ErrorChan() <-chan error        { return f.errorChan }
-func (f *fakeInput) InputChan() chan<- event.Event  { return nil }
-func (f *fakeInput) OutputChan() <-chan event.Event { return f.outputChan }
-
-// emit sends an event into the pipeline (blocking handshake).
-func (f *fakeInput) emit(evt event.Event) { f.outputChan <- evt }
-
-// emitError sends an error onto the input's error channel.
-func (f *fakeInput) emitError(err error) { f.errorChan <- err }
-
-// passFilter forwards every event from InputChan to OutputChan unchanged,
-// unless dropTypes contains the event's Type, in which case it is dropped.
 type passFilter struct {
-	inputChan  chan event.Event
-	outputChan chan event.Event
-	errorChan  chan error
-	doneChan   chan struct{}
-	wg         sync.WaitGroup
-	stopOnce   sync.Once
-	dropTypes  map[string]bool
+	plugin.Base
+	dropTypes map[string]bool
 }
 
+func (*passFilter) Role() plugin.PluginType { return plugin.PluginTypeFilter }
 func newPassFilter(dropTypes ...string) *passFilter {
 	drop := make(map[string]bool, len(dropTypes))
 	for _, t := range dropTypes {
@@ -78,108 +55,68 @@ func newPassFilter(dropTypes ...string) *passFilter {
 	return &passFilter{dropTypes: drop}
 }
 
-func (f *passFilter) Start() error {
-	f.inputChan = make(chan event.Event)
-	f.outputChan = make(chan event.Event)
-	f.errorChan = make(chan error)
-	f.doneChan = make(chan struct{})
-	f.stopOnce = sync.Once{}
-	f.wg.Add(1)
-	go func(doneChan <-chan struct{}, inputChan <-chan event.Event, outputChan chan<- event.Event) {
-		defer f.wg.Done()
-		for {
-			select {
-			case <-doneChan:
-				return
-			case evt, ok := <-inputChan:
-				if !ok {
-					return
+func (f *passFilter) StartContext(ctx context.Context) error {
+	return f.StartRun(
+		ctx,
+		plugin.BaseConfig{HasInput: true, HasOutput: true},
+		func(ctx context.Context) error {
+			input := f.Input()
+			f.Go(func() {
+				for {
+					select {
+					case <-ctx.Done():
+						return
+					case evt := <-input:
+						if !f.dropTypes[evt.Type] && !f.Emit(evt) {
+							return
+						}
+					}
 				}
-				if f.dropTypes[evt.Type] {
-					continue
-				}
-				select {
-				case outputChan <- evt:
-				case <-doneChan:
-					return
-				}
-			}
-		}
-	}(f.doneChan, f.inputChan, f.outputChan)
-	return nil
+			})
+			return nil
+		},
+		plugin.ShutdownHooks{},
+	)
 }
+func (f *passFilter) Stop() error { return f.Shutdown(plugin.ShutdownHooks{}) }
 
-func (f *passFilter) Stop() error {
-	f.stopOnce.Do(func() {
-		close(f.doneChan)
-		f.wg.Wait()
-		close(f.inputChan)
-		close(f.outputChan)
-		close(f.errorChan)
-	})
-	return nil
-}
-
-func (f *passFilter) ErrorChan() <-chan error        { return f.errorChan }
-func (f *passFilter) InputChan() chan<- event.Event  { return f.inputChan }
-func (f *passFilter) OutputChan() <-chan event.Event { return f.outputChan }
-
-// collectOutput is an output plugin that pushes every received event onto
-// a buffered channel so tests can read them with a real handshake (no
-// sleeps). Buffer is large enough for the test volume.
 type collectOutput struct {
-	inputChan chan event.Event
-	errorChan chan error
-	received  chan event.Event
-	doneChan  chan struct{}
-	wg        sync.WaitGroup
-	stopOnce  sync.Once
+	plugin.Base
+	received chan event.Event
 }
 
+func (*collectOutput) Role() plugin.PluginType { return plugin.PluginTypeOutput }
 func newCollectOutput(buf int) *collectOutput {
 	return &collectOutput{received: make(chan event.Event, buf)}
 }
 
-func (o *collectOutput) Start() error {
-	o.inputChan = make(chan event.Event)
-	o.errorChan = make(chan error)
-	o.doneChan = make(chan struct{})
-	o.stopOnce = sync.Once{}
-	o.wg.Add(1)
-	go func(doneChan <-chan struct{}, inputChan <-chan event.Event, received chan<- event.Event) {
-		defer o.wg.Done()
-		for {
-			select {
-			case <-doneChan:
-				return
-			case evt, ok := <-inputChan:
-				if !ok {
-					return
+func (o *collectOutput) StartContext(ctx context.Context) error {
+	return o.StartRun(
+		ctx,
+		plugin.BaseConfig{HasInput: true},
+		func(ctx context.Context) error {
+			input := o.Input()
+			o.Go(func() {
+				for {
+					select {
+					case <-ctx.Done():
+						return
+					case evt := <-input:
+						select {
+						case o.received <- evt:
+						case <-ctx.Done():
+							return
+						}
+					}
 				}
-				select {
-				case received <- evt:
-				case <-doneChan:
-					return
-				}
-			}
-		}
-	}(o.doneChan, o.inputChan, o.received)
-	return nil
+			})
+			return nil
+		},
+		plugin.ShutdownHooks{},
+	)
 }
 
-func (o *collectOutput) Stop() error {
-	o.stopOnce.Do(func() {
-		close(o.doneChan)
-		o.wg.Wait()
-		close(o.inputChan)
-		close(o.errorChan)
-	})
-	return nil
-}
-
-func (o *collectOutput) ErrorChan() <-chan error        { return o.errorChan }
-func (o *collectOutput) InputChan() chan<- event.Event  { return o.inputChan }
-func (o *collectOutput) OutputChan() <-chan event.Event { return nil }
+func (o *collectOutput) Stop() error { return o.Shutdown(plugin.ShutdownHooks{}) }
 
 // next reads the next received event, failing the test on timeout.
 func (o *collectOutput) next(t *testing.T) event.Event {
@@ -386,28 +323,38 @@ func TestFlowStartAlreadyRunning(t *testing.T) {
 }
 
 type failStartPlugin struct {
-	fakeInput
+	plugin.Base
+	role plugin.PluginType
 	fail bool
 }
 
-func (f *failStartPlugin) Start() error {
-	if f.fail {
-		return errors.New("failed to start")
-	}
-	return f.fakeInput.Start()
+func (f *failStartPlugin) Role() plugin.PluginType { return f.role }
+func (f *failStartPlugin) StartContext(ctx context.Context) error {
+	return f.StartRun(ctx, plugin.BaseConfig{
+		HasInput:  f.role != plugin.PluginTypeInput,
+		HasOutput: f.role != plugin.PluginTypeOutput,
+	}, func(context.Context) error {
+		if f.fail {
+			return errors.New("failed to start")
+		}
+		return nil
+	}, plugin.ShutdownHooks{})
 }
 
+func (f *failStartPlugin) Stop() error { return f.Shutdown(plugin.ShutdownHooks{}) }
+
 type failStopPlugin struct {
-	fakeInput
+	failStartPlugin
 	failStop bool
 }
 
 func (f *failStopPlugin) Stop() error {
-	_ = f.fakeInput.Stop()
-	if f.failStop {
-		return errors.New("failed to stop")
-	}
-	return nil
+	return f.Shutdown(plugin.ShutdownHooks{AfterWait: func() error {
+		if f.failStop {
+			return errors.New("failed to stop")
+		}
+		return nil
+	}})
 }
 
 // TestFlowStartRollback verifies that if a plugin fails to start, the pipeline
@@ -415,8 +362,14 @@ func (f *failStopPlugin) Stop() error {
 // covers the error collection branch during rollback.
 func TestFlowStartRollback(t *testing.T) {
 	p := New()
-	in1 := &failStopPlugin{failStop: true} // Starts successfully, fails to stop during rollback
-	in2 := &failStartPlugin{fail: true}    // Fails to start
+	in1 := &failStopPlugin{
+		failStartPlugin: failStartPlugin{role: plugin.PluginTypeInput},
+		failStop:        true,
+	} // Starts successfully, fails to stop during rollback
+	in2 := &failStartPlugin{
+		role: plugin.PluginTypeInput,
+		fail: true,
+	} // Fails to start
 	p.AddInput(in1)
 	p.AddInput(in2)
 
@@ -426,10 +379,18 @@ func TestFlowStartRollback(t *testing.T) {
 	}
 	errStr := err.Error()
 	if !strings.Contains(errStr, "failed to start input") {
-		t.Errorf("expected error to contain %q, got %q", "failed to start input", errStr)
+		t.Errorf(
+			"expected error to contain %q, got %q",
+			"failed to start input",
+			errStr,
+		)
 	}
 	if !strings.Contains(errStr, "failed to stop") {
-		t.Errorf("expected error to contain %q, got %q", "failed to stop", errStr)
+		t.Errorf(
+			"expected error to contain %q, got %q",
+			"failed to stop",
+			errStr,
+		)
 	}
 }
 
@@ -438,7 +399,7 @@ func TestFlowStartRollback(t *testing.T) {
 func TestFlowStartFilterFailRollback(t *testing.T) {
 	p := New()
 	in := &fakeInput{}
-	filter := &failStartPlugin{fail: true}
+	filter := &failStartPlugin{role: plugin.PluginTypeFilter, fail: true}
 	p.AddInput(in)
 	p.AddFilter(filter)
 
@@ -453,7 +414,7 @@ func TestFlowStartFilterFailRollback(t *testing.T) {
 func TestFlowStartOutputFailRollback(t *testing.T) {
 	p := New()
 	in := &fakeInput{}
-	out := &failStartPlugin{fail: true}
+	out := &failStartPlugin{role: plugin.PluginTypeOutput, fail: true}
 	p.AddInput(in)
 	p.AddOutput(out)
 
@@ -467,9 +428,18 @@ func TestFlowStartOutputFailRollback(t *testing.T) {
 // from inputs, filters, and outputs that fail during shutdown.
 func TestFlowStopPluginErrors(t *testing.T) {
 	p := New()
-	in := &failStopPlugin{failStop: true}
-	filter := &failStopPlugin{failStop: true}
-	out := &failStopPlugin{failStop: true}
+	in := &failStopPlugin{
+		failStartPlugin: failStartPlugin{role: plugin.PluginTypeInput},
+		failStop:        true,
+	}
+	filter := &failStopPlugin{
+		failStartPlugin: failStartPlugin{role: plugin.PluginTypeFilter},
+		failStop:        true,
+	}
+	out := &failStopPlugin{
+		failStartPlugin: failStartPlugin{role: plugin.PluginTypeOutput},
+		failStop:        true,
+	}
 	p.AddInput(in)
 	p.AddFilter(filter)
 	p.AddOutput(out)
@@ -484,7 +454,11 @@ func TestFlowStopPluginErrors(t *testing.T) {
 	errStr := err.Error()
 	for _, expected := range []string{"failed to stop input", "failed to stop filter", "failed to stop output"} {
 		if !strings.Contains(errStr, expected) {
-			t.Errorf("expected Stop error to aggregate %q, got %q", expected, errStr)
+			t.Errorf(
+				"expected Stop error to aggregate %q, got %q",
+				expected,
+				errStr,
+			)
 		}
 	}
 }
@@ -509,8 +483,9 @@ func TestFlowObserverChannelFullDrop(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		in.emit(event.Event{Type: "first"})
-		in.emit(event.Event{Type: "second"})
+		for range 10000 {
+			in.emit(event.Event{Type: "unobserved"})
+		}
 		close(done)
 	}()
 
@@ -594,11 +569,11 @@ func TestFlowOutputChanLoopBlockedDoneChan(t *testing.T) {
 	p := New()
 	out := &blockedOutput{}
 	_ = out.Start()
-	p.AddOutput(out)
+	defer out.Stop()
 
 	// We start the loop manually
 	p.wg.Add(1)
-	go p.outputChanLoop()
+	go p.outputChanLoop([]chan<- event.Event{out.InputChan()})
 
 	sent := make(chan struct{})
 	// Send an event to outputChan so it is read and blocks on out.InputChan()

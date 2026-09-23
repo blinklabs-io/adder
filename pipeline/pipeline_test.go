@@ -1,6 +1,7 @@
 package pipeline
 
 import (
+	"context"
 	"errors"
 	"slices"
 	"sync"
@@ -8,91 +9,56 @@ import (
 	"time"
 
 	"github.com/blinklabs-io/adder/event"
+	"github.com/blinklabs-io/adder/plugin"
 )
 
-// plugin that panics when Stop is called
-type panicPlugin struct {
-	errChanOnce sync.Once
-	errChan     chan error
-}
+type noopPlugin struct{ plugin.Base }
 
-func (p *panicPlugin) Start() error { return nil }
-func (p *panicPlugin) Stop() error  { panic("stop panic") }
-
-func (p *panicPlugin) ErrorChan() <-chan error {
-	p.errChanOnce.Do(func() {
-		if p.errChan == nil {
-			p.errChan = make(chan error)
-		}
-	})
-	return p.errChan
+func (*noopPlugin) Role() plugin.PluginType { return plugin.PluginTypeInput }
+func (n *noopPlugin) StartContext(ctx context.Context) error {
+	return n.StartRun(
+		ctx,
+		plugin.BaseConfig{HasOutput: true},
+		func(context.Context) error { return nil },
+		plugin.ShutdownHooks{},
+	)
 }
-func (p *panicPlugin) InputChan() chan<- event.Event  { return nil }
-func (p *panicPlugin) OutputChan() <-chan event.Event { return nil }
+func (n *noopPlugin) Stop() error { return n.Shutdown(plugin.ShutdownHooks{}) }
 
-// simple no-op plugin
-type noopPlugin struct {
-	errChanOnce sync.Once
-	errChan     chan error
-}
+type panicPlugin struct{ noopPlugin }
+
+func (*panicPlugin) Stop() error { panic("stop panic") }
 
 type lifecyclePlugin struct {
-	mu         sync.Mutex
-	startErr   error
-	starts     int
-	stops      int
-	errChan    chan error
-	inputChan  chan event.Event
-	outputChan chan event.Event
+	plugin.Base
+	role     plugin.PluginType
+	startErr error
+	starts   int
+	stops    int
 }
 
-func (p *lifecyclePlugin) Start() error {
-	p.mu.Lock()
-	defer p.mu.Unlock()
+func (p *lifecyclePlugin) Role() plugin.PluginType { return p.role }
+func (p *lifecyclePlugin) StartContext(ctx context.Context) error {
 	p.starts++
-	if p.startErr != nil {
-		return p.startErr
-	}
-	p.errChan = make(chan error)
-	p.inputChan = make(chan event.Event)
-	p.outputChan = make(chan event.Event)
-	return nil
+	return p.StartRun(ctx, plugin.BaseConfig{
+		HasInput:  p.role != plugin.PluginTypeInput,
+		HasOutput: p.role != plugin.PluginTypeOutput,
+	}, func(context.Context) error { return p.startErr }, plugin.ShutdownHooks{})
 }
 
 func (p *lifecyclePlugin) Stop() error {
-	p.mu.Lock()
-	defer p.mu.Unlock()
 	p.stops++
-	return nil
+	return p.Shutdown(plugin.ShutdownHooks{})
 }
-
-func (p *lifecyclePlugin) ErrorChan() <-chan error        { return p.errChan }
-func (p *lifecyclePlugin) InputChan() chan<- event.Event  { return p.inputChan }
-func (p *lifecyclePlugin) OutputChan() <-chan event.Event { return p.outputChan }
-
-func (p *lifecyclePlugin) counts() (int, int) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	return p.starts, p.stops
-}
-
-func (n *noopPlugin) Start() error { return nil }
-func (n *noopPlugin) Stop() error  { return nil }
-func (n *noopPlugin) ErrorChan() <-chan error {
-	n.errChanOnce.Do(func() {
-		if n.errChan == nil {
-			n.errChan = make(chan error)
-		}
-	})
-	return n.errChan
-}
-func (n *noopPlugin) InputChan() chan<- event.Event  { return nil }
-func (n *noopPlugin) OutputChan() <-chan event.Event { return nil }
+func (p *lifecyclePlugin) counts() (int, int) { return p.starts, p.stops }
 
 func TestStopWithPluginPanic(t *testing.T) {
 	p := New()
 	pp := &panicPlugin{}
 	p.AddInput(pp)
+	if err := p.Start(); err != nil {
+		t.Fatal(err)
+	}
 
 	// Stop should panic if plugin.Stop panics, since we don't catch panics
 	defer func() {
@@ -119,9 +85,12 @@ func TestStopIdempotent(t *testing.T) {
 
 func TestStartFailureRollsBackStartedPlugins(t *testing.T) {
 	p := New()
-	input := &lifecyclePlugin{}
-	failing := &lifecyclePlugin{startErr: errors.New("start failed")}
-	later := &lifecyclePlugin{}
+	input := &lifecyclePlugin{role: plugin.PluginTypeInput}
+	failing := &lifecyclePlugin{
+		role:     plugin.PluginTypeFilter,
+		startErr: errors.New("start failed"),
+	}
+	later := &lifecyclePlugin{role: plugin.PluginTypeOutput}
 	p.AddInput(input)
 	p.AddFilter(failing)
 	p.AddOutput(later)
@@ -132,14 +101,26 @@ func TestStartFailureRollsBackStartedPlugins(t *testing.T) {
 	inputStarts, inputStops := input.counts()
 	failingStarts, failingStops := failing.counts()
 	laterStarts, laterStops := later.counts()
-	if inputStarts != 1 || inputStops != 1 {
-		t.Fatalf("input starts/stops = %d/%d, want 1/1", inputStarts, inputStops)
+	if inputStarts != 0 || inputStops != 0 {
+		t.Fatalf(
+			"input starts/stops = %d/%d, want 0/0",
+			inputStarts,
+			inputStops,
+		)
 	}
 	if failingStarts != 1 || failingStops != 0 {
-		t.Fatalf("failing filter starts/stops = %d/%d, want 1/0", failingStarts, failingStops)
+		t.Fatalf(
+			"failing filter starts/stops = %d/%d, want 1/0",
+			failingStarts,
+			failingStops,
+		)
 	}
-	if laterStarts != 0 || laterStops != 0 {
-		t.Fatalf("later output starts/stops = %d/%d, want 0/0", laterStarts, laterStops)
+	if laterStarts != 1 || laterStops != 1 {
+		t.Fatalf(
+			"output starts/stops = %d/%d, want 1/1",
+			laterStarts,
+			laterStops,
+		)
 	}
 	if p.IsRunning() {
 		t.Fatal("pipeline reported running after failed startup")
@@ -151,7 +132,7 @@ func TestStartFailureRollsBackStartedPlugins(t *testing.T) {
 
 func TestPipelineDoubleStartRejected(t *testing.T) {
 	p := New()
-	input := &lifecyclePlugin{}
+	input := &lifecyclePlugin{role: plugin.PluginTypeInput}
 	p.AddInput(input)
 	if err := p.Start(); err != nil {
 		t.Fatal(err)
@@ -196,6 +177,11 @@ func TestPipelineRestart(t *testing.T) {
 
 // restartablePlugin is a plugin that properly supports restart by recreating channels
 type restartablePlugin struct {
+	role       plugin.PluginType
+	failed     chan struct{}
+	exited     chan struct{}
+	failure    error
+	cancel     context.CancelFunc
 	errorChan  chan error
 	inputChan  chan event.Event
 	outputChan chan event.Event
@@ -206,8 +192,13 @@ type restartablePlugin struct {
 	mu         sync.Mutex
 }
 
-func (r *restartablePlugin) Start() error {
+func (r *restartablePlugin) StartContext(ctx context.Context) error {
+	ctx, cancel := context.WithCancel(ctx)
 	r.mu.Lock()
+	r.cancel = cancel
+	r.failed = make(chan struct{})
+	r.exited = make(chan struct{})
+	r.failure = nil
 	r.errorChan = make(chan error)
 	r.inputChan = make(chan event.Event, 10)
 	r.outputChan = make(chan event.Event, 10)
@@ -216,12 +207,11 @@ func (r *restartablePlugin) Start() error {
 	r.received = nil
 	r.mu.Unlock()
 
-	r.wg.Add(1)
-	go func() {
-		defer r.wg.Done()
+	r.wg.Go(func() {
+		defer close(r.exited)
 		for {
 			select {
-			case <-r.doneChan:
+			case <-ctx.Done():
 				return
 			case evt, ok := <-r.inputChan:
 				if !ok {
@@ -232,17 +222,20 @@ func (r *restartablePlugin) Start() error {
 				r.mu.Unlock()
 				select {
 				case r.outputChan <- evt:
-				case <-r.doneChan:
+				case <-ctx.Done():
 					return
 				}
 			}
 		}
-	}()
+	})
 	return nil
 }
 
 func (r *restartablePlugin) Stop() error {
 	r.stopOnce.Do(func() {
+		if r.cancel != nil {
+			r.cancel()
+		}
 		if r.doneChan != nil {
 			close(r.doneChan)
 		}
@@ -263,9 +256,44 @@ func (r *restartablePlugin) Stop() error {
 
 func (r *restartablePlugin) ErrorChan() <-chan error { return r.errorChan }
 
-func (r *restartablePlugin) InputChan() chan<- event.Event { return r.inputChan }
+func (r *restartablePlugin) InputChan() chan<- event.Event {
+	if r.role == plugin.PluginTypeInput {
+		return nil
+	}
+	return r.inputChan
+}
 
-func (r *restartablePlugin) OutputChan() <-chan event.Event { return r.outputChan }
+func (r *restartablePlugin) OutputChan() <-chan event.Event {
+	if r.role == plugin.PluginTypeOutput {
+		return nil
+	}
+	return r.outputChan
+}
+func (r *restartablePlugin) Role() plugin.PluginType { return r.role }
+func (r *restartablePlugin) Failed() <-chan struct{} {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.failed
+}
+
+func (r *restartablePlugin) Failure() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.failure
+}
+
+func (r *restartablePlugin) fail(err error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.failure != nil {
+		return
+	}
+	r.failure = err
+	r.cancel()
+	close(r.failed)
+}
+
+var _ plugin.ManagedPlugin = (*restartablePlugin)(nil)
 
 func (r *restartablePlugin) getReceived() []event.Event {
 	r.mu.Lock()
@@ -276,8 +304,8 @@ func (r *restartablePlugin) getReceived() []event.Event {
 // TestPipelineRestartWithEvents tests the full start -> process events -> stop -> start -> process events -> stop cycle
 func TestPipelineRestartWithEvents(t *testing.T) {
 	p := New()
-	input := &restartablePlugin{}
-	output := &restartablePlugin{}
+	input := &restartablePlugin{role: plugin.PluginTypeInput}
+	output := &restartablePlugin{role: plugin.PluginTypeOutput}
 	p.AddInput(input)
 	p.AddOutput(output)
 
@@ -351,8 +379,8 @@ func TestPipelineRestartWithEvents(t *testing.T) {
 // TestPipelineObserver tests that a registered observer receives copies of events
 func TestPipelineObserver(t *testing.T) {
 	p := New()
-	input := &restartablePlugin{}
-	output := &restartablePlugin{}
+	input := &restartablePlugin{role: plugin.PluginTypeInput}
+	output := &restartablePlugin{role: plugin.PluginTypeOutput}
 	p.AddInput(input)
 	p.AddOutput(output)
 
@@ -422,8 +450,8 @@ func TestPipelineObserver(t *testing.T) {
 // TestPipelineObserverNilSafe tests that the pipeline works without an observer
 func TestPipelineObserverNilSafe(t *testing.T) {
 	p := New()
-	input := &restartablePlugin{}
-	output := &restartablePlugin{}
+	input := &restartablePlugin{role: plugin.PluginTypeInput}
+	output := &restartablePlugin{role: plugin.PluginTypeOutput}
 	p.AddInput(input)
 	p.AddOutput(output)
 
@@ -462,8 +490,8 @@ func TestPipelineObserverNilSafe(t *testing.T) {
 // TestPipelineObserverDropsWhenFull tests non-blocking behavior when observer is full
 func TestPipelineObserverDropsWhenFull(t *testing.T) {
 	p := New()
-	input := &restartablePlugin{}
-	output := &restartablePlugin{}
+	input := &restartablePlugin{role: plugin.PluginTypeInput}
+	output := &restartablePlugin{role: plugin.PluginTypeOutput}
 	p.AddInput(input)
 	p.AddOutput(output)
 
@@ -476,7 +504,7 @@ func TestPipelineObserverDropsWhenFull(t *testing.T) {
 	}
 
 	// Send more events than the observer buffer can hold
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		input.outputChan <- event.Event{Type: "test.overflow"}
 	}
 
@@ -516,5 +544,52 @@ done:
 
 	if err := p.Stop(); err != nil {
 		t.Fatalf("unexpected error on Stop: %v", err)
+	}
+}
+
+func TestManagedPluginWithoutBaseOrStart(t *testing.T) {
+	p := New()
+	source := &restartablePlugin{role: plugin.PluginTypeInput}
+	sink := &restartablePlugin{role: plugin.PluginTypeOutput}
+	p.AddInput(source)
+	p.AddOutput(sink)
+	t.Cleanup(func() {
+		if err := p.Stop(); err != nil {
+			t.Error(err)
+		}
+	})
+	for range 2 {
+		if err := p.Start(); err != nil {
+			t.Fatal(err)
+		}
+		if p.Failure() != nil {
+			t.Fatal("previous failure survived restart")
+		}
+		want := errors.New("custom sink failed")
+		sink.fail(want)
+		select {
+		case <-p.Failed():
+		case <-time.After(time.Second):
+			t.Fatal("custom failure did not reach pipeline")
+		}
+		if !errors.Is(p.Failure(), want) {
+			t.Fatalf("failure = %v", p.Failure())
+		}
+		for _, component := range []*restartablePlugin{source, sink} {
+			select {
+			case <-component.exited:
+			case <-time.After(time.Second):
+				t.Fatal("worker did not observe cancellation")
+			}
+		}
+		if err := p.Stop(); err != nil {
+			t.Fatal(err)
+		}
+		if err := p.Stop(); err != nil {
+			t.Fatal(err)
+		}
+		if _, open := <-source.OutputChan(); open {
+			t.Fatal("Stop returned before closing output")
+		}
 	}
 }

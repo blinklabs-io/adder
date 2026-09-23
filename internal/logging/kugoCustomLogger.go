@@ -70,6 +70,11 @@ func NewKugoCustomLogger(level LogLevel) *KugoCustomLogger {
 	return NewKugoCustomLoggerWithWriter(level, os.Stderr)
 }
 
+// NewKugoCustomLoggerWithLogger uses the supplied handler's severity threshold.
+func NewKugoCustomLoggerWithLogger(logger *slog.Logger) *KugoCustomLogger {
+	return &KugoCustomLogger{logger: logger, logLevel: LevelDebug}
+}
+
 func NewKugoCustomLoggerWithWriter(level LogLevel, w io.Writer) *KugoCustomLogger {
 	if w == nil {
 		w = io.Discard

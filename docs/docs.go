@@ -25,7 +25,7 @@ const docTemplate = `{
     "paths": {
         "/events": {
             "get": {
-                "description": "Real-time pipeline event streaming. Automatically upgrades to WebSocket if requested by the client, otherwise falls back to Server-Sent Events (SSE). Supports filtering on event types.",
+                "description": "Streams pipeline events using SSE, or WebSocket when an upgrade is requested and accepted. Rejected WebSocket handshakes do not fall back to SSE. Supports filtering on event types.",
                 "produces": [
                     "text/event-stream",
                     "application/json"
@@ -47,8 +47,35 @@ const docTemplate = `{
                     }
                 ],
                 "responses": {
+                    "101": {
+                        "description": "WebSocket protocol switch"
+                    },
                     "200": {
-                        "description": "Event Stream (SSE) or WebSocket Session",
+                        "description": "Event Stream (SSE)",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid WebSocket handshake",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "403": {
+                        "description": "WebSocket origin rejected",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "405": {
+                        "description": "Invalid WebSocket method",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "500": {
+                        "description": "Streaming or WebSocket upgrade unsupported",
                         "schema": {
                             "type": "string"
                         }
@@ -100,7 +127,7 @@ const docTemplate = `{
         },
         "/v1/fcm": {
             "post": {
-                "description": "Store a new FCM token",
+                "description": "Store a token in memory; configured persistence is best-effort. Available with the push output.",
                 "consumes": [
                     "application/json"
                 ],
@@ -121,13 +148,16 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "201": {
-                        "description": "Created",
-                        "schema": {
-                            "type": "string"
-                        }
+                        "description": "Created (empty body)"
                     },
                     "400": {
                         "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/push.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
                         "schema": {
                             "$ref": "#/definitions/push.ErrorResponse"
                         }
@@ -137,7 +167,7 @@ const docTemplate = `{
         },
         "/v1/fcm/{token}": {
             "get": {
-                "description": "Get an FCM token by its value",
+                "description": "Get an FCM token by its value. Available with the push output.",
                 "consumes": [
                     "application/json"
                 ],
@@ -162,7 +192,10 @@ const docTemplate = `{
                         }
                     },
                     "404": {
-                        "description": "Not Found",
+                        "description": "Not Found (empty body)"
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
                         "schema": {
                             "$ref": "#/definitions/push.ErrorResponse"
                         }
@@ -170,7 +203,7 @@ const docTemplate = `{
                 }
             },
             "delete": {
-                "description": "Delete an FCM token by its value",
+                "description": "Delete an FCM token by its value. Available with the push output.",
                 "consumes": [
                     "application/json"
                 ],
@@ -189,13 +222,13 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "204": {
-                        "description": "No Content",
-                        "schema": {
-                            "type": "string"
-                        }
+                        "description": "No Content"
                     },
                     "404": {
-                        "description": "Not Found",
+                        "description": "Not Found (empty body)"
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
                         "schema": {
                             "$ref": "#/definitions/push.ErrorResponse"
                         }
@@ -205,7 +238,7 @@ const docTemplate = `{
         },
         "/v1/qrcode": {
             "get": {
-                "description": "Generates an interactive HTML page containing a QR code representing the local API FCM endpoint. Used by the Adder Tray desktop application during onboarding setup.",
+                "description": "Returns an HTML page that loads QRious to encode an apiEndpoint JSON field containing the request host and FCM route. Available with the push output.",
                 "produces": [
                     "text/html"
                 ],

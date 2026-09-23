@@ -15,6 +15,7 @@
 package notifyjson
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -24,6 +25,7 @@ import (
 	"time"
 
 	"github.com/blinklabs-io/adder/event"
+	"github.com/blinklabs-io/adder/plugin"
 	"github.com/blinklabs-io/adder/tray/notifications"
 	"github.com/blinklabs-io/adder/tray/setup"
 )
@@ -51,19 +53,14 @@ type notificationRecord struct {
 }
 
 type Output struct {
+	plugin.Base
 	configPath         string
 	writer             io.Writer
 	staleAfter         time.Duration
 	staleAfterOverride time.Duration
-
-	eventChan chan event.Event
-	errorChan chan error
-	done      chan struct{}
-	stopOnce  sync.Once
-	wg        sync.WaitGroup
-	writeMu   sync.Mutex
-	engine    *notifications.Engine
-	config    setup.NotificationConfig
+	writeMu            sync.Mutex
+	engine             *notifications.Engine
+	config             setup.NotificationConfig
 }
 
 func New(options ...Option) *Output {
@@ -74,7 +71,24 @@ func New(options ...Option) *Output {
 	return o
 }
 
+// Role identifies this plugin as a pipeline output.
+func (o *Output) Role() plugin.PluginType { return plugin.PluginTypeOutput }
+
 func (o *Output) Start() error {
+	return o.StartContext(context.Background())
+}
+
+// StartContext starts the plugin with ctx governing setup and run operations.
+// Call Stop to wait for workers and release resources, including after cancellation.
+func (o *Output) StartContext(ctx context.Context) error {
+	return o.StartRun(ctx,
+		plugin.BaseConfig{HasInput: true, InputBuffer: 64},
+		o.start,
+		o.shutdownHooks(),
+	)
+}
+
+func (o *Output) start(ctx context.Context) error {
 	if o.configPath == "" {
 		return errors.New("notify-json config path must not be empty")
 	}
@@ -87,10 +101,6 @@ func (o *Output) Start() error {
 	if o.staleAfter <= 0 {
 		o.staleAfter = time.Duration(cfg.ConnectionStaleSeconds) * time.Second
 	}
-	o.eventChan = make(chan event.Event, 64)
-	o.errorChan = make(chan error, 8)
-	o.done = make(chan struct{})
-	o.stopOnce = sync.Once{}
 
 	engineEvents := make(chan event.Event, 64)
 	plan := cfg.SetupPlan()
@@ -110,19 +120,22 @@ func (o *Output) Start() error {
 		Timestamp:     time.Now().UTC(),
 		Message:       "waiting for the first chain event",
 	}); err != nil {
-		o.engine.Stop()
 		return fmt.Errorf("writing initial status: %w", err)
 	}
 
-	o.wg.Add(2)
-	go o.eventLoop(engineEvents)
-	go o.requestLoop()
+	o.Go(func() { o.eventLoop(engineEvents) })
+	o.Go(o.requestLoop)
 	return nil
 }
 
 func (o *Output) eventLoop(engineEvents chan<- event.Event) {
-	defer o.wg.Done()
 	defer close(engineEvents)
+
+	// Capture once, outside the loop: a select re-evaluates its channel
+	// operands on every entry, so a worker that re-reads the accessors
+	// per iteration would park forever if Base's teardown ordering ever
+	// changed to clear them. The deadlock this plugin had took that form.
+	done, in := o.Done(), o.Input()
 
 	timer := time.NewTimer(o.staleAfter)
 	defer timer.Stop()
@@ -141,9 +154,13 @@ func (o *Output) eventLoop(engineEvents chan<- event.Event) {
 
 	for {
 		select {
-		case <-o.done:
+		case <-done:
 			return
-		case evt := <-o.eventChan:
+		case evt, ok := <-in:
+			// Channel closed: we're shutting down
+			if !ok {
+				return
+			}
 			if !connected {
 				message := "receiving chain events from " + o.config.NetworkLabel()
 				o.reportWriteError(o.writeRecord(statusRecord{
@@ -173,7 +190,7 @@ func (o *Output) eventLoop(engineEvents chan<- event.Event) {
 			}
 			select {
 			case engineEvents <- normalized:
-			case <-o.done:
+			case <-done:
 				return
 			}
 		case <-timer.C:
@@ -242,7 +259,6 @@ func isNormalizedJSON(value any) bool {
 }
 
 func (o *Output) requestLoop() {
-	defer o.wg.Done()
 	for req := range o.engine.Requests() {
 		if req.Epoch < o.engine.CurrentEpoch() {
 			o.engine.RecordDrop()
@@ -280,30 +296,24 @@ func (o *Output) reportWriteError(err error) {
 }
 
 func (o *Output) reportError(err error) {
-	select {
-	case o.errorChan <- err:
-	default:
-	}
+	o.TrySendError(err)
 }
 
 func (o *Output) Stop() error {
-	if o.done == nil {
-		return nil
-	}
-	o.stopOnce.Do(func() { close(o.done) })
-	if o.engine != nil {
-		o.engine.Stop()
-	}
-	o.wg.Wait()
-	if o.errorChan != nil {
-		close(o.errorChan)
-	}
-	o.eventChan = nil
-	o.errorChan = nil
-	o.done = nil
-	return nil
+	return o.Shutdown(o.shutdownHooks())
 }
 
-func (o *Output) ErrorChan() <-chan error        { return o.errorChan }
-func (o *Output) InputChan() chan<- event.Event  { return o.eventChan }
-func (o *Output) OutputChan() <-chan event.Event { return nil }
+func (o *Output) shutdownHooks() plugin.ShutdownHooks {
+	return plugin.ShutdownHooks{
+		BeforeWait: func() error {
+			// Stopping the engine closes its request channel, which is
+			// what ends requestLoop.
+			if o.engine != nil {
+				o.engine.Stop()
+			}
+			return nil
+		},
+	}
+}
+
+var _ plugin.ManagedPlugin = (*Output)(nil)

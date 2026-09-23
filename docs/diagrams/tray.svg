@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="565" viewBox="0 0 1200 565" role="img" aria-labelledby="title desc">
+  <title id="title">Adder tray and engine architecture</title>
+  <desc id="desc">The tray writes separate engine and tray configurations and registers or restarts the engine through a platform backend. The separate Adder process sends WebSocket events to the tray, which evaluates notification rules locally.</desc>
+  <defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#94a3b8"/></marker></defs>
+  <rect width="1200" height="565" rx="16" fill="#0b1220"/>
+  <g font-family="Arial, Helvetica, sans-serif">
+    <text x="32" y="45" font-size="28" fill="#ffffff" font-weight="700">Tray and engine: separate processes</text>
+    <text x="32" y="78" font-size="16" fill="#dbe5f3">The tray owns notification rules; the engine owns the pipeline and API.</text>
+    <rect x="32" y="120" width="350" height="160" rx="12" fill="#142337" stroke="#34d399" stroke-width="1.5"/>
+    <text x="52" y="152" font-size="21" fill="#34d399" font-weight="700">adder-tray</text>
+    <text x="52" y="182" font-size="16" fill="#dbe5f3">Fyne UI and setup wizard</text>
+    <text x="52" y="206" font-size="16" fill="#dbe5f3">Local notification rules</text>
+    <text x="52" y="230" font-size="16" fill="#dbe5f3">Desktop notifications</text>
+    <rect x="775" y="120" width="390" height="160" rx="12" fill="#142337" stroke="#34d399" stroke-width="1.5"/>
+    <text x="795" y="152" font-size="21" fill="#34d399" font-weight="700">adder</text>
+    <text x="795" y="182" font-size="16" fill="#dbe5f3">Input → filters → output</text>
+    <text x="795" y="206" font-size="16" fill="#dbe5f3">HTTP API: /events</text>
+    <text x="795" y="230" font-size="16" fill="#dbe5f3">Runs independently of tray exit</text>
+    <path d="M 775 192 H 386" fill="none" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrow)"/>
+    <text x="475" y="177" font-size="17" fill="#94a3b8">WebSocket events</text>
+    <path d="M 207 280 V 350" fill="none" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrow)"/>
+    <text x="219" y="323" font-size="15" fill="#94a3b8">writes</text>
+    <path d="M 382 250 H 555 V 350" fill="none" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrow)"/>
+    <text x="399" y="234" font-size="15" fill="#94a3b8">registers / restarts</text>
+    <rect x="32" y="355" width="350" height="110" rx="12" fill="#142337" stroke="#60a5fa" stroke-width="1.5"/>
+    <text x="52" y="387" font-size="21" fill="#60a5fa" font-weight="700">Configuration</text>
+    <text x="52" y="417" font-size="16" fill="#dbe5f3">config.yaml → engine</text>
+    <text x="52" y="441" font-size="16" fill="#dbe5f3">adder-tray.yaml → tray</text>
+    <rect x="445" y="355" width="290" height="110" rx="12" fill="#142337" stroke="#60a5fa" stroke-width="1.5"/>
+    <text x="465" y="387" font-size="21" fill="#60a5fa" font-weight="700">OS Service Manager</text>
+    <text x="465" y="417" font-size="16" fill="#dbe5f3">Platform-specific engine</text>
+    <text x="465" y="441" font-size="16" fill="#dbe5f3">startup / restart</text>
+    <path d="M 735 410 H 970 V 284" fill="none" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrow)"/>
+    <text x="990" y="340" font-size="15" fill="#94a3b8">manages engine</text>
+    <text x="32" y="507" font-size="16" fill="#dbe5f3">macOS: launchd · Linux: systemd user unit · Windows: detached child, tray tracks PID</text>
+    <text x="32" y="536" font-size="15" fill="#94a3b8">Windows autostarts the tray through HKCU Run; FreeBSD service management is not implemented.</text>
+  </g>
+</svg>

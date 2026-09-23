@@ -20,6 +20,7 @@ import (
 
 	"github.com/blinklabs-io/adder/event"
 	filterevent "github.com/blinklabs-io/adder/filter/event"
+	"github.com/blinklabs-io/adder/plugin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -46,7 +47,12 @@ func TestEventFilterSingleType(t *testing.T) {
 
 		select {
 		case out := <-e.OutputChan():
-			assert.Equal(t, "input.block", out.Type, "expected mismatched event to be dropped and matched event delivered first")
+			assert.Equal(
+				t,
+				"input.block",
+				out.Type,
+				"expected mismatched event to be dropped and matched event delivered first",
+			)
 		case <-time.After(1 * time.Second):
 			t.Fatal("timed out waiting for matched event")
 		}
@@ -86,9 +92,17 @@ func TestEventFilterMultipleTypes(t *testing.T) {
 
 		select {
 		case out := <-e.OutputChan():
-			assert.Equal(t, "input.block", out.Type, "expected mismatched event to be dropped and matched event delivered first")
+			assert.Equal(
+				t,
+				"input.block",
+				out.Type,
+				"expected mismatched event to be dropped and matched event delivered first",
+			)
 		case <-time.After(1 * time.Second):
-			t.Fatalf("timed out waiting for matched event after sending mismatched %s", typ)
+			t.Fatalf(
+				"timed out waiting for matched event after sending mismatched %s",
+				typ,
+			)
 		}
 	}
 }
@@ -143,9 +157,16 @@ func TestEventFilterUnknownType(t *testing.T) {
 	e1.InputChan() <- event.Event{Type: "input.block"}
 	select {
 	case out := <-e1.OutputChan():
-		assert.Equal(t, "input.block", out.Type, "expected unknown type to be dropped and matched event delivered first")
+		assert.Equal(
+			t,
+			"input.block",
+			out.Type,
+			"expected unknown type to be dropped and matched event delivered first",
+		)
 	case <-time.After(1 * time.Second):
-		t.Fatal("timed out waiting for matched event after sending unknown type")
+		t.Fatal(
+			"timed out waiting for matched event after sending unknown type",
+		)
 	}
 
 	// 2. With no filter types configured (empty list/nil), an unknown type should pass through
@@ -182,9 +203,10 @@ func TestEventFilterLifecycle(t *testing.T) {
 	require.NoError(t, err)
 }
 
-// TestNewFromCmdlineOptions verifies that the CLI registration factory creates a valid Event filter instance.
-func TestNewFromCmdlineOptions(t *testing.T) {
-	p := filterevent.NewFromCmdlineOptions()
+// TestConfiguredPlugin verifies that the CLI registration factory creates a valid Event filter instance.
+func TestConfiguredPlugin(t *testing.T) {
+	p, err := plugin.GetPlugin(plugin.PluginTypeFilter, "event", nil)
+	require.NoError(t, err)
 	assert.NotNil(t, p)
 	assert.IsType(t, &filterevent.Event{}, p)
 }
@@ -193,4 +215,32 @@ func TestNewFromCmdlineOptions(t *testing.T) {
 func TestEventFilter_ErrorChan(t *testing.T) {
 	e := filterevent.New()
 	assert.Nil(t, e.ErrorChan())
+}
+
+func TestFilterStopIsIdempotentAndClosesChannels(t *testing.T) {
+	f := filterevent.New()
+	require.NoError(t, f.Start())
+	out := f.OutputChan()
+	require.NoError(t, f.Stop())
+	require.NotPanics(t, func() { _ = f.Stop() })
+	_, ok := <-out
+	assert.False(t, ok, "output chan must be closed after Stop")
+	assert.Nil(t, f.OutputChan(),
+		"the accessor must report nil once the chan is closed")
+}
+
+func TestFilterRestartCreatesUsableChannels(t *testing.T) {
+	f := filterevent.New()
+	require.NoError(t, f.Start())
+	require.NoError(t, f.Stop())
+	require.NoError(t, f.Start())
+	defer func() { require.NoError(t, f.Stop()) }()
+
+	f.InputChan() <- event.Event{Type: "chainsync.block"}
+	select {
+	case evt := <-f.OutputChan():
+		assert.Equal(t, "chainsync.block", evt.Type)
+	case <-time.After(2 * time.Second):
+		t.Fatal("restarted filter did not forward the event")
+	}
 }

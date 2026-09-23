@@ -14,30 +14,38 @@
 
 package notifyjson
 
-import "github.com/blinklabs-io/adder/plugin"
+import (
+	"errors"
+	"fmt"
 
-var cmdlineOptions struct {
-	config string
-}
+	"github.com/blinklabs-io/adder/plugin"
+	"github.com/blinklabs-io/adder/tray/setup"
+)
 
 func init() {
 	plugin.Register(plugin.PluginEntry{
 		Type:               plugin.PluginTypeOutput,
 		Name:               "notify-json",
 		Description:        "emit target-aware desktop notification requests as NDJSON",
-		NewFromOptionsFunc: NewFromCmdlineOptions,
+		NewFromOptionsFunc: newFromOptions,
 		Options: []plugin.PluginOption{
 			{
 				Name:         "config",
 				Type:         plugin.PluginOptionTypeString,
 				Description:  "path to a versioned notification JSON configuration",
 				DefaultValue: "",
-				Dest:         &cmdlineOptions.config,
 			},
 		},
 	})
 }
 
-func NewFromCmdlineOptions() plugin.Plugin {
-	return New(WithConfigPath(cmdlineOptions.config))
+func newFromOptions(values plugin.Options) (plugin.ManagedPlugin, error) {
+	if values.String("config") == "" {
+		return nil, errors.New("config path is required")
+	}
+	if _, err := setup.ReadNotificationConfig(values.String("config")); err != nil {
+		return nil, fmt.Errorf("invalid notification configuration: %w", err)
+	}
+
+	return New(WithConfigPath(values.String("config"))), nil
 }

@@ -16,6 +16,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -49,8 +50,9 @@ var (
 transactions, rollbacks, and governance actions. It uses a plugin-based
 pipeline architecture with configurable inputs, filters, and outputs.
 
-Input plugins:  chainsync (default), mempool
+Input plugins:  chainsync (default), mempool, utxorpc
 Output plugins: log (default), webhook, telegram, push, notify, notify-json
+Use --output-log-level error for errors-only logging.
 Filters:        address, asset, policy, pool, drep, event type
 
 Events are also available via the /events WebSocket/SSE API endpoint.`,
@@ -100,12 +102,14 @@ func init() {
 }
 
 func run(cmd *cobra.Command) error {
-	if cfg.Version {
+	versionFlag, _ := cmd.Flags().GetBool("version")
+	if versionFlag {
 		fmt.Printf("%s %s\n", programName, version.GetVersionString())
 		return nil
 	}
 
-	if cfg.Input == "list" {
+	inputFlag, _ := cmd.Flags().GetString("input")
+	if inputFlag == "list" {
 		fmt.Printf("Available input plugins:\n\n")
 		for _, plugin := range plugin.GetPlugins(plugin.PluginTypeInput) {
 			fmt.Printf("%- 14s %s\n", plugin.Name, plugin.Description)
@@ -113,7 +117,8 @@ func run(cmd *cobra.Command) error {
 		return nil
 	}
 
-	if cfg.Output == "list" {
+	outputFlag, _ := cmd.Flags().GetString("output")
+	if outputFlag == "list" {
 		fmt.Printf("Available output plugins:\n\n")
 		for _, plugin := range plugin.GetPlugins(plugin.PluginTypeOutput) {
 			fmt.Printf("%- 14s %s\n", plugin.Name, plugin.Description)
@@ -121,35 +126,68 @@ func run(cmd *cobra.Command) error {
 		return nil
 	}
 
-	// Load config; pass the FlagSet so CLI-explicit flags win over
-	// YAML/env per the documented precedence (CLI > YAML > env).
-	if err := cfg.LoadWithFlags(cfg.ConfigFile, cmd.Flags()); err != nil {
+	configFile, _ := cmd.Flags().GetString("config")
+	if err := cfg.LoadWithFlags(configFile, cmd.Flags()); err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
-
-	// Process config for plugins
-	if err := plugin.ProcessConfig(cfg.Plugin); err != nil {
-		return fmt.Errorf("failed to process plugin config: %w", err)
+	resolved, err := cfg.ResolvePlugins(cmd.Flags())
+	if err != nil {
+		return fmt.Errorf("failed to resolve plugin config: %w", err)
 	}
-
-	// Process env vars for plugins
-	if err := plugin.ProcessEnvVars(); err != nil {
-		return fmt.Errorf("failed to process env vars: %w", err)
-	}
-	if err := validateNotificationInput(cmd, cfg.Input, cfg.Output); err != nil {
+	if err := validateNotificationInput(resolved, cfg.Input, cfg.Output); err != nil {
 		return err
 	}
 
-	// Configure logging
-	logging.Configure()
+	logOptions, err := resolved.Options(plugin.PluginTypeOutput, "log")
+	if err != nil {
+		return err
+	}
+	level, err := logging.ParseLevel(logOptions.String("level"))
+	if err != nil {
+		return fmt.Errorf("output.log: %w", err)
+	}
+	logging.Configure(level)
 	logger := logging.GetLogger()
 	slog.SetDefault(logger)
 
 	// Configure max processes with our logger wrapper, toss undo func
-	_, err := maxprocs.Set(maxprocs.Logger(slogPrintf))
+	_, err = maxprocs.Set(maxprocs.Logger(slogPrintf))
 	if err != nil {
 		// If we hit this, something really wrong happened
 		logger.Error(err.Error())
+		return err
+	}
+
+	// Create API instance with debug disabled
+	apiInstance := api.New(false,
+		api.WithGroup("/v1"),
+		api.WithHost(cfg.Api.ListenAddress),
+		api.WithPort(cfg.Api.ListenPort))
+
+	// Create pipeline
+	pipe := pipeline.New()
+
+	// Register pipeline as health checker for API
+	api.RegisterHealthChecker(pipe)
+
+	// Configure input
+	input, err := resolved.New(plugin.PluginTypeInput, cfg.Input)
+	if err != nil {
+		return err
+	}
+	pipe.AddInput(input)
+
+	// Configure filters
+	for _, filterEntry := range plugin.GetPlugins(plugin.PluginTypeFilter) {
+		filter, err := resolved.New(plugin.PluginTypeFilter, filterEntry.Name)
+		if err != nil {
+			return err
+		}
+		pipe.AddFilter(filter)
+	}
+
+	if err := configureOutput(pipe, cfg.Output, resolved); err != nil {
+		logger.Error("failed to configure output", "error", err)
 		return err
 	}
 
@@ -179,44 +217,6 @@ func run(cmd *cobra.Command) error {
 		}()
 	}
 
-	// Create API instance with debug disabled
-	apiInstance := api.New(false,
-		api.WithGroup("/v1"),
-		api.WithHost(cfg.Api.ListenAddress),
-		api.WithPort(cfg.Api.ListenPort))
-
-	// Create pipeline
-	pipe := pipeline.New()
-
-	// Register pipeline as health checker for API
-	api.RegisterHealthChecker(pipe)
-
-	// Configure input
-	input := plugin.GetPlugin(plugin.PluginTypeInput, cfg.Input)
-	if input == nil {
-		logger.Error("unknown input: " + cfg.Input)
-		return fmt.Errorf("unknown input: %s", cfg.Input)
-	}
-	pipe.AddInput(input)
-
-	// Configure filters
-	for _, filterEntry := range plugin.GetPlugins(plugin.PluginTypeFilter) {
-		filter := plugin.GetPlugin(plugin.PluginTypeFilter, filterEntry.Name)
-		pipe.AddFilter(filter)
-	}
-
-	// Configure output
-	output := plugin.GetPlugin(plugin.PluginTypeOutput, cfg.Output)
-	if output == nil {
-		logger.Error("unknown output: " + cfg.Output)
-		return fmt.Errorf("unknown output: %s", cfg.Output)
-	}
-	// Check if output plugin implements APIRouteRegistrar
-	if registrar, ok := any(output).(api.APIRouteRegistrar); ok {
-		registrar.RegisterRoutes()
-	}
-	pipe.AddOutput(output)
-
 	// Create event hub for broadcasting pipeline events via /events endpoint
 	eventHub := api.NewEventHub(cfg.Api.Events.BufferSize)
 	defer eventHub.Close()
@@ -230,6 +230,8 @@ func run(cmd *cobra.Command) error {
 		return fmt.Errorf("failed to start API: %w", err)
 	}
 	defer func() {
+		// Streaming handlers must exit before HTTP shutdown waits for them.
+		eventHub.Close()
 		shutdownCtx, cancel := context.WithTimeout(
 			context.Background(), 10*time.Second,
 		)
@@ -249,8 +251,8 @@ func run(cmd *cobra.Command) error {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
-	// Handle errors in background
-	// DON'T exit on errors
+	// Recoverable diagnostics do not decide lifecycle; Failed is independent
+	// so terminal failure cannot be hidden behind a blocked error consumer.
 	go func() {
 		for err := range pipe.ErrorChan() {
 			// Log error but keep running
@@ -260,21 +262,45 @@ func run(cmd *cobra.Command) error {
 	}()
 
 	logger.Info("Adder started, waiting for shutdown signal...")
-	<-sigChan
-	logger.Info("Shutdown signal received, stopping pipeline...")
+	defer signal.Stop(sigChan)
+	var terminalErr error
+	select {
+	case <-sigChan:
+		logger.Info("Shutdown signal received, stopping pipeline...")
+	case <-pipe.Failed():
+		terminalErr = pipe.Failure()
+		logger.Error(
+			"terminal plugin failure, stopping pipeline",
+			"error",
+			terminalErr,
+		)
+	}
 
 	// Graceful shutdown using Stop() method
 	if err := pipe.Stop(); err != nil {
 		logger.Error("failed to stop pipeline", "error", err)
-		return fmt.Errorf("failed to stop pipeline: %w", err)
+		return errors.Join(
+			terminalErr,
+			fmt.Errorf("failed to stop pipeline: %w", err),
+		)
 	}
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	eventHub.Close()
+	shutdownCtx, cancel := context.WithTimeout(
+		context.Background(),
+		10*time.Second,
+	)
 	defer cancel()
 	if err := apiInstance.Shutdown(shutdownCtx); err != nil {
 		logger.Error("failed to stop API", "error", err)
-		return fmt.Errorf("failed to stop API: %w", err)
+		return errors.Join(
+			terminalErr,
+			fmt.Errorf("failed to stop API: %w", err),
+		)
 	}
 
+	if terminalErr != nil {
+		return terminalErr
+	}
 	logger.Info("Adder stopped gracefully")
 	return nil
 }
@@ -283,4 +309,20 @@ func main() {
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
 	}
+}
+
+func configureOutput(
+	pipe *pipeline.Pipeline,
+	name string,
+	resolved *plugin.Configuration,
+) error {
+	output, err := resolved.New(plugin.PluginTypeOutput, name)
+	if err != nil {
+		return err
+	}
+	if registrar, ok := output.(api.APIRouteRegistrar); ok {
+		registrar.RegisterRoutes()
+	}
+	pipe.AddOutput(output)
+	return nil
 }

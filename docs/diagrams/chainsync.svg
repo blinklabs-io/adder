@@ -1,0 +1,75 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1140" role="img" lang="en" aria-labelledby="diagram-title diagram-description" width="1600" height="1140">
+  <title id="diagram-title">ChainSync lifecycle and event flow</title>
+  <desc id="diagram-description">Sequence diagram showing downstream startup, ChainSync connection and sync, roll-forward and rollback processing, block fetch, event delivery, and transport shutdown.</desc>
+  <defs>
+    <marker id="arrow-ink" markerWidth="12" markerHeight="10" refX="10" refY="5" orient="auto"><path d="M1,1 L10,5 L1,9" fill="none" stroke="#1e1e1e" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></marker>
+    <marker id="arrow-blue" markerWidth="12" markerHeight="10" refX="10" refY="5" orient="auto"><path d="M1,1 L10,5 L1,9" fill="none" stroke="#1971c2" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></marker>
+    <marker id="arrow-green" markerWidth="12" markerHeight="10" refX="10" refY="5" orient="auto"><path d="M1,1 L10,5 L1,9" fill="none" stroke="#2b8a3e" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></marker>
+    <marker id="arrow-orange" markerWidth="12" markerHeight="10" refX="10" refY="5" orient="auto"><path d="M1,1 L10,5 L1,9" fill="none" stroke="#d9480f" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></marker>
+    <filter id="paper-shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="1" dy="2" stdDeviation="2" flood-color="#000000" flood-opacity="0.10"/></filter>
+  </defs>
+  <rect width="100%" height="100%" fill="#ffffff"/>
+  <text x="60" y="68" font-family="Virgil, Comic Sans MS, cursive" font-size="36" font-weight="700" text-anchor="start" fill="#1e1e1e">ChainSync lifecycle and event flow</text>
+  <text x="60" y="108" font-family="Virgil, Comic Sans MS, cursive" font-size="20" font-weight="400" text-anchor="start" fill="#868e96">One input connection joins the managed pipeline and emits events through the configured chain.</text>
+  <rect x="45" y="245" width="1510" height="360" rx="16" fill="#e7f5ff" fill-opacity="0.48"/>
+  <rect x="35.0" y="135" width="250" height="82" rx="10" fill="#e7f5ff" fill-opacity="1.0" stroke="#1971c2" stroke-width="2" filter="url(#paper-shadow)"/>
+  <text x="160" y="167" font-family="Virgil, Comic Sans MS, cursive" font-size="24" font-weight="600" text-anchor="middle" fill="#1e1e1e">Pipeline</text>
+  <text x="160" y="197" font-family="Virgil, Comic Sans MS, cursive" font-size="18" font-weight="400" text-anchor="middle" fill="#868e96">lifecycle owner</text>
+  <path d="M160 229 L160 1050" fill="none" stroke="#868e96" stroke-width="1" stroke-linecap="round" stroke-dasharray="9 8"/>
+  <rect x="460.0" y="135" width="250" height="82" rx="10" fill="#ebfbee" fill-opacity="1.0" stroke="#2b8a3e" stroke-width="2" filter="url(#paper-shadow)"/>
+  <text x="585" y="167" font-family="Virgil, Comic Sans MS, cursive" font-size="24" font-weight="600" text-anchor="middle" fill="#1e1e1e">Filters / outputs</text>
+  <text x="585" y="197" font-family="Virgil, Comic Sans MS, cursive" font-size="18" font-weight="400" text-anchor="middle" fill="#868e96">downstream consumers</text>
+  <path d="M585 229 L585 1050" fill="none" stroke="#868e96" stroke-width="1" stroke-linecap="round" stroke-dasharray="9 8"/>
+  <rect x="885.0" y="135" width="250" height="82" rx="10" fill="#e7f5ff" fill-opacity="1.0" stroke="#1971c2" stroke-width="2" filter="url(#paper-shadow)"/>
+  <text x="1010" y="167" font-family="Virgil, Comic Sans MS, cursive" font-size="24" font-weight="600" text-anchor="middle" fill="#1e1e1e">ChainSync input</text>
+  <text x="1010" y="197" font-family="Virgil, Comic Sans MS, cursive" font-size="18" font-weight="400" text-anchor="middle" fill="#868e96">managed input plugin</text>
+  <path d="M1010 229 L1010 1050" fill="none" stroke="#868e96" stroke-width="1" stroke-linecap="round" stroke-dasharray="9 8"/>
+  <rect x="1310.0" y="135" width="250" height="82" rx="10" fill="#f1f3f5" fill-opacity="1.0" stroke="#868e96" stroke-width="2" filter="url(#paper-shadow)"/>
+  <text x="1435" y="167" font-family="Virgil, Comic Sans MS, cursive" font-size="24" font-weight="600" text-anchor="middle" fill="#1e1e1e">Node connection</text>
+  <text x="1435" y="197" font-family="Virgil, Comic Sans MS, cursive" font-size="18" font-weight="400" text-anchor="middle" fill="#868e96">NtC or NtN</text>
+  <path d="M1435 229 L1435 1050" fill="none" stroke="#868e96" stroke-width="1" stroke-linecap="round" stroke-dasharray="9 8"/>
+  <text x="65" y="280" font-family="Virgil, Comic Sans MS, cursive" font-size="20" font-weight="700" text-anchor="start" fill="#1971c2">SETUP</text>
+  <path d="M170 320 L575 320" fill="none" stroke="#2b8a3e" stroke-width="2" stroke-linecap="round" marker-end="url(#arrow-green)"/>
+  <rect x="119.10000000000002" y="291" width="506.79999999999995" height="25" rx="5" fill="#ffffff"/>
+  <text x="372.5" y="310" font-family="Virgil, Comic Sans MS, cursive" font-size="18" font-weight="500" text-anchor="middle" fill="#2b8a3e">1. Start outputs, then reverse filters</text>
+  <path d="M170 370 L1000 370" fill="none" stroke="#1971c2" stroke-width="2" stroke-linecap="round" marker-end="url(#arrow-blue)"/>
+  <rect x="445.0" y="341" width="280.0" height="25" rx="5" fill="#ffffff"/>
+  <text x="585.0" y="360" font-family="Virgil, Comic Sans MS, cursive" font-size="18" font-weight="500" text-anchor="middle" fill="#1971c2">2. StartContext(ctx)</text>
+  <path d="M1020 420 L1425 420" fill="none" stroke="#1971c2" stroke-width="2" stroke-linecap="round" marker-end="url(#arrow-blue)"/>
+  <rect x="1088.8" y="391" width="267.4" height="25" rx="5" fill="#ffffff"/>
+  <text x="1222.5" y="410" font-family="Virgil, Comic Sans MS, cursive" font-size="18" font-weight="500" text-anchor="middle" fill="#1971c2">3. Dial + handshake</text>
+  <path d="M1020 470 L1425 470" fill="none" stroke="#1971c2" stroke-width="2" stroke-linecap="round" marker-end="url(#arrow-blue)"/>
+  <rect x="1019.5" y="441" width="406.0" height="25" rx="5" fill="#ffffff"/>
+  <text x="1222.5" y="460" font-family="Virgil, Comic Sans MS, cursive" font-size="18" font-weight="500" text-anchor="middle" fill="#1971c2">4. Start clients; select point</text>
+  <path d="M1020 520 L1425 520" fill="none" stroke="#1971c2" stroke-width="2" stroke-linecap="round" marker-end="url(#arrow-blue)"/>
+  <rect x="1076.2" y="491" width="292.59999999999997" height="25" rx="5" fill="#ffffff"/>
+  <text x="1222.5" y="510" font-family="Virgil, Comic Sans MS, cursive" font-size="18" font-weight="500" text-anchor="middle" fill="#1971c2">5. Sync(intersection)</text>
+  <path d="M1000 580 L170 580" fill="none" stroke="#868e96" stroke-width="2" stroke-linecap="round" stroke-dasharray="9 8" marker-end="url(#arrow-ink)"/>
+  <rect x="451.3" y="551" width="267.4" height="25" rx="5" fill="#ffffff"/>
+  <text x="585.0" y="570" font-family="Virgil, Comic Sans MS, cursive" font-size="18" font-weight="500" text-anchor="middle" fill="#868e96">6. Startup complete</text>
+  <rect x="45" y="620" width="1510" height="230" rx="16" fill="#ebfbee" fill-opacity="0.52"/>
+  <text x="65" y="655" font-family="Virgil, Comic Sans MS, cursive" font-size="20" font-weight="700" text-anchor="start" fill="#2b8a3e">EVENT FLOW</text>
+  <path d="M1425 680 L1020 680" fill="none" stroke="#2b8a3e" stroke-width="2" stroke-linecap="round" marker-end="url(#arrow-green)"/>
+  <rect x="1044.7" y="651" width="355.59999999999997" height="25" rx="5" fill="#ffffff"/>
+  <text x="1222.5" y="670" font-family="Virgil, Comic Sans MS, cursive" font-size="18" font-weight="500" text-anchor="middle" fill="#2b8a3e">RollForward / RollBackward</text>
+  <path d="M1020 730 L1425 730" fill="none" stroke="#2b8a3e" stroke-width="2" stroke-linecap="round" marker-end="url(#arrow-green)"/>
+  <rect x="1044.7" y="701" width="355.59999999999997" height="25" rx="5" fill="#ffffff"/>
+  <text x="1222.5" y="720" font-family="Virgil, Comic Sans MS, cursive" font-size="18" font-weight="500" text-anchor="middle" fill="#2b8a3e">NtN headers: GetBlockRange</text>
+  <path d="M1425 780 L1020 780" fill="none" stroke="#868e96" stroke-width="2" stroke-linecap="round" stroke-dasharray="9 8" marker-end="url(#arrow-ink)"/>
+  <rect x="1114.0" y="751" width="217.0" height="25" rx="5" fill="#ffffff"/>
+  <text x="1222.5" y="770" font-family="Virgil, Comic Sans MS, cursive" font-size="18" font-weight="500" text-anchor="middle" fill="#868e96">NtN full blocks</text>
+  <path d="M1000 830 L595 830" fill="none" stroke="#2b8a3e" stroke-width="2" stroke-linecap="round" marker-end="url(#arrow-green)"/>
+  <rect x="588.2" y="801" width="418.59999999999997" height="25" rx="5" fill="#ffffff"/>
+  <text x="797.5" y="820" font-family="Virgil, Comic Sans MS, cursive" font-size="18" font-weight="500" text-anchor="middle" fill="#2b8a3e">Emit events → filters → outputs</text>
+  <rect x="45" y="865" width="1510" height="175" rx="16" fill="#fff4e6" fill-opacity="0.55"/>
+  <text x="65" y="900" font-family="Virgil, Comic Sans MS, cursive" font-size="20" font-weight="700" text-anchor="start" fill="#d9480f">SHUTDOWN</text>
+  <path d="M170 930 L1000 930" fill="none" stroke="#d9480f" stroke-width="2" stroke-linecap="round" marker-end="url(#arrow-orange)"/>
+  <rect x="382.0" y="901" width="406.0" height="25" rx="5" fill="#ffffff"/>
+  <text x="585.0" y="920" font-family="Virgil, Comic Sans MS, cursive" font-size="18" font-weight="500" text-anchor="middle" fill="#d9480f">7. Stop after forwarding joins</text>
+  <path d="M1020 980 L1425 980" fill="none" stroke="#d9480f" stroke-width="2" stroke-linecap="round" marker-end="url(#arrow-orange)"/>
+  <rect x="1114.0" y="951" width="217.0" height="25" rx="5" fill="#ffffff"/>
+  <text x="1222.5" y="970" font-family="Virgil, Comic Sans MS, cursive" font-size="18" font-weight="500" text-anchor="middle" fill="#d9480f">Close transport</text>
+  <path d="M1000 1030 L170 1030" fill="none" stroke="#868e96" stroke-width="2" stroke-linecap="round" stroke-dasharray="9 8" marker-end="url(#arrow-ink)"/>
+  <rect x="394.6" y="1001" width="380.79999999999995" height="25" rx="5" fill="#ffffff"/>
+  <text x="585.0" y="1020" font-family="Virgil, Comic Sans MS, cursive" font-size="18" font-weight="500" text-anchor="middle" fill="#868e96">Workers joined; ports closed</text>
+</svg>

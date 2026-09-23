@@ -15,8 +15,9 @@
 package plugin
 
 import (
+	"errors"
 	"fmt"
-	"os"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -32,9 +33,9 @@ const (
 	PluginOptionTypeUint   PluginOptionType = 4
 )
 
+// PluginOption describes a scalar option. Definitions contain no instance state.
 type PluginOption struct {
 	DefaultValue any
-	Dest         any
 	Name         string
 	CustomEnvVar string
 	CustomFlag   string
@@ -42,9 +43,24 @@ type PluginOption struct {
 	Type         PluginOptionType
 }
 
-// SplitAndTrim splits a comma-separated option value, trimming surrounding
-// whitespace from each entry and dropping empty ones. YAML folded/literal
-// block scalars introduce spaces and newlines around entries.
+// Options contains validated, immutable scalar values for one factory invocation.
+// Accessors require a name and type declared by the factory's PluginEntry.
+// A mismatched accessor is a programming error and panics.
+type Options struct{ values map[string]any }
+
+// String returns a declared string option.
+func (o Options) String(name string) string { return o.values[name].(string) }
+
+// Bool returns a declared boolean option.
+func (o Options) Bool(name string) bool { return o.values[name].(bool) }
+
+// Int returns a declared signed 32-bit option as an int.
+func (o Options) Int(name string) int { return o.values[name].(int) }
+
+// Uint returns a declared unsigned 32-bit option as a uint.
+func (o Options) Uint(name string) uint { return o.values[name].(uint) }
+
+// SplitAndTrim splits comma-separated values, discarding whitespace and empty entries.
 func SplitAndTrim(val string) []string {
 	var out []string
 	for item := range strings.SplitSeq(val, ",") {
@@ -55,150 +71,100 @@ func SplitAndTrim(val string) []string {
 	return out
 }
 
-func (p *PluginOption) AddToFlagSet(
-	fs *pflag.FlagSet,
-	pluginType string,
-	pluginName string,
-) error {
-	var flagName string
+func (p PluginOption) flagName(kind, name string) string {
 	if p.CustomFlag != "" {
-		flagName = fmt.Sprintf("%s-%s", pluginType, p.CustomFlag)
-	} else {
-		flagName = fmt.Sprintf("%s-%s-%s", pluginType, pluginName, p.Name)
+		return kind + "-" + p.CustomFlag
+	}
+	return kind + "-" + name + "-" + p.Name
+}
+
+// AddToFlagSet registers independent flag storage for this definition.
+func (p PluginOption) AddToFlagSet(fs *pflag.FlagSet, kind, name string) error {
+	value, err := p.normalize(p.DefaultValue)
+	if err != nil {
+		return err
+	}
+	flag := p.flagName(kind, name)
+	if fs.Lookup(flag) != nil {
+		return fmt.Errorf("duplicate flag %q", flag)
 	}
 	switch p.Type {
 	case PluginOptionTypeString:
-		fs.StringVar(
-			p.Dest.(*string),
-			flagName,
-			p.DefaultValue.(string),
-			p.Description,
-		)
+		fs.String(flag, value.(string), p.Description)
 	case PluginOptionTypeBool:
-		fs.BoolVar(
-			p.Dest.(*bool),
-			flagName,
-			p.DefaultValue.(bool),
-			p.Description,
-		)
+		fs.Bool(flag, value.(bool), p.Description)
 	case PluginOptionTypeInt:
-		fs.IntVar(p.Dest.(*int), flagName, p.DefaultValue.(int), p.Description)
+		fs.Int(flag, value.(int), p.Description)
 	case PluginOptionTypeUint:
-		fs.UintVar(
-			p.Dest.(*uint),
-			flagName,
-			p.DefaultValue.(uint),
-			p.Description,
-		)
-	default:
-		return fmt.Errorf(
-			"unknown plugin option type %d for option %s",
-			p.Type,
-			p.Name,
-		)
+		fs.Uint(flag, value.(uint), p.Description)
 	}
 	return nil
 }
 
-func (p *PluginOption) ProcessEnvVars(envPrefix string) error {
-	envVars := []string{
-		// Automatically generate env var from specified prefix and option name
-		strings.ToUpper(
-			strings.ReplaceAll(
-				fmt.Sprintf(
-					"%s%s",
-					envPrefix,
-					p.Name,
-				),
-				"-",
-				"_",
-			),
-		),
-	}
-	// Also check any custom env var specified
-	if p.CustomEnvVar != "" {
-		envVars = append(envVars, p.CustomEnvVar)
-	}
-	for _, envVar := range envVars {
-		if value, ok := os.LookupEnv(envVar); ok {
-			switch p.Type {
-			case PluginOptionTypeString:
-				*p.Dest.(*string) = value
-			case PluginOptionTypeBool:
-				value, err := strconv.ParseBool(value)
-				if err != nil {
-					return fmt.Errorf("error processing env vars: %w", err)
-				}
-				*p.Dest.(*bool) = value
-			case PluginOptionTypeInt:
-				// We limit to 32-bit to not get inconsistent behavior on 32-bit platforms
-				value, err := strconv.ParseInt(value, 10, 32)
-				if err != nil {
-					return fmt.Errorf("error processing env vars: %w", err)
-				}
-				*p.Dest.(*int) = int(value)
-			case PluginOptionTypeUint:
-				// We limit to 32-bit to not get inconsistent behavior on 32-bit platforms
-				value, err := strconv.ParseUint(value, 10, 32)
-				if err != nil {
-					return fmt.Errorf("error processing env vars: %w", err)
-				}
-				*p.Dest.(*uint) = uint(value)
-			default:
-				return fmt.Errorf(
-					"unknown plugin option type %d for option %s",
-					p.Type,
-					p.Name,
-				)
-			}
+func (p PluginOption) parse(value string) (any, error) {
+	switch p.Type {
+	case PluginOptionTypeString:
+		return value, nil
+	case PluginOptionTypeBool:
+		v, err := strconv.ParseBool(value)
+		if err == nil {
+			return v, nil
+		}
+	case PluginOptionTypeInt:
+		v, err := strconv.ParseInt(value, 10, 32)
+		if err == nil {
+			return int(v), nil
+		}
+	case PluginOptionTypeUint:
+		v, err := strconv.ParseUint(value, 10, 32)
+		if err == nil {
+			return uint(v), nil
 		}
 	}
-	return nil
+	return nil, fmt.Errorf(
+		"invalid value for option %q (type %d)",
+		p.Name,
+		p.Type,
+	)
 }
 
-func (p *PluginOption) ProcessConfig(
-	pluginData map[any]any,
-) error {
-	if optionData, ok := pluginData[p.Name]; ok {
-		switch p.Type {
-		case PluginOptionTypeString:
-			switch value := optionData.(type) {
-			case string:
-				*p.Dest.(*string) = value
-			default:
-				return fmt.Errorf("invalid value for option '%s': expected string and got %T", p.Name, optionData)
-			}
-		case PluginOptionTypeBool:
-			switch value := optionData.(type) {
-			case bool:
-				*p.Dest.(*bool) = value
-			default:
-				return fmt.Errorf("invalid value for option '%s': expected bool and got %T", p.Name, optionData)
-			}
-		case PluginOptionTypeInt:
-			switch value := optionData.(type) {
-			case int:
-				*p.Dest.(*int) = value
-			default:
-				return fmt.Errorf("invalid value for option '%s': expected int and got %T", p.Name, optionData)
-			}
-		case PluginOptionTypeUint:
-			switch value := optionData.(type) {
-			case int:
-				if value < 0 {
-					return fmt.Errorf("invalid value for option '%s': negative value: %T", p.Name, optionData)
-				}
-				*p.Dest.(*uint) = uint(value)
-			default:
-				return fmt.Errorf("invalid value for option '%s': expected uint and got %T", p.Name, optionData)
-			}
-		default:
-			return fmt.Errorf(
-				"unknown plugin option type %d for option %s",
-				p.Type,
-				p.Name,
-			)
+func (p PluginOption) normalize(value any) (any, error) {
+	switch p.Type {
+	case PluginOptionTypeString:
+		if v, ok := value.(string); ok {
+			return v, nil
 		}
+	case PluginOptionTypeBool:
+		if v, ok := value.(bool); ok {
+			return v, nil
+		}
+	case PluginOptionTypeInt:
+		if v, ok := value.(int); ok {
+			return p.parse(strconv.Itoa(v))
+		}
+	case PluginOptionTypeUint:
+		switch v := value.(type) {
+		case int:
+			return p.parse(strconv.Itoa(v))
+		case uint:
+			return p.parse(strconv.FormatUint(uint64(v), 10))
+		case uint64:
+			return p.parse(strconv.FormatUint(v, 10))
+		}
+	}
+	return nil, fmt.Errorf(
+		"invalid value for option %q (type %d)",
+		p.Name,
+		p.Type,
+	)
+}
+
+// ValidateHTTPURL checks configured HTTP endpoints without exposing credentials in errors.
+func ValidateHTTPURL(value string) error {
+	u, err := url.Parse(value)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") ||
+		u.Hostname() == "" {
+		return errors.New("expected an absolute http or https URL")
 	}
 	return nil
 }

@@ -28,8 +28,8 @@ import (
 	"github.com/SundaeSwap-finance/kugo"
 	"github.com/blinklabs-io/adder/event"
 	"github.com/blinklabs-io/adder/input/chainsync"
-	"github.com/blinklabs-io/adder/internal/config"
 	"github.com/blinklabs-io/adder/internal/logging"
+	"github.com/blinklabs-io/adder/internal/nodeconn"
 	"github.com/blinklabs-io/adder/plugin"
 	ouroboros "github.com/blinklabs-io/gouroboros"
 	"github.com/blinklabs-io/gouroboros/ledger"
@@ -49,7 +49,7 @@ type pollTx struct {
 }
 
 type Mempool struct {
-	logger          plugin.Logger
+	plugin.Base
 	network         string
 	networkMagic    uint32
 	socketPath      string
@@ -60,11 +60,11 @@ type Mempool struct {
 	pollInterval    time.Duration
 	kupoUrl         string
 
-	eventChan    chan event.Event
-	errorChan    chan error
-	doneChan     chan struct{}
-	wg           sync.WaitGroup
-	stopOnce     sync.Once // idempotent Stop (same pattern as pipeline.Pipeline)
+	// connMu guards oConn. The connection is installed by setupConnection
+	// and taken by Stop, which runs on the caller's goroutine, while the
+	// poll loop reads it from a worker. Reach it only through conn,
+	// setConn, takeConn and closeConn.
+	connMu       sync.Mutex
 	oConn        *ouroboros.Connection
 	dialFamily   string
 	dialAddress  string
@@ -73,6 +73,42 @@ type Mempool struct {
 	kupoClient               *kugo.Client
 	kupoDisabled             bool
 	kupoInvalidPatternLogged bool
+}
+
+// conn returns the current node connection, or nil when there is none:
+// before the first dial, or after Stop.
+func (m *Mempool) conn() *ouroboros.Connection {
+	m.connMu.Lock()
+	defer m.connMu.Unlock()
+	return m.oConn
+}
+
+// setConn installs conn as the current node connection.
+func (m *Mempool) setConn(conn *ouroboros.Connection) {
+	m.connMu.Lock()
+	defer m.connMu.Unlock()
+	m.oConn = conn
+}
+
+// takeConn clears the current node connection and returns it, so that
+// exactly one of the racing callers gets a non-nil connection to close.
+func (m *Mempool) takeConn() *ouroboros.Connection {
+	m.connMu.Lock()
+	defer m.connMu.Unlock()
+	conn := m.oConn
+	m.oConn = nil
+	return conn
+}
+
+// closeConn closes the current node connection, if there is one. The
+// close runs outside the lock: it blocks until the connection's own
+// goroutines are done, and those call back into this plugin.
+func (m *Mempool) closeConn() error {
+	conn := m.takeConn()
+	if conn == nil {
+		return nil
+	}
+	return conn.Close()
 }
 
 // New returns a new Mempool input plugin
@@ -84,106 +120,72 @@ func New(opts ...MempoolOptionFunc) *Mempool {
 	return m
 }
 
-// Start connects to the node and starts polling the mempool.
-// Safe to call again to restart (e.g. when the pipeline is restarted via
-// Stop() then Start()). Event and error channels are reused when non-nil so
-// that the pipeline's goroutines reading from OutputChan()/ErrorChan() never
-// see a closed channel; after Stop() they are nil so the next Start() creates
-// new channels and the pipeline obtains fresh references.
-func (m *Mempool) Start() error {
-	m.stopOnce = sync.Once{} // reset so next Stop() runs (Pipeline resets on restart too)
-	if m.doneChan != nil {
-		close(m.doneChan)
-		m.wg.Wait()
-	}
-	if m.oConn != nil {
-		_ = m.oConn.Close()
-		m.oConn = nil
-	}
-	if m.eventChan == nil {
-		m.eventChan = make(chan event.Event, 10)
-	}
-	if m.errorChan == nil {
-		m.errorChan = make(chan error, 1)
-	}
-	m.doneChan = make(chan struct{})
+// Role identifies this plugin as a pipeline input.
+func (m *Mempool) Role() plugin.PluginType { return plugin.PluginTypeInput }
 
+// Start connects to the node and starts polling. It is idempotent while
+// running; restart with Stop followed by Start.
+func (m *Mempool) Start() error {
+	return m.StartContext(context.Background())
+}
+
+// StartContext starts the plugin with ctx governing setup and run operations.
+// Call Stop to wait for workers and release resources, including after cancellation.
+func (m *Mempool) StartContext(ctx context.Context) error {
+	return m.StartRun(ctx,
+		plugin.BaseConfig{HasOutput: true},
+		m.start,
+		m.shutdownHooks(),
+	)
+}
+
+func (m *Mempool) start(ctx context.Context) error {
 	// Reset Kupo state on each start so configuration changes or temporary
 	// errors don't permanently disable input resolution.
 	m.kupoClient = nil
 	m.kupoDisabled = false
 	m.kupoInvalidPatternLogged = false
 
-	if m.kupoUrl == "" {
-		m.kupoUrl = config.GetConfig().KupoUrl
-	}
-	if m.logger != nil {
+	if logger := m.Logger(); logger != nil {
 		if m.kupoUrl == "" {
-			m.logger.Info(
+			logger.Info(
 				"Kupo URL not set; inputs will be resolved from mempool only (chained txs). Set KUPO_URL or --input-mempool-kupo-url to also resolve on-chain inputs.",
 			)
 		} else {
-			m.logger.Info(
+			logger.Info(
 				"Using Kupo for input resolution (on-chain); mempool chained txs resolved from poll",
 				"url", m.kupoUrl,
 			)
 		}
 	}
 
-	if err := m.setupConnection(); err != nil {
+	if err := m.setupConnection(ctx); err != nil {
 		return err
 	}
 
-	m.oConn.LocalTxMonitor().Client.Start()
+	conn := m.conn()
+	if conn == nil {
+		return errors.New("mempool: connection setup left no connection")
+	}
+	conn.LocalTxMonitor().Client.Start()
 
-	m.wg.Add(1)
-	go m.pollLoop()
+	m.Go(m.pollLoop)
 	return nil
 }
 
-// Stop shuts down the connection and stops polling.
-// Idempotent and safe to call multiple times, following the Pipeline's
-// pattern (pipeline/pipeline.go): shutdown logic runs inside sync.Once so
-// multiple Stop() calls never double-close channels.
+// Stop cancels startup or polling and releases the node connection.
 func (m *Mempool) Stop() error {
-	m.stopOnce.Do(func() {
-		if m.doneChan != nil {
-			close(m.doneChan)
-			m.doneChan = nil
-		}
-		if m.oConn != nil {
-			_ = m.oConn.Close()
-			m.oConn = nil
-		}
-		m.wg.Wait()
-		if m.eventChan != nil {
-			close(m.eventChan)
-			m.eventChan = nil
-		}
-		if m.errorChan != nil {
-			close(m.errorChan)
-			m.errorChan = nil
-		}
-	})
-	return nil
+	return m.Shutdown(m.shutdownHooks())
 }
 
-// ErrorChan returns the plugin's error channel
-func (m *Mempool) ErrorChan() <-chan error {
-	return m.errorChan
+func (m *Mempool) shutdownHooks() plugin.ShutdownHooks {
+	return plugin.ShutdownHooks{
+		BeforeWait: m.closeConn,
+		AfterWait:  m.closeConn,
+	}
 }
 
-// InputChan returns nil (mempool is an input-only plugin)
-func (m *Mempool) InputChan() chan<- event.Event {
-	return nil
-}
-
-// OutputChan returns the channel of mempool transaction events
-func (m *Mempool) OutputChan() <-chan event.Event {
-	return m.eventChan
-}
-
-func (m *Mempool) setupConnection() error {
+func (m *Mempool) setupConnection(ctx context.Context) error {
 	if m.network != "" {
 		network, ok := ouroboros.NetworkByName(m.network)
 		if !ok {
@@ -197,7 +199,9 @@ func (m *Mempool) setupConnection() error {
 		m.dialFamily = "tcp"
 		m.dialAddress = m.address
 		if !m.ntcTcp {
-			return errors.New("address requires input-mempool-ntc-tcp=true for NtC over TCP")
+			return errors.New(
+				"address requires input-mempool-ntc-tcp=true for NtC over TCP",
+			)
 		}
 	} else if m.socketPath != "" {
 		m.dialFamily = "unix"
@@ -206,7 +210,9 @@ func (m *Mempool) setupConnection() error {
 		return errors.New("must specify input-mempool-socket-path or input-mempool-address")
 	}
 	if m.networkMagic == 0 {
-		return errors.New("must specify input-mempool-network or input-mempool-network-magic")
+		return errors.New(
+			"must specify input-mempool-network or input-mempool-network-magic",
+		)
 	}
 
 	m.pollInterval = defaultPollInterval
@@ -225,7 +231,7 @@ func (m *Mempool) setupConnection() error {
 		localtxmonitor.WithAcquireTimeout(10*time.Second),
 		localtxmonitor.WithQueryTimeout(30*time.Second),
 	)
-	oConn, err := ouroboros.NewConnection(
+	oConn, err := nodeconn.Dial(ctx, m.dialFamily, m.dialAddress,
 		ouroboros.WithNetworkMagic(m.networkMagic),
 		ouroboros.WithNodeToNode(false),
 		ouroboros.WithKeepAlive(true),
@@ -234,39 +240,35 @@ func (m *Mempool) setupConnection() error {
 	if err != nil {
 		return err
 	}
-	if err := oConn.Dial(m.dialFamily, m.dialAddress); err != nil {
-		_ = oConn.Close()
-		return err
-	}
-	m.oConn = oConn
-	if m.logger != nil {
-		m.logger.Info("connected to node for mempool", "address", m.dialAddress)
+	m.setConn(oConn)
+	if logger := m.Logger(); logger != nil {
+		logger.Info("connected to node for mempool", "address", m.dialAddress)
 	}
 
-	m.wg.Add(1)
-	go func() {
-		defer m.wg.Done()
+	// Capture the connection error channel from the local rather than
+	// re-reading the field in the worker: Stop takes the connection, and
+	// the worker would then have nothing to read from.
+	connErrChan := oConn.ErrorChan()
+	m.Go(func() {
+		done := m.Done()
 		for {
 			select {
-			case <-m.doneChan:
+			case <-done:
 				return
-			case err, ok := <-m.oConn.ErrorChan():
+			case err, ok := <-connErrChan:
 				if !ok {
-					return
+					err = errors.New("mempool: connection closed")
 				}
-				select {
-				case <-m.doneChan:
-					return
-				case m.errorChan <- err:
-				}
+				m.Fail(err)
+				return
 			}
 		}
-	}()
+	})
 	return nil
 }
 
 func (m *Mempool) pollLoop() {
-	defer m.wg.Done()
+	done := m.Done()
 	if m.pollInterval <= 0 {
 		m.pollInterval = defaultPollInterval
 	}
@@ -275,7 +277,7 @@ func (m *Mempool) pollLoop() {
 
 	for {
 		select {
-		case <-m.doneChan:
+		case <-done:
 			return
 		case <-ticker.C:
 			m.pollOnce()
@@ -284,16 +286,26 @@ func (m *Mempool) pollLoop() {
 }
 
 func (m *Mempool) pollOnce() {
-	if m.oConn == nil {
+	done := m.Done()
+	// Take a reference once. Stop can retire the connection at any point
+	// in this poll, and re-reading the field would race that.
+	conn := m.conn()
+	if conn == nil {
 		return
 	}
-	client := m.oConn.LocalTxMonitor().Client
+	ltm := conn.LocalTxMonitor()
+	if ltm == nil {
+		// A connection negotiated without node-to-client has no local
+		// tx-monitor protocol to poll.
+		return
+	}
+	client := ltm.Client
 	if client == nil {
 		return
 	}
 	if err := client.Acquire(); err != nil {
-		if m.logger != nil {
-			m.logger.Warn("mempool acquire failed", "error", err)
+		if logger := m.Logger(); logger != nil {
+			logger.Warn("mempool acquire failed", "error", err)
 		}
 		return
 	}
@@ -303,8 +315,8 @@ func (m *Mempool) pollOnce() {
 
 	_, _, numTxs, err := client.GetSizes()
 	if err != nil {
-		if m.logger != nil {
-			m.logger.Warn("mempool GetSizes failed", "error", err)
+		if logger := m.Logger(); logger != nil {
+			logger.Warn("mempool GetSizes failed", "error", err)
 		}
 		return
 	}
@@ -320,14 +332,14 @@ func (m *Mempool) pollOnce() {
 	var pollTxs []pollTx
 	for {
 		select {
-		case <-m.doneChan:
+		case <-done:
 			return
 		default:
 		}
 		txCbor, err := client.NextTx()
 		if err != nil {
-			if m.logger != nil {
-				m.logger.Warn("mempool NextTx failed", "error", err)
+			if logger := m.Logger(); logger != nil {
+				logger.Warn("mempool NextTx failed", "error", err)
 			}
 			return
 		}
@@ -336,8 +348,14 @@ func (m *Mempool) pollOnce() {
 		}
 		tx, err := m.parseTx(txCbor)
 		if err != nil {
-			if m.logger != nil {
-				m.logger.Debug("mempool skip tx parse error", "error", err, "cbor_len", len(txCbor))
+			if logger := m.Logger(); logger != nil {
+				logger.Debug(
+					"mempool skip tx parse error",
+					"error",
+					err,
+					"cbor_len",
+					len(txCbor),
+				)
 			}
 			continue
 		}
@@ -360,18 +378,25 @@ func (m *Mempool) pollOnce() {
 		}
 		ctx := event.NewMempoolTransactionContext(p.tx, 0, m.networkMagic)
 		payload := event.NewTransactionEventFromTx(p.tx, m.includeCbor)
-		resolvedInputs, resolveErr := m.resolveTransactionInputs(p.tx, mempoolUtxo)
+		resolvedInputs, resolveErr := m.resolveTransactionInputs(
+			p.tx,
+			mempoolUtxo,
+		)
 		if len(resolvedInputs) > 0 {
 			payload.ResolvedInputs = resolvedInputs
 		}
-		if resolveErr != nil && m.logger != nil {
-			m.logger.Warn("some transaction inputs could not be resolved; partial resolved inputs may be set", "error", resolveErr)
+		if logger := m.Logger(); resolveErr != nil && logger != nil {
+			logger.Warn(
+				"some transaction inputs could not be resolved; partial resolved inputs may be set",
+				"error",
+				resolveErr,
+			)
 		}
 		evt := event.New(event.TypeTransaction, time.Now(), ctx, payload)
-		select {
-		case <-m.doneChan:
+		// Emit gives up when the plugin is shutting down, which is when
+		// the old select fell through to its done case and returned.
+		if !m.Emit(evt) {
 			return
-		case m.eventChan <- evt:
 		}
 	}
 
@@ -399,7 +424,9 @@ func (m *Mempool) getKupoClient() (*kugo.Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("invalid kupo URL: %w", err)
 	}
-	kugoLogger := logging.NewKugoCustomLogger(logging.LevelInfo)
+	kugoLogger := logging.NewKugoCustomLoggerWithLogger(
+		logging.GetLoggerForComponent("kupo"),
+	)
 	k := kugo.New(
 		kugo.WithEndpoint(urlStr),
 		kugo.WithLogger(kugoLogger),
@@ -418,7 +445,9 @@ func (m *Mempool) getKupoClient() (*kugo.Client, error) {
 	if err != nil {
 		switch {
 		case errors.Is(err, context.DeadlineExceeded):
-			return nil, errors.New("kupo health check timed out after 3 seconds")
+			return nil, errors.New(
+				"kupo health check timed out after 3 seconds",
+			)
 		case strings.Contains(err.Error(), "no such host"):
 			return nil, fmt.Errorf("failed to resolve kupo host: %w", err)
 		default:
@@ -429,8 +458,12 @@ func (m *Mempool) getKupoClient() (*kugo.Client, error) {
 		return nil, errors.New("health check failed with nil response")
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusAccepted {
-		return nil, fmt.Errorf("health check failed with status code: %d", resp.StatusCode)
+	if resp.StatusCode != http.StatusOK &&
+		resp.StatusCode != http.StatusAccepted {
+		return nil, fmt.Errorf(
+			"health check failed with status code: %d",
+			resp.StatusCode,
+		)
 	}
 	m.kupoClient = k
 	return k, nil
@@ -439,7 +472,9 @@ func (m *Mempool) getKupoClient() (*kugo.Client, error) {
 // buildMempoolUtxo builds a map from "txHash:outputIndex" to the transaction
 // output so that chained mempool transactions (tx A spends an output of tx B,
 // both in the same poll) can resolve inputs without requiring Kupo.
-func (m *Mempool) buildMempoolUtxo(pollTxs []pollTx) map[string]ledger.TransactionOutput {
+func (m *Mempool) buildMempoolUtxo(
+	pollTxs []pollTx,
+) map[string]ledger.TransactionOutput {
 	utxo := make(map[string]ledger.TransactionOutput)
 	for _, p := range pollTxs {
 		txID := p.hash
@@ -455,7 +490,10 @@ func (m *Mempool) buildMempoolUtxo(pollTxs []pollTx) map[string]ledger.Transacti
 // txs) or Kupo (on-chain). It always returns whatever could be resolved. If any
 // input failed to resolve (e.g. Kupo error), the second return is a non-nil error
 // so the caller can log it; partial results are still returned.
-func (m *Mempool) resolveTransactionInputs(tx ledger.Transaction, mempoolUtxo map[string]ledger.TransactionOutput) ([]ledger.TransactionOutput, error) {
+func (m *Mempool) resolveTransactionInputs(
+	tx ledger.Transaction,
+	mempoolUtxo map[string]ledger.TransactionOutput,
+) ([]ledger.TransactionOutput, error) {
 	var resolvedInputs []ledger.TransactionOutput
 	var resolveErrs []error
 	for _, input := range tx.Inputs() {
@@ -475,38 +513,62 @@ func (m *Mempool) resolveTransactionInputs(tx ledger.Transaction, mempoolUtxo ma
 		}
 		k, err := m.getKupoClient()
 		if err != nil {
-			resolveErrs = append(resolveErrs, fmt.Errorf("input %s:%d kupo client: %w", txID, txIndex, err))
+			resolveErrs = append(
+				resolveErrs,
+				fmt.Errorf("input %s:%d kupo client: %w", txID, txIndex, err),
+			)
 			continue
 		}
 		pattern := fmt.Sprintf("%d@%s", txIndex, txID)
-		ctx, cancel := context.WithTimeout(context.Background(), defaultKupoTimeout)
+		ctx, cancel := context.WithTimeout(
+			context.Background(),
+			defaultKupoTimeout,
+		)
 		matches, err := k.Matches(ctx, kugo.Pattern(pattern))
 		cancel()
 		if err != nil {
 			errStr := err.Error()
-			if strings.Contains(errStr, "Invalid pattern!") || strings.Contains(errStr, "cannot unmarshal object into Go value of type []kugo.Match") {
+			if strings.Contains(errStr, "Invalid pattern!") ||
+				strings.Contains(
+					errStr,
+					"cannot unmarshal object into Go value of type []kugo.Match",
+				) {
 				if !m.kupoInvalidPatternLogged {
 					m.kupoInvalidPatternLogged = true
-					if m.logger != nil {
-						m.logger.Debug("Kupo does not support output-reference pattern, disabling Kupo input resolution", "error", err)
+					if logger := m.Logger(); logger != nil {
+						logger.Debug(
+							"Kupo does not support output-reference pattern, disabling Kupo input resolution",
+							"error",
+							err,
+						)
 					}
 				}
 				m.kupoDisabled = true
 				continue
 			}
-			resolveErrs = append(resolveErrs, fmt.Errorf("input %s:%d: %w", txID, txIndex, err))
+			resolveErrs = append(
+				resolveErrs,
+				fmt.Errorf("input %s:%d: %w", txID, txIndex, err),
+			)
 			continue
 		}
 		for _, match := range matches {
 			out, err := chainsync.NewResolvedTransactionOutput(match)
 			if err != nil {
-				resolveErrs = append(resolveErrs, fmt.Errorf("input %s:%d match: %w", txID, txIndex, err))
+				resolveErrs = append(
+					resolveErrs,
+					fmt.Errorf("input %s:%d match: %w", txID, txIndex, err),
+				)
 				continue
 			}
 			resolvedInputs = append(resolvedInputs, out)
 		}
-		if len(matches) == 0 && m.logger != nil {
-			m.logger.Debug("Kupo returned no matches for input; ensure Kupo is run with a pattern that indexes this output (e.g. --match \"*\")", "pattern", pattern)
+		if logger := m.Logger(); len(matches) == 0 && logger != nil {
+			logger.Debug(
+				"Kupo returned no matches for input; ensure Kupo is run with a pattern that indexes this output (e.g. --match \"*\")",
+				"pattern",
+				pattern,
+			)
 		}
 	}
 	if len(resolveErrs) > 0 {
@@ -514,3 +576,5 @@ func (m *Mempool) resolveTransactionInputs(tx ledger.Transaction, mempoolUtxo ma
 	}
 	return resolvedInputs, nil
 }
+
+var _ plugin.ManagedPlugin = (*Mempool)(nil)

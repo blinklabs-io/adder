@@ -20,16 +20,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// setEventType sets the package-level option for the duration of a test and
-// restores the previous value afterwards
-func setEventType(t *testing.T, val string) {
-	t.Helper()
-	orig := cmdlineOptions.eventType
-	t.Cleanup(func() { cmdlineOptions.eventType = orig })
-	cmdlineOptions.eventType = val
-}
-
-func TestNewFromCmdlineOptionsEventTypes(t *testing.T) {
+func TestConfiguredPluginEventTypes(t *testing.T) {
 	testCases := []struct {
 		name     string
 		input    string
@@ -81,8 +72,8 @@ func TestNewFromCmdlineOptionsEventTypes(t *testing.T) {
 	}
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
-			setEventType(t, testCase.input)
-			e, ok := NewFromCmdlineOptions().(*Event)
+			values := map[string]any{"type": testCase.input}
+			e, ok := mustConfiguredPlugin(t, values).(*Event)
 			assert.True(t, ok, "plugin should be an *Event")
 			assert.Equal(t, testCase.expected, e.filterTypes)
 		})

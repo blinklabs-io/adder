@@ -21,11 +21,9 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"connectrpc.com/connect"
-	"github.com/blinklabs-io/adder/event"
 	"github.com/blinklabs-io/adder/plugin"
 	ouroboros "github.com/blinklabs-io/gouroboros"
 	syncpb "github.com/utxorpc/go-codegen/utxorpc/v1beta/sync"
@@ -44,7 +42,7 @@ const (
 // Utxorpc is an input plugin that consumes UTxO RPC streaming endpoints
 // and emits adder events.
 type Utxorpc struct {
-	logger plugin.Logger
+	plugin.Base
 
 	// Configuration
 	url            string
@@ -61,12 +59,7 @@ type Utxorpc struct {
 	networkMagic uint32
 
 	// Runtime
-	client    *sdk.UtxorpcClient
-	eventChan chan event.Event
-	errorChan chan error
-	doneChan  chan struct{}
-	wg        sync.WaitGroup
-	stopOnce  sync.Once
+	client *sdk.UtxorpcClient
 }
 
 // New returns a new Utxorpc plugin with the given options applied.
@@ -82,8 +75,28 @@ func New(options ...UtxoRpcOptionFunc) *Utxorpc {
 	return u
 }
 
+// Role identifies this plugin as a pipeline input.
+func (u *Utxorpc) Role() plugin.PluginType { return plugin.PluginTypeInput }
+
 // Start begins streaming from the configured UTxO RPC endpoint.
 func (u *Utxorpc) Start() error {
+	return u.StartContext(context.Background())
+}
+
+// StartContext starts the plugin with ctx governing setup and run operations.
+// Call Stop to wait for workers and release resources, including after cancellation.
+func (u *Utxorpc) StartContext(ctx context.Context) error {
+	return u.StartRun(ctx,
+		plugin.BaseConfig{
+			HasOutput:    true,
+			OutputBuffer: eventChanBuffer,
+		},
+		u.start,
+		plugin.ShutdownHooks{},
+	)
+}
+
+func (u *Utxorpc) start(ctx context.Context) error {
 	if u.url == "" {
 		return errors.New("utxorpc: url must be configured")
 	}
@@ -98,23 +111,12 @@ func (u *Utxorpc) Start() error {
 
 	if u.intersectPoint != "" && u.intersectTip {
 		u.intersectTip = false
-		if u.logger != nil {
-			u.logger.Warn("intersect-point is set, overriding intersect-tip to false")
+		if logger := u.Logger(); logger != nil {
+			logger.Warn(
+				"intersect-point is set, overriding intersect-tip to false",
+			)
 		}
 	}
-
-	u.stopOnce = sync.Once{}
-	if u.doneChan != nil {
-		close(u.doneChan)
-		u.wg.Wait()
-	}
-	if u.eventChan == nil {
-		u.eventChan = make(chan event.Event, eventChanBuffer)
-	}
-	if u.errorChan == nil {
-		u.errorChan = make(chan error, 1)
-	}
-	u.doneChan = make(chan struct{})
 
 	headers := map[string]string{}
 	if u.apiKeyHeader != "" && u.apiKey != "" {
@@ -126,14 +128,10 @@ func (u *Utxorpc) Start() error {
 		sdk.WithHeaders(headers),
 	)
 
-	u.wg.Add(1)
-	go func() {
-		defer u.wg.Done()
-		u.run()
-	}()
+	u.Go(u.run)
 
-	if u.logger != nil {
-		u.logger.Info(
+	if logger := u.Logger(); logger != nil {
+		logger.Info(
 			"started utxorpc input",
 			"url", u.url,
 			"mode", u.mode,
@@ -143,46 +141,17 @@ func (u *Utxorpc) Start() error {
 	return nil
 }
 
-// Stop terminates the stream and closes channels.
+// Stop terminates the stream and closes channels. Idempotent.
 func (u *Utxorpc) Stop() error {
-	u.stopOnce.Do(func() {
-		if u.doneChan != nil {
-			close(u.doneChan)
-		}
-		u.wg.Wait()
-		u.doneChan = nil
-		if u.eventChan != nil {
-			close(u.eventChan)
-			u.eventChan = nil
-		}
-		if u.errorChan != nil {
-			close(u.errorChan)
-			u.errorChan = nil
-		}
-	})
-	return nil
-}
-
-// ErrorChan returns the plugin's error channel.
-func (u *Utxorpc) ErrorChan() <-chan error {
-	return u.errorChan
-}
-
-// InputChan always returns nil (input-only plugin).
-func (u *Utxorpc) InputChan() chan<- event.Event {
-	return nil
-}
-
-// OutputChan returns the output event channel.
-func (u *Utxorpc) OutputChan() <-chan event.Event {
-	return u.eventChan
+	return u.Shutdown(plugin.ShutdownHooks{})
 }
 
 func (u *Utxorpc) run() {
+	done := u.Done()
 	backoff := time.Second
 	for {
 		select {
-		case <-u.doneChan:
+		case <-done:
 			return
 		default:
 		}
@@ -197,31 +166,25 @@ func (u *Utxorpc) run() {
 			err = fmt.Errorf("utxorpc: unknown mode %q", u.mode)
 		}
 
-		if err == nil {
-			// Stream ended cleanly — reset backoff so the next reconnect starts at 1s,
-			// not the capped value from an older failure streak (see input/chainsync).
-			backoff = time.Second
-			// Exit unless asked to reconnect.
-			if !u.autoReconnect {
-				return
-			}
-		} else if u.errorChan != nil {
-			select {
-			case <-u.doneChan:
-				return
-			case u.errorChan <- err:
-			}
-		}
-
 		if !u.autoReconnect {
+			if err == nil {
+				err = errors.New("utxorpc: stream ended")
+			}
+			u.Fail(err)
 			return
 		}
-		if u.logger != nil {
-			u.logger.Warn("utxorpc stream ended, reconnecting", "error", err)
+		if err == nil {
+			backoff = time.Second
+		} else if !u.SendError(err) {
+			return
+		}
+
+		if logger := u.Logger(); logger != nil {
+			logger.Warn("utxorpc stream ended, reconnecting", "error", err)
 		}
 
 		select {
-		case <-u.doneChan:
+		case <-done:
 			return
 		case <-time.After(backoff):
 		}
@@ -236,16 +199,12 @@ func (u *Utxorpc) run() {
 }
 
 func (u *Utxorpc) runFollowTipOnce() error {
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(u.Context())
 	defer cancel()
-
-	go func() {
-		select {
-		case <-u.doneChan:
-			cancel()
-		case <-ctx.Done():
-		}
-	}()
+	done := u.Done()
+	if ctx.Err() != nil {
+		return nil
+	}
 
 	req := connect.NewRequest(&syncpb.FollowTipRequest{
 		Intersect: u.syncIntersectRefs(),
@@ -258,7 +217,7 @@ func (u *Utxorpc) runFollowTipOnce() error {
 
 	for {
 		select {
-		case <-u.doneChan:
+		case <-done:
 			return nil
 		default:
 		}
@@ -277,26 +236,22 @@ func (u *Utxorpc) runFollowTipOnce() error {
 			return fmt.Errorf("utxorpc FollowTip: %w", err)
 		}
 		for _, evt := range evts {
-			select {
-			case <-u.doneChan:
+			// Emit gives up when the plugin is shutting down, which is
+			// when the old select took its done case.
+			if !u.Emit(evt) {
 				return nil
-			case u.eventChan <- evt:
 			}
 		}
 	}
 }
 
 func (u *Utxorpc) runWatchTxOnce() error {
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(u.Context())
 	defer cancel()
-
-	go func() {
-		select {
-		case <-u.doneChan:
-			cancel()
-		case <-ctx.Done():
-		}
-	}()
+	done := u.Done()
+	if ctx.Err() != nil {
+		return nil
+	}
 
 	req := connect.NewRequest(&watchpb.WatchTxRequest{
 		Intersect: u.watchIntersectRefs(),
@@ -309,7 +264,7 @@ func (u *Utxorpc) runWatchTxOnce() error {
 
 	for {
 		select {
-		case <-u.doneChan:
+		case <-done:
 			return nil
 		default:
 		}
@@ -324,8 +279,8 @@ func (u *Utxorpc) runWatchTxOnce() error {
 		}
 
 		if idle := resp.GetIdle(); idle != nil {
-			if u.logger != nil {
-				u.logger.Debug(
+			if logger := u.Logger(); logger != nil {
+				logger.Debug(
 					"utxorpc WatchTx idle",
 					"slot", idle.GetSlot(),
 					"hash", hex.EncodeToString(idle.GetHash()),
@@ -339,10 +294,10 @@ func (u *Utxorpc) runWatchTxOnce() error {
 			return fmt.Errorf("utxorpc WatchTx: %w", err)
 		}
 		for _, evt := range evts {
-			select {
-			case <-u.doneChan:
+			// Emit gives up when the plugin is shutting down, which is
+			// when the old select took its done case.
+			if !u.Emit(evt) {
 				return nil
-			case u.eventChan <- evt:
 			}
 		}
 	}
@@ -367,22 +322,34 @@ func (u *Utxorpc) parseIntersectPoints() []intersectPoint {
 	for _, point := range pointsSlice {
 		parts := strings.SplitN(strings.TrimSpace(point), ".", 2)
 		if len(parts) != 2 {
-			if u.logger != nil {
-				u.logger.Warn("ignoring invalid intersect point", "point", point)
+			if logger := u.Logger(); logger != nil {
+				logger.Warn("ignoring invalid intersect point", "point", point)
 			}
 			continue
 		}
 		slot, err := strconv.ParseUint(parts[0], 10, 64)
 		if err != nil {
-			if u.logger != nil {
-				u.logger.Warn("ignoring intersect point: invalid slot", "point", point, "error", err)
+			if logger := u.Logger(); logger != nil {
+				logger.Warn(
+					"ignoring intersect point: invalid slot",
+					"point",
+					point,
+					"error",
+					err,
+				)
 			}
 			continue
 		}
 		hashBytes, err := hex.DecodeString(parts[1])
 		if err != nil {
-			if u.logger != nil {
-				u.logger.Warn("ignoring intersect point: invalid hash", "point", point, "error", err)
+			if logger := u.Logger(); logger != nil {
+				logger.Warn(
+					"ignoring intersect point: invalid hash",
+					"point",
+					point,
+					"error",
+					err,
+				)
 			}
 			continue
 		}
@@ -417,3 +384,5 @@ func (u *Utxorpc) watchIntersectRefs() []*watchpb.BlockRef {
 	}
 	return refs
 }
+
+var _ plugin.ManagedPlugin = (*Utxorpc)(nil)

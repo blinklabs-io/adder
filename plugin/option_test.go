@@ -15,370 +15,207 @@
 package plugin
 
 import (
+	"strings"
+	"sync"
 	"testing"
 
 	"github.com/spf13/pflag"
+	"github.com/stretchr/testify/require"
 )
 
-// TestAddToFlagSet verifies each option type registers a flag with the
-// expected derived name and default, and that custom flag names work.
-func TestAddToFlagSet(t *testing.T) {
-	var (
-		strDest  string
-		boolDest bool
-		intDest  int
-		uintDest uint
-	)
-	fs := pflag.NewFlagSet("test", pflag.ContinueOnError)
-
-	opts := []PluginOption{
-		{
-			Name:         "host",
-			Type:         PluginOptionTypeString,
-			DefaultValue: "localhost",
-			Dest:         &strDest,
-		},
-		{
-			Name:         "enabled",
-			Type:         PluginOptionTypeBool,
-			DefaultValue: true,
-			Dest:         &boolDest,
-		},
-		{
-			Name:         "count",
-			Type:         PluginOptionTypeInt,
-			DefaultValue: 7,
-			Dest:         &intDest,
-		},
-		{
-			Name:         "size",
-			Type:         PluginOptionTypeUint,
-			DefaultValue: uint(3),
-			Dest:         &uintDest,
+func configEntry() PluginEntry {
+	return PluginEntry{
+		Type: PluginTypeInput,
+		Name: "demo",
+		Options: []PluginOption{
+			{
+				Name:         "text",
+				Type:         PluginOptionTypeString,
+				DefaultValue: "default",
+				CustomEnvVar: "DEMO_TEXT",
+				CustomFlag:   "text",
+			},
+			{Name: "enabled", Type: PluginOptionTypeBool, DefaultValue: true},
+			{Name: "count", Type: PluginOptionTypeInt, DefaultValue: 7},
+			{Name: "size", Type: PluginOptionTypeUint, DefaultValue: uint(9)},
 		},
 	}
-	for i := range opts {
-		if err := opts[i].AddToFlagSet(fs, "output", "demo"); err != nil {
-			t.Fatalf("AddToFlagSet error for %q: %v", opts[i].Name, err)
-		}
-	}
+}
 
-	// Derived names: <type>-<plugin>-<name>.
-	for _, name := range []string{
-		"output-demo-host", "output-demo-enabled",
-		"output-demo-count", "output-demo-size",
+func TestResolutionPrecedence(t *testing.T) {
+	tests := []struct {
+		name  string
+		yaml  map[string]any
+		env   map[string]string
+		flags []string
+		want  string
+	}{
+		{name: "default", want: "default"},
+		{name: "yaml", yaml: map[string]any{"text": "yaml"}, want: "yaml"},
+		{
+			name: "env beats yaml",
+			yaml: map[string]any{"text": "yaml"},
+			env:  map[string]string{"INPUT_DEMO_TEXT": "env"},
+			want: "env",
+		},
+		{
+			name: "alias beats generated",
+			env: map[string]string{
+				"INPUT_DEMO_TEXT": "env",
+				"DEMO_TEXT":       "alias",
+			},
+			want: "alias",
+		},
+		{
+			name:  "CLI beats all",
+			yaml:  map[string]any{"text": "yaml"},
+			env:   map[string]string{"DEMO_TEXT": "alias"},
+			flags: []string{"--input-text=cli"},
+			want:  "cli",
+		},
+		{
+			name:  "explicit empty CLI",
+			yaml:  map[string]any{"text": "yaml"},
+			flags: []string{"--input-text="},
+			want:  "",
+		},
+		{
+			name: "explicit empty env",
+			yaml: map[string]any{"text": "yaml"},
+			env:  map[string]string{"DEMO_TEXT": ""},
+			want: "",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			entry := configEntry()
+			fs := pflag.NewFlagSet("test", pflag.ContinueOnError)
+			for _, option := range entry.Options {
+				require.NoError(t, option.AddToFlagSet(fs, "input", "demo"))
+			}
+			require.NoError(t, fs.Parse(tt.flags))
+			got, err := entry.resolve(
+				tt.yaml,
+				fs,
+				func(key string) (string, bool) { v, ok := tt.env[key]; return v, ok },
+			)
+			require.NoError(t, err)
+			require.Equal(t, tt.want, got.String("text"))
+		})
+	}
+}
+
+func TestResolutionPreservesZeroValues(t *testing.T) {
+	entry := configEntry()
+	for _, source := range []string{"yaml", "env", "cli"} {
+		t.Run(source, func(t *testing.T) {
+			data := map[string]any{}
+			env := map[string]string{}
+			fs := pflag.NewFlagSet("test", pflag.ContinueOnError)
+			for _, option := range entry.Options {
+				require.NoError(t, option.AddToFlagSet(fs, "input", "demo"))
+			}
+			switch source {
+			case "yaml":
+				data = map[string]any{
+					"text":    "",
+					"enabled": false,
+					"count":   0,
+					"size":    0,
+				}
+			case "env":
+				env = map[string]string{
+					"INPUT_DEMO_TEXT":    "",
+					"INPUT_DEMO_ENABLED": "false",
+					"INPUT_DEMO_COUNT":   "0",
+					"INPUT_DEMO_SIZE":    "0",
+				}
+			case "cli":
+				require.NoError(
+					t,
+					fs.Parse(
+						[]string{
+							"--input-text=",
+							"--input-demo-enabled=false",
+							"--input-demo-count=0",
+							"--input-demo-size=0",
+						},
+					),
+				)
+			}
+			got, err := entry.resolve(
+				data,
+				fs,
+				func(key string) (string, bool) { v, ok := env[key]; return v, ok },
+			)
+			require.NoError(t, err)
+			require.Empty(t, got.String("text"))
+			require.False(t, got.Bool("enabled"))
+			require.Zero(t, got.Int("count"))
+			require.Zero(t, got.Uint("size"))
+		})
+	}
+}
+
+func TestResolutionRejectsInvalidScalars(t *testing.T) {
+	entry := configEntry()
+	for _, data := range []map[string]any{
+		{"typo": true}, {"text": 1}, {"enabled": "false"}, {"count": false}, {"size": -1}, {"size": uint64(1) << 32}, {"count": int64(1)}, {"text": nil},
 	} {
-		if fs.Lookup(name) == nil {
-			t.Errorf("expected flag %q registered", name)
-		}
+		_, err := entry.resolve(data, nil, nil)
+		require.Error(t, err)
 	}
-	// Defaults applied to dests.
-	if strDest != "localhost" {
-		t.Errorf("strDest = %q, want localhost", strDest)
+	for _, key := range []string{"ENABLED", "COUNT", "SIZE"} {
+		_, err := entry.resolve(
+			nil,
+			nil,
+			func(name string) (string, bool) { return "secret-value", strings.HasSuffix(name, key) },
+		)
+		require.Error(t, err)
+		require.NotContains(t, err.Error(), "secret-value")
 	}
-	if !boolDest {
-		t.Error("boolDest = false, want true")
-	}
-	if intDest != 7 {
-		t.Errorf("intDest = %d, want 7", intDest)
-	}
-	if uintDest != 3 {
-		t.Errorf("uintDest = %d, want 3", uintDest)
-	}
-}
-
-// TestAddToFlagSetCustomFlag verifies CustomFlag overrides the derived
-// name (using <type>-<customflag>).
-func TestAddToFlagSetCustomFlag(t *testing.T) {
-	var dest string
-	fs := pflag.NewFlagSet("test", pflag.ContinueOnError)
-	opt := PluginOption{
-		Name:         "host",
-		CustomFlag:   "url",
-		Type:         PluginOptionTypeString,
-		DefaultValue: "",
-		Dest:         &dest,
-	}
-	if err := opt.AddToFlagSet(fs, "output", "demo"); err != nil {
-		t.Fatalf("AddToFlagSet error: %v", err)
-	}
-	if fs.Lookup("output-url") == nil {
-		t.Error("expected custom flag output-url registered")
-	}
-	if fs.Lookup("output-demo-host") != nil {
-		t.Error("derived flag should not exist when CustomFlag is set")
-	}
-}
-
-// TestAddToFlagSetUnknownType verifies an unknown option type errors.
-func TestAddToFlagSetUnknownType(t *testing.T) {
-	fs := pflag.NewFlagSet("test", pflag.ContinueOnError)
-	opt := PluginOption{Name: "bad", Type: PluginOptionType(99)}
-	if err := opt.AddToFlagSet(fs, "output", "demo"); err == nil {
-		t.Fatal("expected error for unknown option type, got nil")
-	}
-}
-
-// TestProcessEnvVarsAutoGenerated verifies the auto-generated env var
-// (prefix + uppercased, dashes -> underscores) is honored for each type
-// with correct coercion.
-func TestProcessEnvVarsAutoGenerated(t *testing.T) {
-	var (
-		strDest  string
-		boolDest bool
-		intDest  int
-		uintDest uint
+	_, err := entry.resolve(
+		map[string]any{"size": uint64(4294967295)},
+		nil,
+		nil,
 	)
-	// Auto env var = uppercase(prefix + name) with - -> _.
-	t.Setenv("OUTPUT_DEMO_HOST", "example.com")
-	t.Setenv("OUTPUT_DEMO_ENABLED", "true")
-	t.Setenv("OUTPUT_DEMO_COUNT", "-5")
-	t.Setenv("OUTPUT_DEMO_SIZE", "42")
+	require.NoError(t, err)
+}
 
-	prefix := "output-demo-"
-	cases := []PluginOption{
-		{Name: "host", Type: PluginOptionTypeString, Dest: &strDest},
-		{Name: "enabled", Type: PluginOptionTypeBool, Dest: &boolDest},
-		{Name: "count", Type: PluginOptionTypeInt, Dest: &intDest},
-		{Name: "size", Type: PluginOptionTypeUint, Dest: &uintDest},
+func TestIndependentOptionSnapshots(t *testing.T) {
+	entry := configEntry()
+	values := map[string]any{"text": "first"}
+	first, err := entry.resolve(values, nil, nil)
+	require.NoError(t, err)
+	values["text"] = "changed"
+	second, err := entry.resolve(values, nil, nil)
+	require.NoError(t, err)
+	require.Equal(t, "first", first.String("text"))
+	require.Equal(t, "changed", second.String("text"))
+	var wg sync.WaitGroup
+	for range 20 {
+		wg.Go(func() {
+			got, err := entry.resolve(
+				map[string]any{"text": "concurrent"},
+				nil,
+				nil,
+			)
+			if err != nil || got.String("text") != "concurrent" {
+				t.Error("independent resolution failed")
+			}
+		})
 	}
-	for i := range cases {
-		if err := cases[i].ProcessEnvVars(prefix); err != nil {
-			t.Fatalf("ProcessEnvVars error for %q: %v", cases[i].Name, err)
-		}
-	}
-	if strDest != "example.com" {
-		t.Errorf("strDest = %q, want example.com", strDest)
-	}
-	if !boolDest {
-		t.Error("boolDest = false, want true")
-	}
-	if intDest != -5 {
-		t.Errorf("intDest = %d, want -5", intDest)
-	}
-	if uintDest != 42 {
-		t.Errorf("uintDest = %d, want 42", uintDest)
+	wg.Wait()
+	require.Equal(t, "first", first.String("text"))
+}
+
+func TestInvalidOptionDefinition(t *testing.T) {
+	fs := pflag.NewFlagSet("test", pflag.ContinueOnError)
+	for _, option := range []PluginOption{{Name: "bad", Type: 99}, {Name: "bad", Type: PluginOptionTypeBool, DefaultValue: "false"}} {
+		require.Error(t, option.AddToFlagSet(fs, "input", "demo"))
 	}
 }
 
-// TestProcessEnvVarsCustomEnvVar verifies a CustomEnvVar is also checked.
-func TestProcessEnvVarsCustomEnvVar(t *testing.T) {
-	var dest string
-	t.Setenv("MY_CUSTOM_HOST", "custom-host")
-	opt := PluginOption{
-		Name:         "host",
-		CustomEnvVar: "MY_CUSTOM_HOST",
-		Type:         PluginOptionTypeString,
-		Dest:         &dest,
-	}
-	if err := opt.ProcessEnvVars("output-demo-"); err != nil {
-		t.Fatalf("ProcessEnvVars error: %v", err)
-	}
-	if dest != "custom-host" {
-		t.Errorf("dest = %q, want custom-host", dest)
-	}
-}
-
-// TestProcessEnvVarsUnsetLeavesDefault verifies an unset env var leaves
-// the destination untouched.
-func TestProcessEnvVarsUnsetLeavesDefault(t *testing.T) {
-	dest := "untouched"
-	opt := PluginOption{
-		Name: "host",
-		Type: PluginOptionTypeString,
-		Dest: &dest,
-	}
-	if err := opt.ProcessEnvVars("output-demo-"); err != nil {
-		t.Fatalf("ProcessEnvVars error: %v", err)
-	}
-	if dest != "untouched" {
-		t.Errorf("dest = %q, want untouched", dest)
-	}
-}
-
-// TestProcessEnvVarsBadValues verifies parse errors for bad bool/int/uint
-// env values.
-func TestProcessEnvVarsBadValues(t *testing.T) {
-	t.Run("bad-bool", func(t *testing.T) {
-		var d bool
-		t.Setenv("OUTPUT_DEMO_ENABLED", "notabool")
-		opt := PluginOption{
-			Name: "enabled",
-			Type: PluginOptionTypeBool,
-			Dest: &d,
-		}
-		if err := opt.ProcessEnvVars("output-demo-"); err == nil {
-			t.Fatal("expected error for bad bool, got nil")
-		}
-	})
-	t.Run("bad-int", func(t *testing.T) {
-		var d int
-		t.Setenv("OUTPUT_DEMO_COUNT", "notanint")
-		opt := PluginOption{
-			Name: "count",
-			Type: PluginOptionTypeInt,
-			Dest: &d,
-		}
-		if err := opt.ProcessEnvVars("output-demo-"); err == nil {
-			t.Fatal("expected error for bad int, got nil")
-		}
-	})
-	t.Run("bad-uint", func(t *testing.T) {
-		var d uint
-		t.Setenv("OUTPUT_DEMO_SIZE", "-1")
-		opt := PluginOption{
-			Name: "size",
-			Type: PluginOptionTypeUint,
-			Dest: &d,
-		}
-		if err := opt.ProcessEnvVars("output-demo-"); err == nil {
-			t.Fatal("expected error for negative uint, got nil")
-		}
-	})
-}
-
-// TestProcessEnvVarsUnknownType verifies an unknown type errors when the
-// env var is present.
-func TestProcessEnvVarsUnknownType(t *testing.T) {
-	t.Setenv("OUTPUT_DEMO_BAD", "x")
-	opt := PluginOption{Name: "bad", Type: PluginOptionType(99)}
-	if err := opt.ProcessEnvVars("output-demo-"); err == nil {
-		t.Fatal("expected error for unknown type, got nil")
-	}
-}
-
-// TestProcessConfig verifies type-correct values are applied for each
-// option type from a plugin config map.
-func TestProcessConfig(t *testing.T) {
-	var (
-		strDest  string
-		boolDest bool
-		intDest  int
-		uintDest uint
-	)
-	data := map[any]any{
-		"host":    "cfg-host",
-		"enabled": true,
-		"count":   11,
-		"size":    9,
-	}
-	cases := []PluginOption{
-		{Name: "host", Type: PluginOptionTypeString, Dest: &strDest},
-		{Name: "enabled", Type: PluginOptionTypeBool, Dest: &boolDest},
-		{Name: "count", Type: PluginOptionTypeInt, Dest: &intDest},
-		{Name: "size", Type: PluginOptionTypeUint, Dest: &uintDest},
-	}
-	for i := range cases {
-		if err := cases[i].ProcessConfig(data); err != nil {
-			t.Fatalf("ProcessConfig error for %q: %v", cases[i].Name, err)
-		}
-	}
-	if strDest != "cfg-host" {
-		t.Errorf("strDest = %q, want cfg-host", strDest)
-	}
-	if !boolDest {
-		t.Error("boolDest = false, want true")
-	}
-	if intDest != 11 {
-		t.Errorf("intDest = %d, want 11", intDest)
-	}
-	if uintDest != 9 {
-		t.Errorf("uintDest = %d, want 9", uintDest)
-	}
-}
-
-// TestProcessConfigMissingKeyNoop verifies a missing key leaves the dest
-// untouched and returns no error.
-func TestProcessConfigMissingKeyNoop(t *testing.T) {
-	dest := "untouched"
-	opt := PluginOption{
-		Name: "host",
-		Type: PluginOptionTypeString,
-		Dest: &dest,
-	}
-	if err := opt.ProcessConfig(map[any]any{"other": "x"}); err != nil {
-		t.Fatalf("ProcessConfig error: %v", err)
-	}
-	if dest != "untouched" {
-		t.Errorf("dest = %q, want untouched", dest)
-	}
-}
-
-// TestProcessConfigTypeMismatch verifies a value of the wrong type errors
-// for each option type.
-func TestProcessConfigTypeMismatch(t *testing.T) {
-	t.Run("string", func(t *testing.T) {
-		var d string
-		opt := PluginOption{
-			Name: "host",
-			Type: PluginOptionTypeString,
-			Dest: &d,
-		}
-		if err := opt.ProcessConfig(map[any]any{"host": 123}); err == nil {
-			t.Fatal("expected type error, got nil")
-		}
-	})
-	t.Run("bool", func(t *testing.T) {
-		var d bool
-		opt := PluginOption{
-			Name: "enabled",
-			Type: PluginOptionTypeBool,
-			Dest: &d,
-		}
-		if err := opt.ProcessConfig(map[any]any{"enabled": "yes"}); err == nil {
-			t.Fatal("expected type error, got nil")
-		}
-	})
-	t.Run("int", func(t *testing.T) {
-		var d int
-		opt := PluginOption{
-			Name: "count",
-			Type: PluginOptionTypeInt,
-			Dest: &d,
-		}
-		if err := opt.ProcessConfig(map[any]any{"count": "x"}); err == nil {
-			t.Fatal("expected type error, got nil")
-		}
-	})
-	t.Run("uint-wrong-type", func(t *testing.T) {
-		var d uint
-		opt := PluginOption{
-			Name: "size",
-			Type: PluginOptionTypeUint,
-			Dest: &d,
-		}
-		if err := opt.ProcessConfig(map[any]any{"size": "x"}); err == nil {
-			t.Fatal("expected type error, got nil")
-		}
-	})
-}
-
-// TestProcessConfigNegativeUint verifies a negative int provided for a
-// uint option is rejected.
-func TestProcessConfigNegativeUint(t *testing.T) {
-	var d uint
-	opt := PluginOption{
-		Name: "size",
-		Type: PluginOptionTypeUint,
-		Dest: &d,
-	}
-	if err := opt.ProcessConfig(map[any]any{"size": -1}); err == nil {
-		t.Fatal("expected error for negative uint, got nil")
-	}
-}
-
-// TestProcessConfigUnknownType verifies an unknown option type errors
-// when the key is present.
-func TestProcessConfigUnknownType(t *testing.T) {
-	opt := PluginOption{Name: "bad", Type: PluginOptionType(99)}
-	if err := opt.ProcessConfig(map[any]any{"bad": 1}); err == nil {
-		t.Fatal("expected error for unknown type, got nil")
-	}
-}
-
-// TestSplitAndTrim verifies comma-separated option values are split with
-// surrounding whitespace removed and empty entries dropped, including the
-// separator forms produced by YAML block scalars.
 func TestSplitAndTrim(t *testing.T) {
 	testCases := []struct {
 		name     string
@@ -462,4 +299,12 @@ func TestSplitAndTrim(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestUnsignedDefaultNormalized(t *testing.T) {
+	entry := configEntry()
+	entry.Options[3].DefaultValue = 3
+	values, err := entry.resolve(nil, nil, nil)
+	require.NoError(t, err)
+	require.Equal(t, uint(3), values.Uint("size"))
 }

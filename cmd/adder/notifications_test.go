@@ -21,8 +21,9 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/blinklabs-io/adder/plugin"
 	"github.com/blinklabs-io/adder/tray/setup"
-	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/require"
 )
 
@@ -126,20 +127,95 @@ func TestValidateNotificationInput(t *testing.T) {
 			cfg.Network.CustomPort = test.customPort
 			cfg.Monitor.Everything = true
 
-			cmd := &cobra.Command{}
-			cmd.Flags().String(
-				"output-notify-json-config",
-				writeNotificationConfig(t, cfg),
-				"",
-			)
-			cmd.Flags().String("input-chainsync-network", test.inputNetwork, "")
-			cmd.Flags().String("input-chainsync-address", test.inputAddress, "")
-			err := validateNotificationInput(cmd, "chainsync", "notify-json")
+			resolved, err := plugin.ResolveConfig(map[string]map[string]map[string]any{
+				"input":  {"chainsync": {"network": test.inputNetwork, "address": test.inputAddress}},
+				"output": {"notify-json": {"config": writeNotificationConfig(t, cfg)}},
+			}, nil, func(string) (string, bool) { return "", false })
+			require.NoError(t, err)
+			err = validateNotificationInput(resolved, "chainsync", "notify-json")
 			if test.expectedError == "" {
 				require.NoError(t, err)
 			} else {
 				require.ErrorContains(t, err, test.expectedError)
 			}
+		})
+	}
+}
+
+func TestNotificationValidationUsesResolvedSources(t *testing.T) {
+	cfg := setup.DefaultNotificationConfig()
+	cfg.Network.Name = "preview"
+	cfg.Network.CustomAddress = "node.example"
+	cfg.Network.CustomPort = 3001
+	cfg.Monitor.Everything = true
+	path := writeNotificationConfig(t, cfg)
+	for _, test := range []struct {
+		name      string
+		env       map[string]string
+		flags     []string
+		wantError string
+	}{
+		{name: "YAML only"},
+		{
+			name: "environment overrides YAML",
+			env: map[string]string{
+				"OUTPUT_NOTIFY_JSON_CONFIG": path,
+				"INPUT_CHAINSYNC_NETWORK":   "preview",
+				"INPUT_CHAINSYNC_ADDRESS":   "node.example:3001",
+			},
+		},
+		{
+			name: "CLI overrides environment and YAML",
+			env: map[string]string{
+				"OUTPUT_NOTIFY_JSON_CONFIG": "unused.json",
+				"CARDANO_NETWORK":           "mainnet",
+				"INPUT_CHAINSYNC_ADDRESS":   "other.example:3001",
+			},
+			flags: []string{
+				"--output-notify-json-config=" + path,
+				"--input-chainsync-network=preview",
+				"--input-chainsync-address=node.example:3001",
+			},
+		},
+		{
+			name:      "resolved network mismatch",
+			env:       map[string]string{"CARDANO_NETWORK": "mainnet"},
+			wantError: "does not match chainsync network",
+		},
+		{
+			name:      "resolved address mismatch",
+			env:       map[string]string{"INPUT_CHAINSYNC_ADDRESS": "other.example:3001"},
+			wantError: "does not match chainsync address",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			data := map[string]map[string]map[string]any{
+				"input":  {"chainsync": {"network": "preview", "address": "node.example:3001"}},
+				"output": {"notify-json": {"config": path}},
+			}
+			if test.name == "environment overrides YAML" {
+				data["input"]["chainsync"]["network"] = "mainnet"
+				data["input"]["chainsync"]["address"] = "other.example:3001"
+				data["output"]["notify-json"]["config"] = "unused.json"
+			}
+			fs := pflag.NewFlagSet(test.name, pflag.ContinueOnError)
+			require.NoError(t, plugin.PopulateCmdlineOptions(fs))
+			require.NoError(t, fs.Parse(test.flags))
+			resolved, err := plugin.ResolveConfig(data, fs, func(key string) (string, bool) {
+				value, ok := test.env[key]
+				return value, ok
+			})
+			require.NoError(t, err)
+			err = validateNotificationInput(resolved, "chainsync", "notify-json")
+			if test.wantError != "" {
+				require.ErrorContains(t, err, test.wantError)
+				return
+			}
+			require.NoError(t, err)
+			_, err = resolved.New(plugin.PluginTypeOutput, "notify-json")
+			require.NoError(t, err)
+			_, err = resolved.New(plugin.PluginTypeInput, "chainsync")
+			require.NoError(t, err)
 		})
 	}
 }

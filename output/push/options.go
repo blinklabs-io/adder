@@ -21,7 +21,7 @@ type PushOptionFunc func(*PushOutput)
 // WithLogger specifies the logger object to use for logging messages
 func WithLogger(logger plugin.Logger) PushOptionFunc {
 	return func(o *PushOutput) {
-		o.logger = logger
+		o.SetLogger(logger)
 	}
 }
 

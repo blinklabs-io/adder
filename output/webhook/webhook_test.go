@@ -15,12 +15,15 @@
 package webhook
 
 import (
+	"bytes"
 	"encoding/json"
 	"io"
+	"log/slog"
 	"math"
 	"net/http"
 	"net/http/httptest"
 	"runtime"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -300,11 +303,13 @@ func TestStartUnknownEventTypeSurfacesError(t *testing.T) {
 
 func TestWebhookOutput_Start(t *testing.T) {
 	received := make(chan []byte, 1)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		body, _ := io.ReadAll(r.Body)
-		received <- body
-		w.WriteHeader(http.StatusOK)
-	}))
+	server := httptest.NewServer(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			body, _ := io.ReadAll(r.Body)
+			received <- body
+			w.WriteHeader(http.StatusOK)
+		}),
+	)
 	defer server.Close()
 
 	w := New(
@@ -347,15 +352,17 @@ func TestWebhookOutput_Start(t *testing.T) {
 func TestWebhookOutput_Retry(t *testing.T) {
 	var callCount atomic.Int32
 	attempts := make(chan struct{}, 10)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		count := callCount.Add(1)
-		attempts <- struct{}{}
-		if count < 3 {
-			w.WriteHeader(http.StatusInternalServerError)
-			return
-		}
-		w.WriteHeader(http.StatusOK)
-	}))
+	server := httptest.NewServer(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			count := callCount.Add(1)
+			attempts <- struct{}{}
+			if count < 3 {
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+			w.WriteHeader(http.StatusOK)
+		}),
+	)
 	defer server.Close()
 
 	w := New(
@@ -393,15 +400,17 @@ LOOP:
 
 func TestWebhookOutput_BasicAuth(t *testing.T) {
 	authorized := make(chan bool, 1)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		username, password, ok := r.BasicAuth()
-		if ok && username == "user" && password == "pass" {
-			authorized <- true
-		} else {
-			authorized <- false
-		}
-		w.WriteHeader(http.StatusOK)
-	}))
+	server := httptest.NewServer(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			username, password, ok := r.BasicAuth()
+			if ok && username == "user" && password == "pass" {
+				authorized <- true
+			} else {
+				authorized <- false
+			}
+			w.WriteHeader(http.StatusOK)
+		}),
+	)
 	defer server.Close()
 
 	w := New(
@@ -427,35 +436,50 @@ func TestWebhookOutput_BasicAuth(t *testing.T) {
 }
 
 func TestWebhookOutput_ShutdownDuringInFlightRequest(t *testing.T) {
-	// 1. Slow server (stalls for 100ms)
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		time.Sleep(100 * time.Millisecond)
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer srv.Close()
-
-	w := New(
-		WithUrl(srv.URL, false),
-		WithRetryConfig(0, time.Millisecond, time.Millisecond),
-	)
-
-	require.NoError(t, w.Start())
-
-	// 2. Send an event
-	evt := event.Event{
-		Type:    "input.rollback",
-		Payload: event.RollbackEvent{},
+	for _, retries := range []int{0, 3} {
+		t.Run(strconv.Itoa(retries), func(t *testing.T) {
+			entered, release := make(chan struct{}), make(chan struct{})
+			srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+				_, _ = io.Copy(io.Discard, r.Body)
+				close(entered)
+				select {
+				case <-r.Context().Done():
+				case <-release:
+				}
+			}))
+			t.Cleanup(srv.Close)
+			var logs bytes.Buffer
+			w := New(
+				WithUrl(srv.URL, false),
+				WithRetryConfig(retries, time.Hour, time.Hour),
+				WithLogger(slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelWarn}))),
+			)
+			t.Cleanup(func() {
+				close(release)
+				_ = w.Stop()
+			})
+			require.NoError(t, w.Start())
+			errs := w.ErrorChan()
+			w.InputChan() <- blockEvent()
+			select {
+			case <-entered:
+			case <-time.After(time.Second):
+				t.Fatal("webhook request did not arrive")
+			}
+			stopped := make(chan error, 1)
+			go func() { stopped <- w.Stop() }()
+			select {
+			case err := <-stopped:
+				require.NoError(t, err)
+			case <-time.After(time.Second):
+				t.Fatal("Stop did not cancel the request")
+			}
+			for err := range errs {
+				t.Errorf("normal shutdown reported a delivery failure: %v", err)
+			}
+			require.Empty(t, logs.String(), "normal shutdown must not log retry/failure warnings")
+		})
 	}
-	w.InputChan() <- evt
-
-	// 3. Wait briefly for worker to pick up the event and enter SendWebhook
-	time.Sleep(10 * time.Millisecond)
-
-	// 4. Stop concurrently while request is in flight
-	require.NoError(t, w.Stop())
-
-	// Sleep slightly to let mock finish and make sure no races or panics happen
-	time.Sleep(150 * time.Millisecond)
 }
 
 // TestWebhookDeliverySuccess verifies successful HTTP POST delivery to a webhook endpoint.
@@ -465,11 +489,13 @@ func TestWebhookDeliverySuccess(t *testing.T) {
 		method string
 	}
 	received := make(chan receivedRequest, 1)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		body, _ := io.ReadAll(r.Body)
-		received <- receivedRequest{body: body, method: r.Method}
-		w.WriteHeader(http.StatusOK)
-	}))
+	server := httptest.NewServer(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			body, _ := io.ReadAll(r.Body)
+			received <- receivedRequest{body: body, method: r.Method}
+			w.WriteHeader(http.StatusOK)
+		}),
+	)
 	t.Cleanup(server.Close)
 
 	w := New(
@@ -500,9 +526,11 @@ func TestWebhookDeliverySuccess(t *testing.T) {
 
 // TestWebhookDeliveryFailure verifies that HTTP 500 errors are surfaced on the error channel rather than panicking.
 func TestWebhookDeliveryFailure(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
-	}))
+	server := httptest.NewServer(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusInternalServerError)
+		}),
+	)
 	t.Cleanup(server.Close)
 
 	w := New(
@@ -524,11 +552,13 @@ func TestWebhookDeliveryFailure(t *testing.T) {
 // TestWebhookEventSerialization verifies that Block, Transaction, and Rollback events serialize to their expected JSON shapes.
 func TestWebhookEventSerialization(t *testing.T) {
 	received := make(chan []byte, 3)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		body, _ := io.ReadAll(r.Body)
-		received <- body
-		w.WriteHeader(http.StatusOK)
-	}))
+	server := httptest.NewServer(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			body, _ := io.ReadAll(r.Body)
+			received <- body
+			w.WriteHeader(http.StatusOK)
+		}),
+	)
 	t.Cleanup(server.Close)
 
 	w := New(
@@ -567,7 +597,7 @@ func TestWebhookEventSerialization(t *testing.T) {
 		},
 	)
 
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		select {
 		case body := <-received:
 			var parsed event.Event
@@ -605,13 +635,25 @@ func TestWebhookOutput_DoubleStart(t *testing.T) {
 	require.NoError(t, w.Stop())
 }
 
-// TestWebhookOutput_ReportErrorWithoutReader verifies that reportError logs the error if no consumer is reading from ErrorChan.
+// TestWebhookOutput_ReportErrorWithoutReader verifies that an unread
+// ErrorChan does not stall the event loop: a malformed event is reported
+// through reportError with nobody draining the error channel, and a
+// following valid event still reaches the server.
+//
+// It does not reach reportError's "channel full" branch, despite what it
+// used to claim. Base normalized every plugin error channel to
+// plugin.ErrorBuffer slots, so the single error this test produces is
+// buffered and TrySendError succeeds. Filling the channel first would be
+// a different test; plugin.TestTrySendErrorNeverBlocks already covers the
+// drop-when-full behaviour at the Base level.
 func TestWebhookOutput_ReportErrorWithoutReader(t *testing.T) {
 	received := make(chan struct{})
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		close(received)
-		w.WriteHeader(http.StatusOK)
-	}))
+	server := httptest.NewServer(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			close(received)
+			w.WriteHeader(http.StatusOK)
+		}),
+	)
 	t.Cleanup(server.Close)
 
 	w := New(
@@ -621,8 +663,8 @@ func TestWebhookOutput_ReportErrorWithoutReader(t *testing.T) {
 	require.NoError(t, w.Start())
 	t.Cleanup(func() { _ = w.Stop() })
 
-	// 1. Send malformed event to trigger error reporting but DO NOT read from ErrorChan()
-	// This exercises the reportError default select case where error is logged.
+	// 1. Send a malformed event to trigger error reporting, and do not
+	// read from ErrorChan(). The error is logged and buffered.
 	w.InputChan() <- event.New("input.block", time.Now(), nil, nil)
 
 	// 2. Concurrently send a valid event through InputChan
@@ -637,7 +679,9 @@ func TestWebhookOutput_ReportErrorWithoutReader(t *testing.T) {
 	case <-received:
 		// Success!
 	case <-time.After(3 * time.Second):
-		t.Fatal("timed out waiting for subsequent valid event delivery; processing loop was blocked")
+		t.Fatal(
+			"timed out waiting for subsequent valid event delivery; processing loop was blocked",
+		)
 	}
 
 	require.NoError(t, w.Stop())
@@ -713,9 +757,9 @@ func TestFormatWebhookDiscordBadRollbackPayload(t *testing.T) {
 	assert.Contains(t, err.Error(), "unexpected payload type")
 }
 
-// TestNewFromCmdlineOptions verifies that the CLI registration factory creates a valid WebhookOutput instance.
-func TestNewFromCmdlineOptions(t *testing.T) {
-	p := NewFromCmdlineOptions()
+// TestConfiguredPlugin verifies that the CLI registration factory creates a valid WebhookOutput instance.
+func TestConfiguredPlugin(t *testing.T) {
+	p := mustConfiguredPlugin(t, nil)
 	assert.NotNil(t, p)
 	assert.IsType(t, &WebhookOutput{}, p)
 }

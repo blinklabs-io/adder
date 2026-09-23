@@ -10,12 +10,9 @@ Name | Type | Description | Notes
 
 ### NewPushTokenRequest
 
-`func NewPushTokenRequest(fcmToken string, ) *PushTokenRequest`
+`func NewPushTokenRequest(fcmToken string) *PushTokenRequest`
 
-NewPushTokenRequest instantiates a new PushTokenRequest object
-This constructor will assign default values to properties that have it defined,
-and makes sure properties required by API are set, but the set of arguments
-will change when the set of required properties is changed
+Stores the supplied string. It does not reject an empty token; the server does.
 
 ### NewPushTokenRequestWithDefaults
 
@@ -29,14 +26,14 @@ but it doesn't guarantee that properties required by API are set
 
 `func (o *PushTokenRequest) GetFcmToken() string`
 
-GetFcmToken returns the FcmToken field if non-nil, zero value otherwise.
+Returns the token string, or an empty string for a nil receiver.
 
 ### GetFcmTokenOk
 
 `func (o *PushTokenRequest) GetFcmTokenOk() (*string, bool)`
 
-GetFcmTokenOk returns a tuple with the FcmToken field if it's non-nil, zero value otherwise
-and a boolean to check if the value has been set.
+Returns a pointer to the string and true for any non-nil receiver, even if the
+string is empty. A nil receiver returns nil and false.
 
 ### SetFcmToken
 

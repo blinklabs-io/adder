@@ -15,22 +15,15 @@
 package mempool
 
 import (
-	"math"
+	"errors"
+	"fmt"
+	"net"
+	"time"
 
 	"github.com/blinklabs-io/adder/internal/logging"
 	"github.com/blinklabs-io/adder/plugin"
+	ouroboros "github.com/blinklabs-io/gouroboros"
 )
-
-var cmdlineOptions struct {
-	network      string
-	address      string
-	socketPath   string
-	networkMagic uint
-	ntcTcp       bool
-	includeCbor  bool
-	pollInterval string
-	kupoUrl      string
-}
 
 func init() {
 	plugin.Register(
@@ -38,7 +31,7 @@ func init() {
 			Type:               plugin.PluginTypeInput,
 			Name:               "mempool",
 			Description:        "reads unconfirmed transactions from a Cardano node's mempool via LocalTxMonitor (NtC)",
-			NewFromOptionsFunc: NewFromCmdlineOptions,
+			NewFromOptionsFunc: newFromOptions,
 			Options: []plugin.PluginOption{
 				{
 					Name:         "network",
@@ -46,21 +39,18 @@ func init() {
 					CustomEnvVar: "CARDANO_NETWORK",
 					Description:  "well-known Cardano network name (e.g. mainnet, preprod)",
 					DefaultValue: "mainnet",
-					Dest:         &cmdlineOptions.network,
 				},
 				{
 					Name:         "network-magic",
 					Type:         plugin.PluginOptionTypeUint,
 					Description:  "network magic value (overrides network name)",
 					DefaultValue: uint(0),
-					Dest:         &cmdlineOptions.networkMagic,
 				},
 				{
 					Name:         "address",
 					Type:         plugin.PluginOptionTypeString,
 					Description:  "TCP address (host:port); requires ntc-tcp=true",
 					DefaultValue: "",
-					Dest:         &cmdlineOptions.address,
 				},
 				{
 					Name:         "socket-path",
@@ -68,28 +58,24 @@ func init() {
 					CustomEnvVar: "CARDANO_NODE_SOCKET_PATH",
 					Description:  "path to the node's UNIX socket (NtC)",
 					DefaultValue: "",
-					Dest:         &cmdlineOptions.socketPath,
 				},
 				{
 					Name:         "ntc-tcp",
 					Type:         plugin.PluginOptionTypeBool,
 					Description:  "use NtC over TCP (e.g. when exposing socket via socat)",
 					DefaultValue: false,
-					Dest:         &cmdlineOptions.ntcTcp,
 				},
 				{
 					Name:         "include-cbor",
 					Type:         plugin.PluginOptionTypeBool,
 					Description:  "include transaction CBOR in events",
 					DefaultValue: false,
-					Dest:         &cmdlineOptions.includeCbor,
 				},
 				{
 					Name:         "poll-interval",
 					Type:         plugin.PluginOptionTypeString,
 					Description:  "how often to poll the mempool (e.g. 5s, 1m)",
 					DefaultValue: "5s",
-					Dest:         &cmdlineOptions.pollInterval,
 				},
 				{
 					Name:         "kupo-url",
@@ -97,29 +83,56 @@ func init() {
 					CustomEnvVar: "KUPO_URL",
 					Description:  "Kupo API URL for resolving transaction inputs (e.g. http://localhost:1442). Kupo must index the outputs you need (e.g. run with --match \"*\") or resolution will be empty.",
 					DefaultValue: "",
-					Dest:         &cmdlineOptions.kupoUrl,
 				},
 			},
 		},
 	)
 }
 
-func NewFromCmdlineOptions() plugin.Plugin {
-	var nm uint32
-	if cmdlineOptions.networkMagic > 0 && cmdlineOptions.networkMagic <= math.MaxUint32 {
-		nm = uint32(cmdlineOptions.networkMagic)
+func newFromOptions(values plugin.Options) (plugin.ManagedPlugin, error) {
+	if endpoint := values.String("kupo-url"); endpoint != "" {
+		if err := plugin.ValidateHTTPURL(endpoint); err != nil {
+			return nil, fmt.Errorf("kupo-url: %w", err)
+		}
 	}
+
+	if values.String("network") != "" {
+		if _, ok := ouroboros.NetworkByName(values.String("network")); !ok {
+			return nil, errors.New("unknown network")
+		}
+	}
+	if values.String("address") != "" {
+		if _, _, err := net.SplitHostPort(values.String("address")); err != nil {
+			return nil, errors.New("address must be host:port")
+		}
+		if !values.Bool("ntc-tcp") {
+			return nil, errors.New("address requires ntc-tcp=true")
+		}
+	}
+	if values.String("address") == "" && values.String("socket-path") == "" {
+		return nil, errors.New("address or socket-path is required")
+	}
+	duration, err := time.ParseDuration(values.String("poll-interval"))
+	if err != nil || duration <= 0 {
+		return nil, errors.New("poll-interval must be a positive duration")
+	}
+	if values.String("network") == "" && values.Uint("network-magic") == 0 {
+		return nil, errors.New("network or network-magic is required")
+	}
+
+	//nolint:gosec // Options validates every uint as an unsigned 32-bit value.
+	nm := uint32(values.Uint("network-magic"))
 	return New(
 		WithLogger(
 			logging.GetLogger().With("plugin", "input.mempool"),
 		),
-		WithNetwork(cmdlineOptions.network),
+		WithNetwork(values.String("network")),
 		WithNetworkMagic(nm),
-		WithAddress(cmdlineOptions.address),
-		WithSocketPath(cmdlineOptions.socketPath),
-		WithNtcTcp(cmdlineOptions.ntcTcp),
-		WithIncludeCbor(cmdlineOptions.includeCbor),
-		WithPollInterval(cmdlineOptions.pollInterval),
-		WithKupoUrl(cmdlineOptions.kupoUrl),
-	)
+		WithAddress(values.String("address")),
+		WithSocketPath(values.String("socket-path")),
+		WithNtcTcp(values.Bool("ntc-tcp")),
+		WithIncludeCbor(values.Bool("include-cbor")),
+		WithPollInterval(values.String("poll-interval")),
+		WithKupoUrl(values.String("kupo-url")),
+	), nil
 }

@@ -22,7 +22,7 @@ type UtxoRpcOptionFunc func(*Utxorpc)
 // WithLogger sets the logger used by the plugin.
 func WithLogger(logger plugin.Logger) UtxoRpcOptionFunc {
 	return func(u *Utxorpc) {
-		u.logger = logger
+		u.SetLogger(logger)
 	}
 }
 

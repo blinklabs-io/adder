@@ -18,8 +18,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/blinklabs-io/adder/event"
@@ -45,11 +45,7 @@ const (
 
 // TelegramOutput implements the Plugin interface for sending events to Telegram
 type TelegramOutput struct {
-	errorChan      chan error
-	eventChan      chan event.Event
-	doneChan       chan struct{}
-	wg             sync.WaitGroup
-	logger         plugin.Logger
+	plugin.Base
 	bot            *bot.Bot
 	botToken       string
 	chatID         int64
@@ -81,8 +77,16 @@ func New(options ...TelegramOptionFunc) (*TelegramOutput, error) {
 		return nil, errors.New("telegram bot token is required")
 	}
 
+	parts := strings.SplitN(t.botToken, ":", 2)
+	if len(parts) != 2 || parts[1] == "" {
+		return nil, errors.New("invalid telegram bot token format")
+	}
+	if id, err := strconv.ParseInt(parts[0], 10, 64); err != nil || id <= 0 {
+		return nil, errors.New("invalid telegram bot token format")
+	}
 	cmdHandler := commandHandler(t.chatID)
 	b, err := bot.New(t.botToken,
+		bot.WithSkipGetMe(),
 		bot.WithDefaultHandler(cmdHandler),
 		bot.WithAllowedUpdates(bot.AllowedUpdates{models.AllowedUpdateMessage}),
 	)
@@ -96,7 +100,9 @@ func New(options ...TelegramOptionFunc) (*TelegramOutput, error) {
 
 // commandHandler returns a handler that replies to /start, /help, and /settings (Telegram global commands).
 // Replies are sent only in the configured chat (chatID) so the bot stays send-only and minimal.
-func commandHandler(chatID int64) func(context.Context, *bot.Bot, *models.Update) {
+func commandHandler(
+	chatID int64,
+) func(context.Context, *bot.Bot, *models.Update) {
 	return func(ctx context.Context, b *bot.Bot, update *models.Update) {
 		if update.Message == nil || update.Message.Text == "" {
 			return
@@ -125,49 +131,45 @@ func commandHandler(chatID int64) func(context.Context, *bot.Bot, *models.Update
 
 // log returns the plugin logger, or the global logger if unset.
 func (t *TelegramOutput) log() plugin.Logger {
-	if t.logger != nil {
-		return t.logger
+	if logger := t.Logger(); logger != nil {
+		return logger
 	}
 	return logging.GetLoggerForComponent("output.telegram")
 }
 
+// Role identifies this plugin as a pipeline output.
+func (t *TelegramOutput) Role() plugin.PluginType { return plugin.PluginTypeOutput }
+
 // Start the Telegram output
 func (t *TelegramOutput) Start() error {
-	// Guard against double-start: stop poll loop, wait for goroutines to exit, then close old channels
-	if t.pollCancel != nil {
-		t.pollCancel()
-		t.pollCancel = nil
-	}
-	if t.doneChan != nil {
-		close(t.doneChan)
-		t.doneChan = nil
-		t.wg.Wait()
-	}
-	if t.eventChan != nil {
-		close(t.eventChan)
-		t.eventChan = nil
-	}
-	if t.errorChan != nil {
-		close(t.errorChan)
-		t.errorChan = nil
-	}
+	return t.StartContext(context.Background())
+}
 
-	t.eventChan = make(chan event.Event, 10)
-	t.errorChan = make(chan error)
-	t.doneChan = make(chan struct{})
+// StartContext starts the plugin with ctx governing setup and run operations.
+// Call Stop to wait for workers and release resources, including after cancellation.
+func (t *TelegramOutput) StartContext(ctx context.Context) error {
+	return t.StartRun(ctx,
+		plugin.BaseConfig{HasInput: true},
+		t.start,
+		t.shutdownHooks(),
+	)
+}
 
+func (t *TelegramOutput) start(ctx context.Context) error {
 	logger := t.log()
 	logger.Info("starting Telegram output")
 
 	if t.chatID == 0 {
-		return errors.New("chat ID is required: set --output-telegram-chat-id or OUTPUT_TELEGRAM_CHAT_ID")
+		return errors.New(
+			"chat ID is required: set --output-telegram-chat-id or OUTPUT_TELEGRAM_CHAT_ID",
+		)
 	}
 
 	// Verify bot authorization by getting bot info
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	authCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	me, err := t.bot.GetMe(ctx)
+	me, err := t.bot.GetMe(authCtx)
 	if err != nil {
 		return fmt.Errorf("failed to authorize with Telegram: %w", err)
 	}
@@ -179,45 +181,54 @@ func (t *TelegramOutput) Start() error {
 
 	// Set global commands per Telegram bot requirements (https://core.telegram.org/bots/features#global-commands)
 	globalCommands := []models.BotCommand{
-		{Command: "start", Description: "Start the bot and see an introduction"},
+		{
+			Command:     "start",
+			Description: "Start the bot and see an introduction",
+		},
 		{Command: "help", Description: "Show help and list of commands"},
 		{Command: "settings", Description: "View bot settings"},
 	}
-	if _, err := t.bot.SetMyCommands(ctx, &bot.SetMyCommandsParams{Commands: globalCommands}); err != nil {
+	if _, err := t.bot.SetMyCommands(authCtx, &bot.SetMyCommandsParams{Commands: globalCommands}); err != nil {
 		logger.Warn("failed to set Telegram bot commands: " + err.Error())
 	}
 
 	// Start long polling so the bot can react to /start, /help, /settings
-	pollCtx, pollCancel := context.WithCancel(context.Background())
+	pollCtx, pollCancel := context.WithCancel(ctx)
 	t.pollCancel = pollCancel
-	t.wg.Add(1)
-	go func() {
-		defer t.wg.Done()
-		t.bot.Start(pollCtx)
-	}()
+	t.Go(func() { t.bot.Start(pollCtx) })
 
-	t.wg.Add(1)
-	go func() {
-		defer t.wg.Done()
-		for {
-			select {
-			case <-t.doneChan:
-				return
-			case evt, ok := <-t.eventChan:
-				// Channel has been closed, which means we're shutting down
-				if !ok {
-					return
-				}
-				t.processEvent(&evt)
-			}
-		}
-	}()
+	// Capture once, outside the loop: a select re-evaluates its channel
+	// operands on every entry, so a worker that re-reads the accessors
+	// per iteration would park forever if Base's teardown ordering ever
+	// changed to clear them. The deadlock this plugin had took that form.
+	done, in := t.Done(), t.Input()
+	t.Go(func() { t.eventLoop(ctx, done, in) })
 
 	return nil
 }
 
+// eventLoop drains the input channel until the plugin shuts down.
+func (t *TelegramOutput) eventLoop(
+	ctx context.Context,
+	done <-chan struct{},
+	in <-chan event.Event,
+) {
+	for {
+		select {
+		case <-done:
+			return
+		case evt, ok := <-in:
+			// Channel has been closed, which means we're shutting down
+			if !ok {
+				return
+			}
+			t.processEvent(ctx, &evt)
+		}
+	}
+}
+
 // processEvent handles incoming events and sends them to Telegram
-func (t *TelegramOutput) processEvent(evt *event.Event) {
+func (t *TelegramOutput) processEvent(ctx context.Context, evt *event.Event) {
 	logger := t.log()
 
 	payload := evt.Payload
@@ -302,11 +313,16 @@ func (t *TelegramOutput) processEvent(evt *event.Event) {
 	}
 
 	message = truncateMessage(message, telegramMaxMessageLength)
-	t.sendMessageWithRetry(message)
+	t.sendMessageWithRetry(ctx, message)
 }
 
 // formatBlockMessage formats a block event for Telegram
-func formatBlockMessage(be event.BlockEvent, bc event.BlockContext, baseURL string, mode models.ParseMode) string {
+func formatBlockMessage(
+	be event.BlockEvent,
+	bc event.BlockContext,
+	baseURL string,
+	mode models.ParseMode,
+) string {
 	blockURL := baseURL + "/block/" + be.BlockHash
 	return fmt.Sprintf(
 		"%s\n\n"+
@@ -318,25 +334,43 @@ func formatBlockMessage(be event.BlockEvent, bc event.BlockContext, baseURL stri
 			"%s %d\n"+
 			"%s %d bytes",
 		bold("🧱 New Cardano Block", mode),
-		bold("Era:", mode), escapeForMode(bc.Era, mode),
-		bold("Block Number:", mode), bc.BlockNumber,
-		bold("Slot Number:", mode), bc.SlotNumber,
-		bold("Block Hash:", mode), link(blockURL, truncateHash(be.BlockHash), mode),
-		bold("Issuer:", mode), escapeForMode(truncateHash(be.IssuerVkey), mode),
-		bold("Transactions:", mode), be.TransactionCount,
-		bold("Body Size:", mode), be.BlockBodySize,
+		bold("Era:", mode),
+		escapeForMode(bc.Era, mode),
+		bold("Block Number:", mode),
+		bc.BlockNumber,
+		bold("Slot Number:", mode),
+		bc.SlotNumber,
+		bold(
+			"Block Hash:",
+			mode,
+		),
+		link(blockURL, truncateHash(be.BlockHash), mode),
+		bold("Issuer:", mode),
+		escapeForMode(truncateHash(be.IssuerVkey), mode),
+		bold("Transactions:", mode),
+		be.TransactionCount,
+		bold("Body Size:", mode),
+		be.BlockBodySize,
 	)
 }
 
 // formatRollbackMessage formats a rollback event for Telegram
-func formatRollbackMessage(re event.RollbackEvent, mode models.ParseMode) string {
+func formatRollbackMessage(
+	re event.RollbackEvent,
+	mode models.ParseMode,
+) string {
 	return fmt.Sprintf(
 		"%s\n\n"+
 			"%s %d\n"+
 			"%s %s",
 		bold("⚠️ Cardano Rollback", mode),
-		bold("Slot Number:", mode), re.SlotNumber,
-		bold("Block Hash:", mode), escapeForMode(truncateHash(re.BlockHash), mode),
+		bold("Slot Number:", mode),
+		re.SlotNumber,
+		bold(
+			"Block Hash:",
+			mode,
+		),
+		escapeForMode(truncateHash(re.BlockHash), mode),
 	)
 }
 
@@ -357,12 +391,21 @@ func formatTransactionMessage(
 			"%s %d\n"+
 			"%s %s ADA",
 		bold("💳 New Cardano Transaction", mode),
-		bold("Block Number:", mode), tc.BlockNumber,
-		bold("Slot Number:", mode), tc.SlotNumber,
-		bold("Transaction Hash:", mode), link(txURL, truncateHash(tc.TransactionHash), mode),
-		bold("Inputs:", mode), len(te.Inputs),
-		bold("Outputs:", mode), len(te.Outputs),
-		bold("Fee:", mode), escapeForMode(formatLovelace(te.Fee), mode),
+		bold("Block Number:", mode),
+		tc.BlockNumber,
+		bold("Slot Number:", mode),
+		tc.SlotNumber,
+		bold(
+			"Transaction Hash:",
+			mode,
+		),
+		link(txURL, truncateHash(tc.TransactionHash), mode),
+		bold("Inputs:", mode),
+		len(te.Inputs),
+		bold("Outputs:", mode),
+		len(te.Outputs),
+		bold("Fee:", mode),
+		escapeForMode(formatLovelace(te.Fee), mode),
 	)
 }
 
@@ -383,12 +426,30 @@ func formatGovernanceMessage(
 			"%s %d\n"+
 			"%s %d",
 		bold("🏛️ Cardano Governance Event", mode),
-		bold("Block Number:", mode), gc.BlockNumber,
-		bold("Slot Number:", mode), gc.SlotNumber,
-		bold("Transaction Hash:", mode), link(txURL, truncateHash(gc.TransactionHash), mode),
-		bold("Proposals:", mode), len(ge.ProposalProcedures),
-		bold("Votes:", mode), len(ge.VotingProcedures),
-		bold("Certificates:", mode), len(ge.DRepCertificates)+len(ge.VoteDelegationCertificates)+len(ge.CommitteeCertificates),
+		bold("Block Number:", mode),
+		gc.BlockNumber,
+		bold("Slot Number:", mode),
+		gc.SlotNumber,
+		bold(
+			"Transaction Hash:",
+			mode,
+		),
+		link(txURL, truncateHash(gc.TransactionHash), mode),
+		bold("Proposals:", mode),
+		len(ge.ProposalProcedures),
+		bold("Votes:", mode),
+		len(ge.VotingProcedures),
+		bold(
+			"Certificates:",
+			mode,
+		),
+		len(
+			ge.DRepCertificates,
+		)+len(
+			ge.VoteDelegationCertificates,
+		)+len(
+			ge.CommitteeCertificates,
+		),
 	)
 }
 
@@ -398,7 +459,25 @@ func escapeMarkdownV2(s string) string {
 	var b strings.Builder
 	for _, r := range s {
 		switch r {
-		case '_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!', '\\':
+		case '_',
+			'*',
+			'[',
+			']',
+			'(',
+			')',
+			'~',
+			'`',
+			'>',
+			'#',
+			'+',
+			'-',
+			'=',
+			'|',
+			'{',
+			'}',
+			'.',
+			'!',
+			'\\':
 			b.WriteRune('\\')
 			b.WriteRune(r)
 		default:
@@ -454,7 +533,11 @@ func link(url, text string, mode models.ParseMode) string {
 	case models.ParseModeMarkdownV1:
 		return fmt.Sprintf("[%s](%s)", text, url)
 	case models.ParseModeMarkdown:
-		return fmt.Sprintf("[%s](%s)", escapeMarkdownV2(text), escapeMarkdownV2URL(url))
+		return fmt.Sprintf(
+			"[%s](%s)",
+			escapeMarkdownV2(text),
+			escapeMarkdownV2URL(url),
+		)
 	default:
 		return fmt.Sprintf("<a href=\"%s\">%s</a>", url, text)
 	}
@@ -525,6 +608,13 @@ func getBaseURL(networkMagic uint32) string {
 
 // SendMessage sends a message to the configured Telegram chat
 func (t *TelegramOutput) SendMessage(message string) error {
+	return t.sendMessage(context.Background(), message)
+}
+
+func (t *TelegramOutput) sendMessage(
+	ctx context.Context,
+	message string,
+) error {
 	logger := t.log()
 
 	if t.bot == nil {
@@ -534,7 +624,7 @@ func (t *TelegramOutput) SendMessage(message string) error {
 		return errors.New("no chat ID configured")
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
 	params := &bot.SendMessageParams{
@@ -560,12 +650,18 @@ func (t *TelegramOutput) SendMessage(message string) error {
 }
 
 // sendMessageWithRetry wraps SendMessage with retry logic and exponential backoff
-func (t *TelegramOutput) sendMessageWithRetry(message string) {
+func (t *TelegramOutput) sendMessageWithRetry(
+	ctx context.Context,
+	message string,
+) {
 	logger := t.log()
 	var lastErr error
 	backoff := t.initialBackoff
 
 	for attempt := 0; attempt <= t.maxRetries; attempt++ {
+		if ctx.Err() != nil {
+			return
+		}
 		if attempt > 0 {
 			logger.Warn(
 				"Telegram delivery failed, retrying",
@@ -580,16 +676,20 @@ func (t *TelegramOutput) sendMessageWithRetry(message string) {
 				"error",
 				lastErr,
 			)
-			time.Sleep(backoff)
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(backoff):
+			}
 
 			// Calculate next backoff with exponential increase
-			backoff = time.Duration(float64(backoff) * t.backoffFactor)
-			if backoff > t.maxBackoff {
-				backoff = t.maxBackoff
-			}
+			backoff = min(
+				time.Duration(float64(backoff)*t.backoffFactor),
+				t.maxBackoff,
+			)
 		}
 
-		err := t.SendMessage(message)
+		err := t.sendMessage(ctx, message)
 		if err == nil {
 			if attempt > 0 {
 				logger.Info(
@@ -617,55 +717,33 @@ func (t *TelegramOutput) sendMessageWithRetry(message string) {
 	)
 
 	// Send error to error channel for monitoring (non-blocking)
-	select {
-	case t.errorChan <- fmt.Errorf(
+	if !t.TrySendError(fmt.Errorf(
 		"telegram delivery to chat %d failed after %d retries: %w",
 		t.chatID,
 		t.maxRetries,
 		lastErr,
-	):
-	default:
+	)) {
 		// Error channel is full or closed, just log
-		logger.Warn("could not send error to error channel (full or closed)")
+		logger.Warn("could not send error to error channel (full or absent)")
 	}
 }
 
 // Stop the Telegram output
 func (t *TelegramOutput) Stop() error {
-	if t.pollCancel != nil {
-		t.pollCancel()
-		t.pollCancel = nil
-	}
-	if t.doneChan != nil {
-		close(t.doneChan)
-		t.doneChan = nil
-	}
-	// Wait for goroutines to exit before closing channels
-	t.wg.Wait()
-	if t.eventChan != nil {
-		close(t.eventChan)
-		t.eventChan = nil
-	}
-	if t.errorChan != nil {
-		close(t.errorChan)
-		t.errorChan = nil
-	}
-	return nil
+	return t.Shutdown(t.shutdownHooks())
 }
 
-// ErrorChan returns the plugin's error channel
-func (t *TelegramOutput) ErrorChan() <-chan error {
-	return t.errorChan
-}
-
-// InputChan returns the input event channel
-func (t *TelegramOutput) InputChan() chan<- event.Event {
-	return t.eventChan
-}
-
-// OutputChan always returns nil
-func (t *TelegramOutput) OutputChan() <-chan event.Event {
-	return nil
+func (t *TelegramOutput) shutdownHooks() plugin.ShutdownHooks {
+	return plugin.ShutdownHooks{
+		BeforeWait: func() error {
+			// Cancel the long-poll context so bot.Start returns.
+			if t.pollCancel != nil {
+				t.pollCancel()
+				t.pollCancel = nil
+			}
+			return nil
+		},
+	}
 }
 
 // GetBot returns the underlying Telegram bot instance for advanced usage
@@ -677,3 +755,5 @@ func (t *TelegramOutput) GetBot() *bot.Bot {
 func (t *TelegramOutput) GetChatID() int64 {
 	return t.chatID
 }
+
+var _ plugin.ManagedPlugin = (*TelegramOutput)(nil)
