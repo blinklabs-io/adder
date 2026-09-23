@@ -33,13 +33,13 @@ func (p SetupPlan) ToEngineConfig(base config.Config) config.Config {
 
 	// 2. Input Configuration (Chainsync)
 	if c.Plugin == nil {
-		c.Plugin = make(map[string]map[string]map[any]any)
+		c.Plugin = make(map[string]map[string]map[string]any)
 	}
 	if c.Plugin["input"] == nil {
-		c.Plugin["input"] = make(map[string]map[any]any)
+		c.Plugin["input"] = make(map[string]map[string]any)
 	}
 	if c.Plugin["input"]["chainsync"] == nil {
-		c.Plugin["input"]["chainsync"] = make(map[any]any)
+		c.Plugin["input"]["chainsync"] = make(map[string]any)
 	}
 
 	c.Plugin["input"]["chainsync"]["network"] = strings.ToLower(p.Network.Name)
@@ -67,19 +67,19 @@ func (p SetupPlan) ToEngineConfig(base config.Config) config.Config {
 
 	// 4. Output Configuration
 	if c.Plugin["output"] == nil {
-		c.Plugin["output"] = make(map[string]map[any]any)
+		c.Plugin["output"] = make(map[string]map[string]any)
 	}
 
 	c.Output = p.Output.Type
 	if c.Output == "" || c.Output == "none" {
 		c.Output = "log"
-		c.Plugin["output"]["log"] = map[any]any{
+		c.Plugin["output"]["log"] = map[string]any{
 			"format": "text",
 		}
 	} else {
 		// Replace rather than merge so keys removed/changed during a
 		// reconfigure do not linger in the persisted config.
-		c.Plugin["output"][c.Output] = make(map[any]any)
+		c.Plugin["output"][c.Output] = make(map[string]any)
 		for k, v := range p.Output.Config {
 			c.Plugin["output"][c.Output][k] = v
 		}
@@ -176,27 +176,13 @@ func SetupPlanFromEngineConfig(c config.Config, tray TrayConfig) SetupPlan {
 		}
 	}
 
-	// Output
 	plan.Output.Type = c.Output
+	if plan.Output.Type == "" || plan.Output.Type == "none" {
+		plan.Output.Type = "log"
+	}
 	plan.Output.Config = make(map[string]string)
-	if c.Output != "log" && c.Output != "" {
-		if cfg, ok := c.Plugin["output"][c.Output]; ok {
-			for k, v := range cfg {
-				plan.Output.Config[fmt.Sprint(k)] = fmt.Sprint(v)
-			}
-		}
-	} else {
-		// Engine "log" without path maps to UI "none"
-		if cfg, ok := c.Plugin["output"]["log"]; ok {
-			if path, ok := cfg["path"]; ok && fmt.Sprint(path) != "" {
-				plan.Output.Type = "log"
-				plan.Output.Config["path"] = fmt.Sprint(path)
-			} else {
-				plan.Output.Type = "none"
-			}
-		} else {
-			plan.Output.Type = "none"
-		}
+	for k, v := range c.Plugin["output"][plan.Output.Type] {
+		plan.Output.Config[k] = fmt.Sprint(v)
 	}
 
 	return plan

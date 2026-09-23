@@ -56,7 +56,7 @@ var qrPageTemplate = template.Must(template.New("qr").Parse(`
 `))
 
 // @Summary		Generate QR Setup Page
-// @Description	Generates an interactive HTML page containing a QR code representing the local API FCM endpoint. Used by the Adder Tray desktop application during onboarding setup.
+// @Description	Returns an HTML page that loads QRious to encode an apiEndpoint JSON field containing the request host and FCM route. Available with the push output.
 // @Produce		text/html
 // @Success		200	{string}	string	"Interactive HTML Onboarding Page"
 // @Router			/v1/qrcode [get]

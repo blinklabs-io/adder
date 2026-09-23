@@ -220,27 +220,10 @@ func valueToString(v any) string {
 	}
 }
 
-// RulesFromPlan derives the active rule set from a setup plan. The
-// mapping mirrors the wizard's notification preferences (see
-// tray/wizard/step4_notifications.go) and the existing inline dispatch
-// logic in tray/app.go, so this engine can replace that inline path.
-//
-// Values inside each target group OR together. The configured connectors join
-// adjacent populated groups with AND or OR. Event families that cannot carry
-// the same fields naturally fail expressions requiring those fields. When
-// MonitorEverything is on, targets are ignored and a single coarse rule per
-// event type is emitted.
-//
-// Assumption (documented): several preferences are finer-grained than
-// the event types adder emits. Incoming/Outgoing/Token-transfer all
-// collapse to "input.transaction" (the transaction event carries no
-// in/out direction flag), and Pool-parameter/Registration changes
-// collapse to their coarse event type. Those prefs therefore act as
-// independent enable toggles over the same coarse event-type rule
-// rather than distinct payload matches. The wallet/DRep/pool parameter
-// itself is preserved verbatim on each rule's Param field so a later
-// address-aware filter can refine matching without reshaping the rule
-// model.
+// RulesFromPlan derives notification rules from a setup plan. Standard rules
+// require their own payload match and the combined target-group expression.
+// MonitorEverything instead uses one coarse rule per enabled event family.
+// Rollback and connection rules are independent of target groups.
 func RulesFromPlan(plan setup.SetupPlan) []Rule {
 	var rules []Rule
 	prefs := plan.Notify

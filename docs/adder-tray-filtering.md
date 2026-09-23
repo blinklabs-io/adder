@@ -62,7 +62,7 @@ contain a pool ID, and a block minted by a pool does not normally contain a
 DRep ID. A user can care about both, but that does not imply that both must be
 present in the same event.
 
-## Recommended Mental Model
+## Target Matching
 
 ### Target groups use explicit connectors
 
@@ -120,7 +120,7 @@ can occur in one event. Examples include:
 
 - transactions involving Wallet A AND Asset T;
 - transactions involving Wallet A AND Policy P;
-- incoming transfers to Wallet A above a specified amount.
+- incoming transfers to Wallet A (amount thresholds are not currently exposed).
 
 The UI exposes AND/OR directly between adjacent target groups. It does not
 maintain a separate custom transaction-rule view.
@@ -149,7 +149,7 @@ it does not mean that identity matching may be skipped.
 Configuration:
 
 - DRep A;
-- Pool X;
+- Pool X, joined to DRep A with OR;
 - DRep votes enabled;
 - blocks minted enabled.
 
@@ -190,20 +190,18 @@ An alert should answer:
 - the transaction, block, or governance action reference;
 - whether the event is confirmed, pending, or rolled back when known.
 
-When one chain event matches several rules, the application should avoid
-duplicating equivalent desktop notifications. It may combine distinct facts
-into one notification or emit separate notifications only when each conveys a
-different useful action.
+When one chain event matches several rules, each rule may produce a notification.
+The engine does not deduplicate across rules, replay, or rollback reprocessing.
 
-Rate limiting should coalesce bursts without changing filter semantics. A
-summary such as "12 followed events occurred" is preferable to dropping alerts
-silently.
+Rate limiting coalesces bursts. The bounded output queue can still drop
+notifications; the tray reports changes in the dropped count in its logs.
 
 ## Input and Validation Expectations
 
 - Accept DRep IDs in supported bech32 and hexadecimal forms.
 - Accept pool IDs in bech32 and hexadecimal forms.
-- Normalize equivalent forms before matching.
+- Pool matching decodes Bech32 IDs. DRep matching compares the supplied ID/hash
+  strings; it does not apply the pipeline filter's CIP-0129 normalization.
 - Reject malformed IDs before saving the configuration.
 - Prevent or clearly warn about IDs for the wrong target type.
 - Respect the selected Cardano network where an identifier is network-aware.
@@ -229,12 +227,12 @@ message for it.
 
 ### Events emitted by ChainSync
 
-For each confirmed block, ChainSync emits events in this order:
+For each processed block, ChainSync emits events in this order (steps 2–4
+repeat for each transaction):
 
 1. one `input.block` event;
-2. one `input.transaction` event for every transaction in the block;
-3. one `input.governance` event for each transaction containing governance
-   data;
+2. one `input.transaction` event;
+3. one `input.governance` event if that transaction contains governance data;
 4. one individual DRep certificate event for every DRep certificate in the
    transaction.
 
@@ -252,7 +250,7 @@ both representations.
 
 ### Transaction data available from ChainSync
 
-Every confirmed `input.transaction` event includes:
+Every block-derived `input.transaction` event includes:
 
 - transaction hash, index, block hash, block number, and slot number;
 - inputs and outputs;
@@ -331,7 +329,7 @@ pool actions than the tray currently alerts on.
 | Pool notification                               | Current tray support                       | Available source                                                              |
 | ----------------------------------------------- | ------------------------------------------ | ----------------------------------------------------------------------------- |
 | Followed pool mints a block                     | Yes                                        | `input.block` issuer key hash                                                 |
-| Chain rollback affecting observed blocks        | Yes                                        | `input.rollback`, gated by block notification preference                      |
+| Chain rollback affecting observed blocks        | Yes                                        | `input.rollback`, gated by `NotifyPrefChainRollbacks` (enabled by default)     |
 | Followed pool casts an SPO governance vote      | Not currently notified                     | `input.governance.votingProcedures`                                           |
 | Stake delegates to followed pool                | Not currently notified                     | Transaction certificate; combined forms also appear in governance data        |
 | Pool registration                               | Not currently notified                     | Transaction certificate                                                       |
@@ -342,8 +340,7 @@ pool actions than the tray currently alerts on.
 | Transaction included in a followed pool's block | Not currently notified                     | Block and transaction share block hash, but transaction lacks issuer ID       |
 
 The existing "Pool parameter changes" notification preference has no working
-tray rule. It should remain hidden or marked unavailable until an appropriate
-event projection and matcher exist.
+tray rule and does not produce a substitute block notification.
 
 ### Pool and transaction correlation
 
@@ -352,24 +349,9 @@ both the block hash and issuer key hash; each confirmed transaction contains
 the same block hash. The information needed to correlate them therefore exists
 across two events, but not in one transaction event.
 
-There are two reasonable implementation options:
-
-1. Add the block issuer/pool key hash to each confirmed transaction context or
-   payload when ChainSync constructs it. This makes compound matching
-   stateless and is the simpler model.
-2. Cache `blockHash -> issuerVkey` in the notification engine and join each
-   transaction to the preceding block event. This avoids changing the event
-   schema but adds state, ordering, expiry, reconnect, and rollback concerns.
-
-Adding issuer identity to the confirmed transaction event is preferable. A
-pool-inclusion rule can then require:
-
-```text
-transaction.blockIssuer is one of the followed pools
-AND transaction matches a wallet, transaction ID, asset, policy, or amount
-```
-
-Mempool transactions have no block hash or issuer and cannot match this rule.
+The current notification rules do not correlate separate events, so a pool
+condition cannot be combined with a transaction asset condition using AND.
+Mempool transactions have no block hash or issuer.
 
 ### Complete current desktop notification set
 
@@ -389,7 +371,7 @@ produce these desktop notifications:
 9. block minted by a followed pool;
 10. generic block, transaction, and governance notifications in Monitor
     Everything mode;
-11. rollback notification when block notifications are enabled.
+11. rollback notification when the chain-rollback preference is enabled (the default).
 
 Connection notifications also exist, but they are synthesized by the tray and
 are not ChainSync DRep, pool, or transaction events.
@@ -408,7 +390,7 @@ Current tray rule behavior includes:
   groups in Standard monitoring, evaluated with AND before OR;
 - followed DRep votes matched by DRep ID/hash;
 - followed DRep registration changes matched by DRep ID/hash;
-- new proposals treated as target-independent governance alerts;
+- new proposals treated as global governance alerts, still subject to the combined target-group expression;
 - blocks matched to followed pools by block issuer;
 - notification preferences used to enable relevant rule families;
 - rollback, connection, and rate-limit handling outside target identity rules.
@@ -428,24 +410,3 @@ Known gaps or inconsistencies:
 
 Unsupported options should be hidden or marked unavailable rather than shown
 as if they produce notifications.
-
-## Recommended Product Contract
-
-The tray should guarantee:
-
-1. An event is eligible when it satisfies the configured expression across
-   followed target groups.
-2. Multiple values in one target category match when any value matches.
-3. The relevant notification preference must be enabled.
-4. Unrelated identities never match solely because they share an event type.
-5. Compatible transaction constraints use AND only when the UI explicitly
-   communicates that relationship.
-6. One event does not produce duplicate equivalent notifications.
-7. Unsupported event preferences are not offered as functional controls.
-
-In short, connecting DRep A OR Pool X should mean:
-
-> Notify me when an enabled event happens for DRep A or Pool X.
-
-Connecting the same groups with AND instead requires both to match one event,
-even when no currently supported event can do so.

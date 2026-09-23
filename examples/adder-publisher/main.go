@@ -15,7 +15,11 @@
 package main
 
 import (
+	"context"
 	"log/slog"
+	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/blinklabs-io/adder/event"
 	input_chainsync "github.com/blinklabs-io/adder/input/chainsync"
@@ -65,19 +69,34 @@ func main() {
 	)
 	p.AddOutput(output)
 
-	// Start pipeline
-	if err := p.Start(); err != nil {
-		slog.Error("failed to start pipeline", "error", err)
+	ctx, cancel := signal.NotifyContext(
+		context.Background(), os.Interrupt, syscall.SIGTERM,
+	)
+	defer cancel()
+	if err := p.StartContext(ctx); err != nil {
+		if ctx.Err() == nil {
+			slog.Error("failed to start pipeline", "error", err)
+		}
 		return
 	}
+	defer func() {
+		if err := p.Stop(); err != nil {
+			slog.Error("failed to stop pipeline", "error", err)
+		}
+	}()
 
-	// Start error handler
 	for {
-		err, ok := <-p.ErrorChan()
-		if ok {
-			slog.Error("pipeline failed", "error", err)
-		} else {
-			break
+		select {
+		case <-ctx.Done():
+			return
+		case <-p.Failed():
+			slog.Error("pipeline failed", "error", p.Failure())
+			return
+		case err, ok := <-p.ErrorChan():
+			if !ok {
+				return
+			}
+			slog.Error("pipeline diagnostic", "error", err)
 		}
 	}
 }

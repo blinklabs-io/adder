@@ -22,11 +22,14 @@ import (
 )
 
 func TestMempoolImplementsPlugin(t *testing.T) {
-	var _ plugin.Plugin = (*Mempool)(nil)
+	var _ plugin.ManagedPlugin = (*Mempool)(nil)
 }
 
-func TestNewFromCmdlineOptions(t *testing.T) {
-	p := NewFromCmdlineOptions()
+func TestConfiguredPlugin(t *testing.T) {
+	p := mustConfiguredPlugin(
+		t,
+		map[string]any{"socket-path": "/tmp/node.sock"},
+	)
 	assert.NotNil(t, p)
 	m, ok := p.(*Mempool)
 	assert.True(t, ok)

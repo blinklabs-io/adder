@@ -58,11 +58,11 @@ fi
 SUCCESS=true
 trap - EXIT
 
-echo "✅ Dingo is online and listening on ~/dingo-ipc/node.socket!"
+echo "✅ Dingo socket exists at ~/dingo-ipc/node.socket; check logs for readiness."
 echo ""
 echo "🎉 You can now run Adder natively on your Mac Host using:"
 echo "--------------------------------------------------------"
-echo "go run ./cmd/adder --input chainsync \\"
+echo "go run ./cmd/adder --config config-preview.yaml --input chainsync \\"
 echo "  --input-chainsync-socket-path ~/dingo-ipc/node.socket \\"
 echo "  --input-chainsync-network preview \\"
 echo "  --input-chainsync-intersect-tip=true \\"

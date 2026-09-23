@@ -15,7 +15,7 @@ package chainsync
 
 import (
 	"encoding/hex"
-	"fmt"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -24,18 +24,63 @@ import (
 
 	"github.com/SundaeSwap-finance/kugo"
 	"github.com/blinklabs-io/adder/event"
+	"github.com/blinklabs-io/adder/plugin"
+	"github.com/blinklabs-io/adder/plugintest"
+	ouroboros "github.com/blinklabs-io/gouroboros"
 	"github.com/blinklabs-io/gouroboros/protocol/chainsync"
 	ocommon "github.com/blinklabs-io/gouroboros/protocol/common"
+	ouroboros_mock "github.com/blinklabs-io/ouroboros-mock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
+// newMockNodeConnection returns a real *ouroboros.Connection whose peer is
+// an in-memory mock that answers the handshake and nothing else. That is
+// enough to test connection ownership: the plugin's lifecycle code only
+// ever dials, installs and closes, and none of that needs a live node.
+func newMockNodeConnection(t *testing.T) *ouroboros.Connection {
+	t.Helper()
+	mockConn := ouroboros_mock.NewConnection(
+		ouroboros_mock.ProtocolRoleClient,
+		[]ouroboros_mock.ConversationEntry{
+			ouroboros_mock.ConversationEntryHandshakeRequestGeneric,
+			ouroboros_mock.ConversationEntryHandshakeNtCResponse,
+		},
+	)
+	conn, err := ouroboros.New(
+		ouroboros.WithConnection(mockConn),
+		ouroboros.WithNetworkMagic(ouroboros_mock.MockNetworkMagic),
+	)
+	require.NoError(t, err)
+	return conn
+}
+
+// requireConnClosed blocks until conn has finished shutting down. A
+// connection closes the error channel it owns as the last step of
+// shutdown, so a closed error channel is the observable proof that the
+// connection is gone rather than merely unreferenced.
+func requireConnClosed(t *testing.T, conn *ouroboros.Connection) {
+	t.Helper()
+	deadline := time.After(5 * time.Second)
+	for {
+		select {
+		case _, open := <-conn.ErrorChan():
+			if !open {
+				return
+			}
+			// A shutting-down connection may report an error first; keep
+			// draining until the channel itself closes.
+		case <-deadline:
+			t.Fatal("the connection is still open after Stop returned")
+		}
+	}
+}
+
 func TestHandleRollBackward(t *testing.T) {
 	// Create a new ChainSync instance
-	c := &ChainSync{
-		eventChan: make(chan event.Event, 10),
-		status:    &ChainSyncStatus{},
-	}
+	c := &ChainSync{status: &ChainSyncStatus{}}
+	plugintest.StartBase(t, &c.Base, chainSyncBaseConfig())
+	t.Cleanup(func() { _ = c.Stop() })
 
 	// Define test data
 	point := ocommon.Point{
@@ -56,7 +101,7 @@ func TestHandleRollBackward(t *testing.T) {
 
 	// Verify that an event was sent to the eventChan
 	select {
-	case evt := <-c.eventChan:
+	case evt := <-c.OutputChan():
 		// Verify the event type
 		assert.Equal(t, "input.rollback", evt.Type)
 
@@ -91,12 +136,6 @@ func TestHandleRollBackward(t *testing.T) {
 }
 
 func TestInvalidIntersectPointFormat(t *testing.T) {
-	// Save original value
-	originalIntersectPoint := cmdlineOptions.intersectPoint
-	defer func() {
-		cmdlineOptions.intersectPoint = originalIntersectPoint
-	}()
-
 	tests := []struct {
 		name           string
 		intersectPoint string
@@ -121,16 +160,27 @@ func TestInvalidIntersectPointFormat(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cmdlineOptions.intersectPoint = tt.intersectPoint
-			p := NewFromCmdlineOptions()
-			assert.Nil(t, p, "expected nil plugin for invalid intersect point: %s", tt.intersectPoint)
+			p, err := plugin.GetPlugin(
+				plugin.PluginTypeInput,
+				"chainsync",
+				map[string]any{"intersect-point": tt.intersectPoint},
+			)
+			require.Error(t, err)
+			assert.Nil(
+				t,
+				p,
+				"expected nil plugin for invalid intersect point: %s",
+				tt.intersectPoint,
+			)
 		})
 	}
 
 	// Test valid intersect point returns non-nil
 	t.Run("valid intersect point", func(t *testing.T) {
-		cmdlineOptions.intersectPoint = "12345.abcdef0123456789"
-		p := NewFromCmdlineOptions()
+		p := mustConfiguredPlugin(
+			t,
+			map[string]any{"intersect-point": "12345." + testHashA},
+		)
 		assert.NotNil(t, p, "expected non-nil plugin for valid intersect point")
 	})
 }
@@ -240,75 +290,305 @@ func TestGetKupoClient(t *testing.T) {
 	})
 }
 
-func TestStartPreservesChannelsDuringReconnect(t *testing.T) {
-	// Simulate the auto-reconnect path: Start() is called without Stop(),
-	// so eventChan/errorChan should be reused (not replaced).
+func TestChannelsPreservedOnDuplicateStart(t *testing.T) {
 	c := &ChainSync{
 		intersectPoints: []ocommon.Point{},
 		status:          &ChainSyncStatus{},
 		autoReconnect:   true,
 	}
+	plugintest.StartBase(t, &c.Base, chainSyncBaseConfig())
+	t.Cleanup(func() { _ = c.Stop() })
+	origEventChan := c.OutputChan()
+	origErrorChan := c.ErrorChan()
 
-	// Manually set channels as if the first Start() created them
-	c.eventChan = make(chan event.Event, 10)
-	c.errorChan = make(chan error)
-	c.doneChan = make(chan struct{})
+	plugintest.StartBase(t, &c.Base, chainSyncBaseConfig())
 
-	origEventChan := c.eventChan
-	origErrorChan := c.errorChan
+	assert.Equal(t, origEventChan, c.OutputChan(),
+		"eventChan was replaced during reconnect — "+
+			"the pipeline would be orphaned")
+	assert.Equal(t, origErrorChan, c.ErrorChan(),
+		"errorChan was replaced during reconnect — "+
+			"the pipeline would be orphaned")
 
-	// Close doneChan to simulate what Start() guard does
-	close(c.doneChan)
-	c.wg.Wait()
-
-	// Reproduce the fixed Start() channel logic
-	if c.eventChan == nil {
-		c.eventChan = make(chan event.Event, 10)
-	}
-	if c.errorChan == nil {
-		c.errorChan = make(chan error)
-	}
-	c.doneChan = make(chan struct{})
-
-	// Verify channels are the same references by writing to one and reading from the other
-	go func() { origEventChan <- event.Event{Type: "test.preserve"} }()
+	// Prove the surviving channel still carries events end to end.
+	_ = c.Emit(event.Event{Type: "test.preserve"})
 	select {
-	case evt := <-c.eventChan:
-		assert.Equal(t, "test.preserve", evt.Type, "eventChan should be the same channel")
+	case evt := <-origEventChan:
+		assert.Equal(t, "test.preserve", evt.Type)
 	case <-time.After(time.Second):
-		t.Fatal("eventChan was replaced during reconnect — pipeline would be orphaned")
-	}
-
-	go func() { origErrorChan <- fmt.Errorf("test error") }()
-	select {
-	case err := <-c.errorChan:
-		assert.EqualError(t, err, "test error", "errorChan should be the same channel")
-	case <-time.After(time.Second):
-		t.Fatal("errorChan was replaced during reconnect — pipeline would be orphaned")
+		t.Fatal("the preserved eventChan no longer delivers")
 	}
 }
 
 func TestStartCreatesNewChannelsAfterStop(t *testing.T) {
-	// After Stop(), channels are nil'd, so the logic should create new ones.
+	// Stop closes the channels; a new run must replace them.
 	c := &ChainSync{
 		intersectPoints: []ocommon.Point{},
 		status:          &ChainSyncStatus{},
 	}
+	plugintest.StartBase(t, &c.Base, chainSyncBaseConfig())
+	first := c.OutputChan()
+	require.NoError(t, c.Stop())
 
-	// Simulate Stop() nil'ing channels
-	c.eventChan = nil
-	c.errorChan = nil
+	plugintest.StartBase(t, &c.Base, chainSyncBaseConfig())
+	t.Cleanup(func() { _ = c.Stop() })
 
-	// Reproduce the fixed Start() channel logic
-	if c.eventChan == nil {
-		c.eventChan = make(chan event.Event, 10)
+	require.NotNil(t, c.OutputChan(), "eventChan must exist after Stop")
+	require.NotNil(t, c.ErrorChan(), "errorChan must exist after Stop")
+	assert.NotEqual(t, first, c.OutputChan(),
+		"a closed channel must not be reused")
+}
+
+// TestStopWithPendingConnectionError covers the ordinary case of a
+// connection error that lands while Stop() is already waiting: the
+// handler must consume it and return, and Stop() must complete.
+//
+// It is worth being explicit about what this test does *not* catch,
+// because it was originally written as a regression test for the
+// pre-Base deadlock (Stop nil'd doneChan, the handler re-read it, saw
+// nil, and parked forever on an unguarded send to an unbuffered
+// errorChan). It cannot catch that. Base normalized every plugin error
+// channel to plugin.ErrorBuffer slots, so an unguarded send has 15 free
+// slots in a test that produces one error and never blocks — replacing
+// SendError's select with a bare send leaves this test passing. The
+// deadlock class is covered at the Base level by
+// TestDoneStaysClosedAfterShutdown, and for this package by
+// TestStopReturnsWhileATrackedWorkerIsParked.
+func TestStopWithPendingConnectionError(t *testing.T) {
+	c := &ChainSync{status: &ChainSyncStatus{}}
+	plugintest.StartBase(t, &c.Base, chainSyncBaseConfig())
+
+	connErrChan := make(chan error, 1)
+	c.Go(func() { c.superviseConnection(c.Context(), connErrChan) })
+
+	stopped := make(chan error, 1)
+	go func() { stopped <- c.Stop() }()
+	// Let Stop() get past its shutdown signal and into the wait before the
+	// error lands. That is the ordering that used to deadlock.
+	time.Sleep(50 * time.Millisecond)
+	connErrChan <- errors.New("connection lost")
+
+	select {
+	case err := <-stopped:
+		require.NoError(t, err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("Stop() deadlocked waiting for the async error handler")
 	}
-	if c.errorChan == nil {
-		c.errorChan = make(chan error)
+}
+
+// TestStopReturnsWhileATrackedWorkerIsParked guards the bug class this
+// package's Base conversion exists to remove. Stop used to close the
+// done channel and then nil the field before waiting for its workers, so
+// a worker that re-entered its select after the assignment received on a
+// nil channel and never woke: Stop's wait blocked forever. Chainsync is
+// one of the plugins that hung in production for exactly this reason.
+//
+// The worker below re-reads Done() *after* shutdown has signalled, which
+// is the only shape that exercises the hang rather than merely observing
+// the invariant. A worker that re-reads Done() on every loop iteration
+// looks like it tests this, but does not: it is already parked on the
+// non-nil channel when the close lands, wakes on the close, and returns
+// before the nil assignment can affect it. Measured on the reintroduced
+// bug, that shape hit the Stop timeout 0 times in 50 runs and detected
+// the regression only through the final assertion, which
+// plugin/base_test.go's TestDoneStaysClosedAfterShutdown already pins.
+//
+// The sleep is load-bearing rather than a stand-in for an assertion: it
+// guarantees the late read happens after Stop has had time to mutate the
+// field, which is what makes the Stop timeout below the arm that fires.
+//
+// Every wait is bounded, so a regression fails the test rather than
+// hanging the package.
+func TestStopReturnsWhileATrackedWorkerIsParked(t *testing.T) {
+	c := &ChainSync{status: &ChainSyncStatus{}}
+	plugintest.StartBase(t, &c.Base, chainSyncBaseConfig())
+
+	started := make(chan struct{})
+	exited := make(chan struct{})
+	c.Go(func() {
+		defer close(exited)
+		// Captured while the plugin is running, so this read is non-nil.
+		first := c.Done()
+		close(started)
+		// Wake when shutdown signals.
+		<-first
+		// Late re-read: under the old code this returned nil and the
+		// worker parked here forever, so Stop's wait never returned.
+		time.Sleep(50 * time.Millisecond)
+		<-c.Done()
+	})
+
+	// A worker that had not yet captured the channel could not exercise
+	// the bug.
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the tracked worker never started")
 	}
 
-	assert.NotNil(t, c.eventChan, "eventChan should be created after Stop")
-	assert.NotNil(t, c.errorChan, "errorChan should be created after Stop")
+	stopped := make(chan error, 1)
+	go func() { stopped <- c.Stop() }()
+
+	select {
+	case err := <-stopped:
+		require.NoError(t, err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("Stop did not return: the tracked worker is parked on a " +
+			"nil done channel")
+	}
+
+	select {
+	case <-exited:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Stop returned while its tracked worker was still running")
+	}
+
+	select {
+	case <-c.Done():
+	default:
+		t.Fatal("Done must stay closed after Stop, not become nil: a " +
+			"worker that re-reads it late would park instead of exiting")
+	}
+}
+
+func TestAsyncErrorForwardedToErrorChan(t *testing.T) {
+	// With auto-reconnect off, a connection error is forwarded on the
+	// plugin error channel for the pipeline to pick up.
+	c := &ChainSync{status: &ChainSyncStatus{}}
+	plugintest.StartBase(t, &c.Base, chainSyncBaseConfig())
+	t.Cleanup(func() { _ = c.Stop() })
+
+	connErrChan := make(chan error, 1)
+	c.Go(func() { c.superviseConnection(c.Context(), connErrChan) })
+	connErrChan <- errors.New("connection lost")
+
+	select {
+	case err := <-c.ErrorChan():
+		assert.EqualError(t, err, "connection lost")
+	case <-time.After(5 * time.Second):
+		t.Fatal("the connection error was never forwarded")
+	}
+}
+
+func TestSupervisorExitsOnClosedConnChan(t *testing.T) {
+	// Stop must join the supervisor even if the dependency closes its
+	// error stream at the same time.
+	c := &ChainSync{status: &ChainSyncStatus{}}
+	plugintest.StartBase(t, &c.Base, chainSyncBaseConfig())
+
+	connErrChan := make(chan error)
+	c.Go(func() { c.superviseConnection(c.Context(), connErrChan) })
+	close(connErrChan)
+
+	stopped := make(chan error, 1)
+	go func() { stopped <- c.Stop() }()
+	select {
+	case err := <-stopped:
+		require.NoError(t, err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("Stop() did not return after the handler's input closed")
+	}
+}
+
+// TestStopEndsAReconnectInFlight pins that a reconnect observes the
+// shutdown signal: Stop must return while the backoff is mid-flight
+// rather than after it, and the tracked supervisor must be gone by then.
+// Dropping either done check in reconnect fails this test by hanging Stop.
+//
+// It does not pin the resurrection hazard that motivated the rework, and
+// no test can: reconnects go through connect, which has no path to StartRun,
+// so there is no longer a code path that could bring a stopped plugin
+// back up. That property is structural, and what guards it is Start
+// staying the only caller of StartRun.
+func TestStopEndsAReconnectInFlight(t *testing.T) {
+	// An unresolvable network name makes every reconnect attempt fail
+	// immediately, so the loop is reliably sitting in its backoff wait.
+	c := &ChainSync{
+		status:        &ChainSyncStatus{},
+		autoReconnect: true,
+		network:       "not-a-real-cardano-network",
+	}
+	plugintest.StartBase(t, &c.Base, chainSyncBaseConfig())
+
+	connErrChan := make(chan error, 1)
+	c.Go(func() { c.superviseConnection(c.Context(), connErrChan) })
+	connErrChan <- errors.New("connection lost")
+	// Let the supervisor burn its first attempt and enter the backoff.
+	time.Sleep(100 * time.Millisecond)
+
+	stopped := make(chan error, 1)
+	go func() { stopped <- c.Stop() }()
+	select {
+	case err := <-stopped:
+		require.NoError(t, err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("Stop did not return: the reconnect is still running")
+	}
+
+	assert.False(t, c.Running(),
+		"the reconnect resurrected the plugin after Stop")
+	select {
+	case <-c.Done():
+	default:
+		t.Fatal("Done reopened, so StartRun ran again after Shutdown")
+	}
+}
+
+// TestStopClosesAConnectionInstalledDuringTheWait pins the AfterWait
+// close. Stop used to take the connection in BeforeWait only, which sees
+// nothing when a dial is still in flight: the dial installs its
+// connection afterwards, Stop returns nil, and the node connection and
+// its goroutines stay live behind a plugin whose channels are closing.
+//
+// Dropping the AfterWait hook fails this test — the connection's error
+// channel never closes, so requireConnClosed times out.
+func TestStopClosesAConnectionInstalledDuringTheWait(t *testing.T) {
+	c := &ChainSync{status: &ChainSyncStatus{}}
+	plugintest.StartBase(t, &c.Base, chainSyncBaseConfig())
+
+	conn := newMockNodeConnection(t)
+	// A tracked worker standing in for a dial that was in flight when Stop
+	// ran. It installs the connection after the shutdown signal, which is
+	// exactly the window BeforeWait cannot cover.
+	c.Go(func() {
+		<-c.Done()
+		// Let Stop get past BeforeWait and into the wait this worker holds
+		// open, so the connection lands in the uncovered window rather
+		// than racing BeforeWait for it.
+		time.Sleep(200 * time.Millisecond)
+		c.setConn(conn)
+	})
+
+	require.NoError(t, c.Stop())
+
+	requireConnClosed(t, conn)
+	assert.Nil(t, c.conn(), "Stop must not leave a connection installed")
+}
+
+// TestFailedStartDoesNotLeaveThePluginRunning pins that Start unwinds
+// itself. StartRun marks the plugin running before the dial is attempted, and
+// connect can fail after setupConnection has already installed a
+// connection — Sync fails on a connection that dialled fine. Returning
+// the error on its own would hand back a plugin that reports Running with
+// nothing running in it, holding a node connection nobody closes.
+func TestFailedStartDoesNotLeaveThePluginRunning(t *testing.T) {
+	// An unresolvable network name fails the dial, which is the earliest
+	// failure point; the later ones unwind through the same path.
+	c := &ChainSync{
+		status:  &ChainSyncStatus{},
+		network: "not-a-real-cardano-network",
+	}
+
+	require.Error(t, c.Start())
+
+	assert.False(t, c.Running(),
+		"a failed Start must unwind the StartRun it performed")
+	assert.Nil(t, c.conn(), "a failed Start must not keep a connection")
+	select {
+	case <-c.Done():
+	default:
+		t.Fatal("the shutdown signal is still open after a failed Start")
+	}
 }
 
 func TestReconnectCallbackFired(t *testing.T) {
@@ -322,4 +602,34 @@ func TestReconnectCallbackFired(t *testing.T) {
 	}
 
 	assert.True(t, called, "reconnect callback should have been called")
+}
+
+func TestStartPreservesRunningConnection(t *testing.T) {
+	c := New()
+	plugintest.StartBase(t, &c.Base, chainSyncBaseConfig())
+	conn := newMockNodeConnection(t)
+	c.setConn(conn)
+	output, errs := c.OutputChan(), c.ErrorChan()
+	require.NoError(t, c.Start())
+	assert.Same(t, conn, c.conn())
+	assert.Equal(t, output, c.OutputChan())
+	assert.Equal(t, errs, c.ErrorChan())
+	require.NoError(t, c.Stop())
+	requireConnClosed(t, conn)
+}
+
+func TestClosedConnectionWithoutReconnectFailsRun(t *testing.T) {
+	c := &ChainSync{status: &ChainSyncStatus{}}
+	plugintest.StartBase(t, &c.Base, chainSyncBaseConfig())
+	t.Cleanup(func() { require.NoError(t, c.Stop()) })
+	connErrors := make(chan error)
+	c.Go(func() { c.superviseConnection(c.Context(), connErrors) })
+	close(connErrors)
+	select {
+	case <-c.Failed():
+	case <-time.After(time.Second):
+		t.Fatal("lost connection left a healthy idle source")
+	}
+	require.ErrorContains(t, c.Failure(), "connection closed")
+	require.False(t, c.Running())
 }

@@ -15,8 +15,10 @@
 package log
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 
 	"github.com/blinklabs-io/adder/event"
@@ -30,13 +32,11 @@ const (
 )
 
 type LogOutput struct {
-	errorChan chan error
-	eventChan chan event.Event
-	doneChan  chan struct{}
-	logger    plugin.Logger
-	format    string
-	path      string
-	file      *os.File
+	plugin.Base
+	format string
+	path   string
+	file   *os.File
+	level  slog.Level
 }
 
 func New(options ...LogOptionFunc) *LogOutput {
@@ -46,32 +46,49 @@ func New(options ...LogOptionFunc) *LogOutput {
 	for _, option := range options {
 		option(l)
 	}
-	if l.logger == nil {
-		l.logger = logging.GetLogger()
+	if l.Logger() == nil {
+		l.SetLogger(logging.GetLogger())
 	}
 	return l
 }
 
+// Role identifies this plugin as a pipeline output.
+func (l *LogOutput) Role() plugin.PluginType { return plugin.PluginTypeOutput }
+
 // Start the log output
 func (l *LogOutput) Start() error {
-	l.eventChan = make(chan event.Event, 10)
-	l.errorChan = make(chan error)
-	l.doneChan = make(chan struct{})
+	return l.StartContext(context.Background())
+}
 
+// StartContext starts the plugin with ctx governing setup and run operations.
+// Call Stop to wait for workers and release resources, including after cancellation.
+func (l *LogOutput) StartContext(ctx context.Context) error {
+	return l.StartRun(ctx,
+		plugin.BaseConfig{HasInput: true, DrainOnStop: true},
+		l.start,
+		l.shutdownHooks(),
+	)
+}
+
+func (l *LogOutput) start(ctx context.Context) error {
 	if l.path != "" {
-		f, err := os.OpenFile(l.path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+		f, err := os.OpenFile(
+			l.path,
+			os.O_APPEND|os.O_CREATE|os.O_WRONLY,
+			0o644,
+		)
 		if err != nil {
 			return fmt.Errorf("failed to open log file: %w", err)
 		}
 		l.file = f
 	}
 
-	// Capture channels locally to avoid races with Stop()
-	eventChan := l.eventChan
-	doneChan := l.doneChan
-	go func() {
-		defer close(doneChan)
-		for evt := range eventChan {
+	in := l.Input()
+	l.Go(func() {
+		for evt := range in {
+			if l.level > slog.LevelInfo {
+				continue
+			}
 			switch l.format {
 			case FormatJSON:
 				l.writeJSON(evt)
@@ -79,7 +96,7 @@ func (l *LogOutput) Start() error {
 				l.writeText(evt)
 			}
 		}
-	}()
+	})
 	return nil
 }
 
@@ -144,7 +161,12 @@ func (l *LogOutput) writeText(evt event.Event) {
 	}
 	if _, err := fmt.Fprintln(out, line); err != nil {
 		// Fallback to stderr if primary write fails
-		fmt.Fprintf(os.Stderr, "failed to write log: %v; original: %s\n", err, line)
+		fmt.Fprintf(
+			os.Stderr,
+			"failed to write log: %v; original: %s\n",
+			err,
+			line,
+		)
 	}
 }
 
@@ -171,40 +193,28 @@ func (l *LogOutput) writeJSON(evt event.Event) {
 
 // Stop the log output
 func (l *LogOutput) Stop() error {
-	if l.eventChan != nil {
-		close(l.eventChan)
-		// Wait for the goroutine to finish processing
-		if l.doneChan != nil {
-			<-l.doneChan
-		}
-		l.eventChan = nil
-	}
-	if l.errorChan != nil {
-		close(l.errorChan)
-		l.errorChan = nil
-	}
-	if l.file != nil {
-		if err := l.file.Close(); err != nil {
-			l.logger.Error("failed to close log file",
-				"path", l.path,
-				"error", err)
-		}
-		l.file = nil
-	}
-	return nil
+	// The file is closed in AfterWait so the drained events are written
+	// before it goes away.
+	return l.Shutdown(l.shutdownHooks())
 }
 
-// ErrorChan returns the plugin's error channel
-func (l *LogOutput) ErrorChan() <-chan error {
-	return l.errorChan
+func (l *LogOutput) shutdownHooks() plugin.ShutdownHooks {
+	return plugin.ShutdownHooks{
+		AfterWait: func() error {
+			if l.file == nil {
+				return nil
+			}
+			if err := l.file.Close(); err != nil {
+				if logger := l.Logger(); logger != nil {
+					logger.Error("failed to close log file",
+						"path", l.path,
+						"error", err)
+				}
+			}
+			l.file = nil
+			return nil
+		},
+	}
 }
 
-// InputChan returns the input event channel
-func (l *LogOutput) InputChan() chan<- event.Event {
-	return l.eventChan
-}
-
-// OutputChan always returns nil
-func (l *LogOutput) OutputChan() <-chan event.Event {
-	return nil
-}
+var _ plugin.ManagedPlugin = (*LogOutput)(nil)

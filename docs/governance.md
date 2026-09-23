@@ -4,9 +4,9 @@ Adder emits structured events for on-chain governance actions and certificate ac
 
 ## Overview
 
-The chainsync input plugin emits an `input.governance` event for every block transaction that contains Conway-era on-chain governance data. A single transaction produces exactly one `input.governance` event, and that event collects all of the governance data found in that transaction.
+The chainsync input plugin emits an `input.governance` event for every block transaction that contains Conway-era on-chain governance data. Each processing of a transaction produces at most one `input.governance` event, and that event collects all of the governance data found in that transaction.
 
-Governance events are emitted *in addition to* the regular `input.transaction` events for the same transaction. Transactions with no governance data do not produce an `input.governance` event.
+Governance events are emitted *in addition to* the regular `input.transaction` events for the same transaction. Replay or reprocessing after a rollback can emit the same transaction again. Transactions with no governance data do not produce an `input.governance` event.
 
 - **Event Type Name**: `input.governance`
 
@@ -55,9 +55,9 @@ Represents a proposed governance action (new proposal).
 | `index` | number | The index of the proposal within the transaction's proposals. |
 | `deposit` | number | The deposit amount in Lovelaces locked for this proposal. |
 | `rewardAccount` | string | The stake/reward address where the deposit will be returned upon completion. |
-| `actionType` | string | One of: `ParameterChange`, `HardForkInitiation`, `TreasuryWithdrawal`, `NoConfidence`, `UpdateCommittee`, `NewConstitution`, `Info`. |
-| `actionData` | object | Action-specific data; exactly one field is populated, keyed by the action (e.g. `parameterChange`, `treasuryWithdrawal`, `newConstitution`). |
-| `anchor` | object | Optional `{ "url", "dataHash" }` referencing off-chain metadata. |
+| `actionType` | string | One of: `ParameterChange`, `HardForkInitiation`, `TreasuryWithdrawal`, `NoConfidence`, `UpdateCommittee`, `NewConstitution`, `Info`; unrecognized types use `Unknown`. |
+| `actionData` | object | Action-specific data; for recognized actions one field is populated, keyed by the action (e.g. `parameterChange`, `treasuryWithdrawal`, `newConstitution`). |
+| `anchor` | object | `{ "url", "dataHash" }`; both strings are empty if metadata is absent. |
 
 ### `votingProcedures[]`
 
@@ -65,13 +65,13 @@ Represents a vote cast on an active proposal.
 
 | Field | Type | Description |
 | :--- | :--- | :--- |
-| `voterType` | string | One of: `DRep` (Delegate Representative), `SPO` (Stake Pool Operator), `CCHot` (Constitutional Committee Hot Credential). |
+| `voterType` | string | One of: `DRep` (Delegate Representative), `SPO` (Stake Pool Operator), `CCHot` (Constitutional Committee Hot Credential); unrecognized types use `Unknown`. |
 | `voterHash` | string | Hex-encoded credential hash of the voter. |
 | `voterId` | string | Bech32 identifier of the voter (e.g., `drep1...`). |
 | `govActionTxId` | string | Transaction ID of the governance action being voted on. |
 | `govActionIndex` | number | Index of the governance action within that transaction. |
-| `vote` | string | The vote cast; one of `Yes`, `No`, or `Abstain`. |
-| `anchor` | object | Optional `{ "url", "dataHash" }` referencing off-chain vote rationale metadata. |
+| `vote` | string | The vote cast; one of `Yes`, `No`, or `Abstain`; unrecognized values use `Unknown`. |
+| `anchor` | object | `{ "url", "dataHash" }`; both strings are empty if vote metadata is absent. |
 
 ### `drepCertificates[]`
 
@@ -82,8 +82,8 @@ Represents changes to a DRep's status.
 | `certificateType` | string | One of `Registration`, `Update`, `Deregistration`. |
 | `drepHash` | string | Hex-encoded DRep credential hash. |
 | `drepId` | string | Bech32 DRep ID (`drep1...` or `drep_script1...`). |
-| `deposit` | number | Lovelace deposit required for registration or refunded on deregistration. |
-| `anchor` | object | Optional `{ "url", "dataHash" }` referencing off-chain DRep metadata. |
+| `deposit` | number | Lovelace deposit required for registration or refunded on deregistration; omitted when zero. |
+| `anchor` | object | `{ "url", "dataHash" }`; both strings are empty if DRep metadata is absent. |
 
 ### `voteDelegationCertificates[]`
 
@@ -97,7 +97,7 @@ Represents a stake address delegating its voting power to a DRep or a pre-define
 | `drepHash` | string | Hex-encoded DRep credential hash (omitted for `Abstain`/`NoConfidence`). |
 | `drepId` | string | Bech32 DRep ID (omitted for `Abstain`/`NoConfidence`). |
 | `poolKeyHash` | string | Hex-encoded pool key hash (present only for combined stake and vote delegation types). |
-| `deposit` | number | Lovelace deposit amount (present only for registration-delegation types). |
+| `deposit` | number | Lovelace deposit amount (registration-delegation types; omitted when zero). |
 
 ### `committeeCertificates[]`
 
@@ -108,7 +108,7 @@ Represents Constitutional Committee credential changes.
 | `certificateType` | string | `AuthHot` (authorizing hot credential) or `ResignCold` (resigning cold credential). |
 | `coldCredential` | string | Hex-encoded committee cold credential hash. |
 | `hotCredential` | string | Hex-encoded committee hot credential hash (present only for `AuthHot`). |
-| `anchor` | object | Optional `{ "url", "dataHash" }` metadata (present only for `ResignCold`). |
+| `anchor` | object | Always serialized; strings are empty unless a `ResignCold` certificate supplies metadata. |
 
 ---
 
@@ -142,25 +142,27 @@ Governance events support three Cardano-specific pipeline filters:
 ./adder --filter-type input.governance \
   --filter-drep drep1p4h4ea7y70ede2wy7x3t83x4umm63wwq68308f94cmt7szexmnr
 
-# Filter on multiple addresses (comma-separated list, OR matching)
+# Filter on a stake address (multiple comma-separated addresses use OR)
 ./adder --filter-type input.governance \
-  --filter-address stake1u9f9v0z5zzlldgx58n8tklphu8mf7h4jvp2j2gddluemnssjfnkzz,stake1ux7abcd...
+  --filter-address stake1u9f9v0z5zzlldgx58n8tklphu8mf7h4jvp2j2gddluemnssjfnkzz
 ```
 
 #### YAML Configuration
 ```yaml
-filter:
-  cardano:
-    type: "input.governance"
-    drep: "drep1p4h4ea7y70ede2wy7x3t83x4umm63wwq68308f94cmt7szexmnr"
-    address: "stake1u9f9v0z5zzlldgx58n8tklphu8mf7h4jvp2j2gddluemnssjfnkzz"
+plugins:
+  filter:
+    event:
+      type: "input.governance"
+    cardano:
+      drep: "drep1p4h4ea7y70ede2wy7x3t83x4umm63wwq68308f94cmt7szexmnr"
+      address: "stake1u9f9v0z5zzlldgx58n8tklphu8mf7h4jvp2j2gddluemnssjfnkzz"
 ```
 
 ---
 
 ## Example JSON Output
 
-Below is an example of an `input.governance` event payload representing a **DRep Registration Certificate**:
+The following schematic event illustrates a DRep registration. Identifiers and chain positions are placeholders, not a recorded transaction. The field definitions come from [event/governance.go](../event/governance.go); conversion and emission are implemented in [input/chainsync/chainsync.go](../input/chainsync/chainsync.go).
 
 ```json
 {

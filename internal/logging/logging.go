@@ -15,12 +15,11 @@
 package logging
 
 import (
+	"errors"
 	"io"
 	"log/slog"
 	"os"
 	"time"
-
-	"github.com/blinklabs-io/adder/internal/config"
 )
 
 // defaultLogger returns a non-nil logger so globalLogger is never nil at declaration (satisfies nilaway).
@@ -35,30 +34,16 @@ var (
 	globalLogger = defaultLogger()
 )
 
-// Configure initializes the global logger writing to os.Stderr.
-func Configure() {
-	ConfigureWithWriter(os.Stderr)
+// Configure initializes the global logger with the resolved output-log level.
+func Configure(level slog.Level) {
+	ConfigureWithWriter(os.Stderr, level)
 }
 
 // ConfigureWithWriter initializes the global logger writing to w. The GUI tray
 // uses this to log to a file: when linked with -H=windowsgui there is no
 // console, so os.Stderr is discarded and logs (and panics) would otherwise be
 // lost.
-func ConfigureWithWriter(w io.Writer) {
-	cfg := config.GetConfig()
-	var level slog.Level
-	switch cfg.Logging.Level {
-	case "debug":
-		level = slog.LevelDebug
-	case "info":
-		level = slog.LevelInfo
-	case "warn":
-		level = slog.LevelWarn
-	case "error":
-		level = slog.LevelError
-	default:
-		level = slog.LevelInfo
-	}
+func ConfigureWithWriter(w io.Writer, level slog.Level) {
 
 	handler := slog.NewJSONHandler(w, &slog.HandlerOptions{
 		ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
@@ -80,14 +65,30 @@ func ConfigureWithWriter(w io.Writer) {
 
 func GetLogger() *slog.Logger {
 	if globalLogger == nil {
-		Configure()
+		Configure(slog.LevelInfo)
 	}
 	return globalLogger
 }
 
 func GetLoggerForComponent(component string) *slog.Logger {
 	if baseLogger == nil {
-		Configure()
+		Configure(slog.LevelInfo)
 	}
 	return baseLogger.With("component", component)
+}
+
+// ParseLevel validates the log output plugin's named severity threshold.
+func ParseLevel(value string) (slog.Level, error) {
+	switch value {
+	case "debug":
+		return slog.LevelDebug, nil
+	case "info":
+		return slog.LevelInfo, nil
+	case "warn":
+		return slog.LevelWarn, nil
+	case "error":
+		return slog.LevelError, nil
+	default:
+		return slog.LevelInfo, errors.New("level must be debug, info, warn, or error")
+	}
 }

@@ -19,24 +19,19 @@ import (
 	"github.com/blinklabs-io/adder/plugin"
 )
 
-var cmdlineOptions struct {
-	eventType string
-}
-
 func init() {
 	plugin.Register(
 		plugin.PluginEntry{
 			Type:               plugin.PluginTypeFilter,
 			Name:               "event",
 			Description:        "filters events based on top-level event attributes",
-			NewFromOptionsFunc: NewFromCmdlineOptions,
+			NewFromOptionsFunc: newFromOptions,
 			Options: []plugin.PluginOption{
 				{
 					Name:         "type",
 					Type:         plugin.PluginOptionTypeString,
 					Description:  "specifies event type to filter on",
 					DefaultValue: "",
-					Dest:         &cmdlineOptions.eventType,
 					CustomFlag:   "type",
 				},
 			},
@@ -44,14 +39,14 @@ func init() {
 	)
 }
 
-func NewFromCmdlineOptions() plugin.Plugin {
+func newFromOptions(values plugin.Options) (plugin.ManagedPlugin, error) {
 	pluginOptions := []EventOptionFunc{
 		WithLogger(
 			logging.GetLogger().With("plugin", "filter.event"),
 		),
 	}
 	if eventTypes := plugin.SplitAndTrim(
-		cmdlineOptions.eventType,
+		values.String("type"),
 	); len(eventTypes) > 0 {
 		pluginOptions = append(
 			pluginOptions,
@@ -59,5 +54,5 @@ func NewFromCmdlineOptions() plugin.Plugin {
 		)
 	}
 	p := New(pluginOptions...)
-	return p
+	return p, nil
 }

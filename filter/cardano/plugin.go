@@ -21,28 +21,19 @@ import (
 	"github.com/blinklabs-io/adder/plugin"
 )
 
-var cmdlineOptions struct {
-	address  string
-	asset    string
-	policyId string
-	poolId   string
-	drepId   string
-}
-
 func init() {
 	plugin.Register(
 		plugin.PluginEntry{
 			Type:               plugin.PluginTypeFilter,
 			Name:               "cardano",
 			Description:        "filters Cardano blockchain events by address, asset, policy, pool, or DRep",
-			NewFromOptionsFunc: NewFromCmdlineOptions,
+			NewFromOptionsFunc: newFromOptions,
 			Options: []plugin.PluginOption{
 				{
 					Name:         "address",
 					Type:         plugin.PluginOptionTypeString,
 					Description:  "specifies address(es) to filter on (comma-separated)",
 					DefaultValue: "",
-					Dest:         &cmdlineOptions.address,
 					CustomFlag:   "address",
 				},
 				{
@@ -50,7 +41,6 @@ func init() {
 					Type:         plugin.PluginOptionTypeString,
 					Description:  "specifies asset fingerprint(s) to filter on (comma-separated)",
 					DefaultValue: "",
-					Dest:         &cmdlineOptions.asset,
 					CustomFlag:   "asset",
 				},
 				{
@@ -58,7 +48,6 @@ func init() {
 					Type:         plugin.PluginOptionTypeString,
 					Description:  "specifies asset policy ID(s) to filter on (comma-separated)",
 					DefaultValue: "",
-					Dest:         &cmdlineOptions.policyId,
 					CustomFlag:   "policy",
 				},
 				{
@@ -66,7 +55,6 @@ func init() {
 					Type:         plugin.PluginOptionTypeString,
 					Description:  "specifies Pool ID(s) to filter on (comma-separated)",
 					DefaultValue: "",
-					Dest:         &cmdlineOptions.poolId,
 					CustomFlag:   "pool",
 				},
 				{
@@ -74,7 +62,6 @@ func init() {
 					Type:         plugin.PluginOptionTypeString,
 					Description:  "specifies DRep ID(s) to filter on (comma-separated, hex or bech32)",
 					DefaultValue: "",
-					Dest:         &cmdlineOptions.drepId,
 					CustomFlag:   "drep",
 				},
 			},
@@ -82,13 +69,13 @@ func init() {
 	)
 }
 
-func NewFromCmdlineOptions() plugin.Plugin {
+func newFromOptions(values plugin.Options) (plugin.ManagedPlugin, error) {
 	pluginOptions := []CardanoOptionFunc{
 		WithLogger(
 			logging.GetLogger().With("plugin", "filter.cardano"),
 		),
 	}
-	if addresses := plugin.SplitAndTrim(cmdlineOptions.address); len(
+	if addresses := plugin.SplitAndTrim(values.String("address")); len(
 		addresses,
 	) > 0 {
 		pluginOptions = append(
@@ -96,13 +83,13 @@ func NewFromCmdlineOptions() plugin.Plugin {
 			WithAddresses(addresses),
 		)
 	}
-	if assets := plugin.SplitAndTrim(cmdlineOptions.asset); len(assets) > 0 {
+	if assets := plugin.SplitAndTrim(values.String("asset")); len(assets) > 0 {
 		pluginOptions = append(
 			pluginOptions,
 			WithAssetFingerprints(assets),
 		)
 	}
-	if policyIds := plugin.SplitAndTrim(cmdlineOptions.policyId); len(
+	if policyIds := plugin.SplitAndTrim(values.String("policy")); len(
 		policyIds,
 	) > 0 {
 		pluginOptions = append(
@@ -110,14 +97,14 @@ func NewFromCmdlineOptions() plugin.Plugin {
 			WithPolicies(policyIds),
 		)
 	}
-	if poolIds := plugin.SplitAndTrim(cmdlineOptions.poolId); len(poolIds) > 0 {
+	if poolIds := plugin.SplitAndTrim(values.String("pool")); len(poolIds) > 0 {
 		pluginOptions = append(
 			pluginOptions,
 			WithPoolIds(poolIds),
 		)
 	}
 	if drepIds := plugin.SplitAndTrim(
-		strings.ToLower(cmdlineOptions.drepId),
+		strings.ToLower(values.String("drep")),
 	); len(drepIds) > 0 {
 		pluginOptions = append(
 			pluginOptions,
@@ -125,5 +112,5 @@ func NewFromCmdlineOptions() plugin.Plugin {
 		)
 	}
 	p := New(pluginOptions...)
-	return p
+	return p, nil
 }

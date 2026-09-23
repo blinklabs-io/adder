@@ -9,8 +9,18 @@ block and transaction that it sees.
 
 ## How it works
 
-Input can be a local or remote Cardano full node, using either NtC (local UNIX
-socket, TCP over socat) or NtN to remote nodes.
+Choose an input: `chainsync` reads a Cardano node over NtC or NtN, `mempool`
+polls the node's local transaction monitor, and `utxorpc` reads a FollowTip or
+WatchTx stream. The CLI selects one input and one output; the defaults are
+`chainsync` and `log`.
+
+![Adder event flow: input plugins, ordered filters, output plugins, and API subscribers](docs/diagrams/data-flow.svg)
+
+Events pass through the Cardano and event-type filters before reaching the
+selected output and API observer. Outputs apply backpressure; API delivery uses
+bounded buffers and can drop events when subscribers are slow.
+
+### Event format
 
 Events are created with a simple schema.
 
@@ -23,8 +33,12 @@ Events are created with a simple schema.
 }
 ```
 
-The chainsync input produces four event types: `input.block`, `input.rollback`,
-`input.transaction`, and `input.governance`. Each type has a unique payload.
+The chainsync input produces `input.block`, `input.rollback`,
+`input.transaction`, `input.governance`, `input.drep-registration`,
+`input.drep-update`, and `input.drep-retirement`. The last three share the
+[DRep certificate payload](event/drep.go). The abbreviated examples below show
+field shapes with placeholder values, not recorded ledger data. CBOR fields
+are included only when `--input-chainsync-include-cbor` is enabled.
 
 input.block:
 
@@ -62,14 +76,14 @@ input.transaction:
         "blockNumber": 123,
         "slotNumber": 1234567,
         "transactionHash": "0deadbeef123...",
-        "transactionIdx": 0,
+        "transactionIdx": 0
     },
     "payload": {
         "blockHash": "abcd123...",
-        "transactionCbor": "a500828258200a1ad..."
+        "transactionCbor": "a500828258200a1ad...",
         "inputs": [
           "abcdef123...#0",
-          "abcdef123...#1",
+          "abcdef123...#1"
         ],
         "outputs": [
             {
@@ -81,7 +95,7 @@ input.transaction:
                         "nameHex": "abcd123...",
                         "amount": 123,
                         "fingerprint": "asset1abcd...",
-                        "policyId": "54321..."
+                        "policy": "54321..."
                     }
                 ]
             }
@@ -186,19 +200,41 @@ input.governance:
 
 For detailed information about the governance schemas, supported actions, and fields, see the [Governance Event Documentation](./docs/governance.md).
 
-Each event is output individually. The log output supports two formats:
+### Log output plugin
+
+`log` is the default output plugin. It writes each filtered event as one text
+or JSON line. `--output-log-level` (environment `OUTPUT_LOG_LEVEL`, YAML
+`plugins.output.log.level`) controls both event output and application
+diagnostics. The default is `info`; accepted levels are `debug`, `info`, `warn`,
+and `error`. Event records are INFO-level, so `warn` and `error` consume events
+without writing them. API event delivery continues at every log level.
+Diagnostics go to stderr at their actual severity, including when another
+output plugin is selected.
+
+For errors-only logging:
+
+```sh
+adder --output-log-level error
+```
+
+The log output plugin supports two formats:
 
 - **text** (default) — human-readable, one line per event:
 
   ```text
-  2026-02-07 09:18:40 BLOCK        slot=12345678  block=9876543  hash=abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234 era=Conway  txs=5 size=1234
-  2026-02-07 09:18:41 TX           slot=12345678  block=9876543  tx=deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef fee=180000 inputs=2 outputs=3
-  2026-02-07 09:18:42 ROLLBACK     slot=12345678  hash=aabbccddaabbccddaabbccddaabbccddaabbccddaabbccddaabbccddaabbccdd
-  2026-02-07 09:18:43 GOVERNANCE   slot=12345678  block=9876543  tx=1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd proposals=1 votes=2 certs=1
+  2026-05-24 12:00:00 BLOCK        slot=2000       block=100      hash=abc123hash era=Babbage txs=5 size=1024
+  2026-05-24 12:00:01 TX           slot=2000       block=100      tx=deadbeef12345678 fee=180000 inputs=2 outputs=3
+  2026-05-24 12:00:02 ROLLBACK     slot=2000       hash=aabbccdd11223344
+  2026-05-24 12:00:03 GOVERNANCE   slot=2000       block=100      tx=govtx12345678abc proposals=1 votes=2 certs=1
   ```
 
+  These examples use placeholder values. Governance logs appear for qualifying
+  transactions; rollback logs appear when the node reports a rollback.
+  `--filter-type input.block` excludes the other event types.
+
 - **json** — newline-delimited JSON, one JSON object per event (suitable for
-  piping to `jq` or other tooling):
+  piping to `jq` or other tooling). This abbreviated example is expanded for
+  readability; the actual output occupies one line:
 
   ```json
   {
@@ -215,17 +251,18 @@ Select the format with `--output-log-format`:
 adder --output-log-format json
 ```
 
-Event data is written to **stdout** and application logs are written to
-**stderr**. This means you can capture only event output:
+By default the log output writes events to **stdout**; `--output-log-path`
+selects a file instead. CLI application diagnostics go to **stderr**. With the default
+output destination you can capture only event output:
 
 ```bash
-# Save events to a file, see app logs in terminal
+# Save events to a file, see application diagnostics in the terminal
 adder > events.txt
 
-# Pipe events to jq, suppress app logs
+# Pipe events to jq, suppress stderr (including error reports)
 adder --output-log-format json 2>/dev/null | jq .
 
-# See only app logs, discard event data
+# See only application diagnostics, discard event data
 adder > /dev/null
 ```
 
@@ -246,9 +283,11 @@ adder \
   --api-port 0
 ```
 
-The Chainsync network must match `network.name` in the notification JSON. When
-using a custom node, pass the same `host:port` with
-`--input-chainsync-address`; Adder rejects mismatches before starting.
+For `notify-json`, the resolved chainsync network must match `network.name` in
+the notification JSON. A custom node must also match the resolved chainsync
+address. The [compatibility check](cmd/adder/notifications.go) uses the same
+configuration snapshot as the factories, following CLI > environment > YAML >
+defaults for the JSON path, network, and address.
 
 Validate the configuration before starting or restarting a frontend:
 
@@ -265,8 +304,10 @@ unless `monitor.everything` is explicitly enabled.
 
 ## Configuration
 
-Adder supports multiple configuration methods for versatility: commandline
-arguments, YAML config file, and environment variables (in that order).
+Adder resolves core and plugin settings in this order: explicit command-line
+arguments, environment variables, YAML, then defaults. Unknown configuration
+keys are errors. See the [configuration migration guide](docs/plugin-configuration-migration.md)
+for the breaking Go API and precedence changes.
 
 You can get a list of all available commandline arguments by using the
 `--help` flag.
@@ -284,13 +325,14 @@ Flags:
                                       specifies the TCP address of the node to connect to
 ...
       --output string                 output plugin to use, 'list' to show available (default "log")
-      --output-log-format string      output format: "text" or "json" (default "text")
-      --output-log-level string       specifies the log level to use (default "info")
+      --output-log-level string       logging threshold: debug/info emit events; warn/error suppress events; also filters diagnostics (default "info")
+      --output-log-format string      specifies the output format: text (human-readable, default) or json (machine-parseable) (default "text")
+      --output-log-path string        specifies the file path to write logs to (default is stdout)
   -h, --help                          help for adder
 ```
 
-Each commandline argument (other than `--config`) has a corresponding environment
-variable. For example, the `--input` option has the `INPUT` environment variable,
+Core setting flags and registered plugin options have corresponding environment
+variables. Command controls such as `--config`, `--version`, and `--help` do not. For example, the `--input` option has the `INPUT` environment variable,
 the `--input-chainsync-address` option has the `INPUT_CHAINSYNC_ADDRESS`
 environment variable, and `--output` has `OUTPUT`.
 
@@ -303,12 +345,12 @@ for the exact names.
 
 ### Environment Variables
 
-Core configuration options can be set using environment variables:
+Application and plugin settings can be set using environment variables:
 
 - `INPUT` - Input plugin to use (default: "chainsync")
 - `OUTPUT` - Output plugin to use (default: "log")
 - `KUPO_URL` - URL for Kupo service integration
-- `LOGGING_LEVEL` - Log level (default: "info")
+- `OUTPUT_LOG_LEVEL` - Log plugin threshold, also used for application diagnostics (default: "info")
 - `API_ADDRESS` - API server listen address (default: "0.0.0.0")
 - `API_PORT` - API server port (default: 8080)
 - `DEBUG_ADDRESS` - Debug server address (default: "localhost")
@@ -368,7 +410,7 @@ and `--filter-drep` are combined with **OR**. See
 Adder Tray applies target-oriented notification semantics rather than the
 generic pipeline rules described below. See
 [Adder Tray Filtering and Notification Semantics](./docs/adder-tray-filtering.md)
-for simple target matching, advanced rule groups, DRep and pool behavior, and
+for target expressions, DRep and pool behavior, and
 the current ChainSync notification inventory.
 
 You can get a list of all available filter options by using the `-h`/`--help`
@@ -468,8 +510,18 @@ The [examples](./examples/) directory contains starter code demonstrating variou
 - **[poolid-filter](./examples/poolid-filter/)** - Filter events by stake pool ID
 - **[event-address-filter](./examples/event-address-filter/)** - Filter by addresses and native assets
 
-Each example includes complete source code, documentation, and instructions for getting started.
-Visit the [examples directory](./examples/) for detailed tutorials and ready-to-run code.
+### Pipeline startup and shutdown
+
+Outputs start first, then filters in reverse chain order, then inputs. This
+makes downstream consumers ready before sources begin producing events.
+
+![Pipeline lifecycle: start outputs, reverse filters, and inputs; stop in reverse startup order](docs/diagrams/lifecycle.svg)
+
+`Stop` cancels and joins forwarding workers before stopping plugins in reverse
+startup order. Call it even after canceling the startup context. Shutdown can
+leave events in upstream buffers; it does not guarantee delivery of every
+in-flight event. See the [plugin authoring guide](docs/plugin-authoring.md) for
+resource ownership and cancellation requirements.
 
 ## Example usage
 
@@ -498,6 +550,20 @@ docker run --rm -ti \
   -v node-ipc:/node-ipc \
   ghcr.io/blinklabs-io/adder:main
 ```
+
+### ChainSync connection and events
+
+For the node connections above, ChainSync completes the handshake, starts its
+protocol clients, selects an intersection, and starts synchronization.
+Node-to-node headers trigger BlockFetch requests; node-to-client callbacks
+already contain full blocks and skip that exchange.
+
+![ChainSync sequence: connect, select an intersection, fetch blocks, emit events, and close the connection](docs/diagrams/chainsync.svg)
+
+Callbacks can begin before startup returns. Rollbacks produce separate events.
+After startup, a lost connection is retried when auto-reconnect is enabled;
+otherwise it fails the pipeline. During shutdown, ChainSync closes its connection
+and joins its workers before filters and outputs are stopped.
 
 ### Filtering
 
@@ -591,8 +657,10 @@ credential — including other payment addresses of the same wallet — as well 
 stake certificates in the transaction. Both are checked against the
 transaction's outputs. They are also checked against its resolved inputs — so
 that spending *from* a matching address counts, not just receiving to one — but
-only when `KUPO_URL` is set, since Adder needs Kupo to resolve what each input
-was paid to.
+when Kupo is configured and resolves the inputs successfully. CLI users can
+set `KUPO_URL`, top-level `kupo_url`, or the input's `kupo-url` option; direct
+Go constructors require `WithKupoUrl`. Adder needs the resolved output to
+identify the address an input spends.
 
 #### Filtering on a stake pool (SPO)
 
@@ -667,9 +735,13 @@ adder --filter-type input.block \
 ## Governance events
 
 The chainsync input emits an `input.governance` event for every transaction
-that contains Conway-era on-chain governance data. A single transaction
-produces exactly one `input.governance` event, and that event collects all of
+that contains Conway-era on-chain governance data. Each time a qualifying transaction is processed, it
+produces one `input.governance` event, and that event collects all of
 the governance data found in the transaction.
+
+Rollbacks and replay can cause the same transaction to be processed again;
+this is not an exactly-once delivery guarantee. Schema and extraction logic
+are in [event/governance.go](event/governance.go).
 
 ### When it fires
 
@@ -704,7 +776,9 @@ governance data was found in:
 The `payload` object always contains `blockHash`, optionally
 `transactionCbor` (only when the input is run with
 `--input-chainsync-include-cbor`), and up to five arrays of governance data.
-Each array is omitted when empty.
+Each array is omitted when empty. `anchor` objects are always serialized;
+when no anchor is available their `url` and `dataHash` fields are empty strings.
+Certificate `deposit` fields use `omitempty` and are absent when zero.
 
 | Field                        | Type  | Description                                              |
 | ---------------------------- | ----- | -------------------------------------------------------- |
@@ -723,21 +797,21 @@ Each array is omitted when empty.
 | `index`         | number | Index of the proposal within the transaction                    |
 | `deposit`       | number | Deposit (lovelace) locked for the proposal                      |
 | `rewardAccount` | string | Stake/reward address the deposit is returned to                 |
-| `actionType`    | string | One of `ParameterChange`, `HardForkInitiation`, `TreasuryWithdrawal`, `NoConfidence`, `UpdateCommittee`, `NewConstitution`, `Info` |
-| `actionData`    | object | Action-specific data; exactly one field is populated, keyed by the action (e.g. `parameterChange`, `treasuryWithdrawal`, `newConstitution`, `updateCommittee`, `hardForkInitiation`, `noConfidence`, `info`) |
-| `anchor`        | object | Optional `{ "url", "dataHash" }` pointing at off-chain metadata |
+| `actionType`    | string | One of `ParameterChange`, `HardForkInitiation`, `TreasuryWithdrawal`, `NoConfidence`, `UpdateCommittee`, `NewConstitution`, `Info`, or `Unknown` |
+| `actionData`    | object | Action-specific data; for recognized actions one field is populated, keyed by the action (e.g. `parameterChange`, `treasuryWithdrawal`, `newConstitution`, `updateCommittee`, `hardForkInitiation`, `noConfidence`, `info`) |
+| `anchor`        | object | `{ "url", "dataHash" }`; empty strings when no metadata anchor is supplied |
 
 #### `votingProcedures[]`
 
 | Field            | Type   | Description                                                |
 | ---------------- | ------ | ---------------------------------------------------------- |
-| `voterType`      | string | One of `DRep`, `SPO`, `CCHot`                              |
+| `voterType`      | string | One of `DRep`, `SPO`, `CCHot`, or `Unknown`                              |
 | `voterHash`      | string | Voter credential hash (hex)                                |
 | `voterId`        | string | Voter identifier (bech32 where applicable)                 |
 | `govActionTxId`  | string | Transaction ID of the governance action being voted on     |
 | `govActionIndex` | number | Index of the governance action within that transaction     |
-| `vote`           | string | One of `Yes`, `No`, `Abstain`                              |
-| `anchor`         | object | Optional `{ "url", "dataHash" }` vote-rationale metadata    |
+| `vote`           | string | One of `Yes`, `No`, `Abstain`, or `Unknown`                              |
+| `anchor`         | object | `{ "url", "dataHash" }`; empty strings when no vote anchor is supplied    |
 
 #### `drepCertificates[]`
 
@@ -746,8 +820,8 @@ Each array is omitted when empty.
 | `certificateType` | string | One of `Registration`, `Update`, `Deregistration`         |
 | `drepHash`        | string | DRep credential hash (hex)                                 |
 | `drepId`          | string | DRep ID in bech32 (`drep1…` or `drep_script1…`)            |
-| `deposit`         | number | Deposit (lovelace); present for registration/deregistration |
-| `anchor`          | object | Optional `{ "url", "dataHash" }` metadata                  |
+| `deposit`         | number | Deposit (lovelace); omitted when zero (registration/deregistration) |
+| `anchor`          | object | `{ "url", "dataHash" }`; empty strings when absent                  |
 
 #### `voteDelegationCertificates[]`
 
@@ -759,7 +833,7 @@ Each array is omitted when empty.
 | `drepHash`        | string | DRep credential hash (hex); present for `KeyHash`/`ScriptHash`          |
 | `drepId`          | string | DRep ID in bech32; present for `KeyHash`/`ScriptHash`                   |
 | `poolKeyHash`     | string | Pool key hash (hex); present for the combined stake+vote delegation types |
-| `deposit`         | number | Deposit (lovelace); present for the registration-delegation types       |
+| `deposit`         | number | Deposit (lovelace); omitted when zero (registration-delegation types)       |
 
 #### `committeeCertificates[]`
 
@@ -768,7 +842,7 @@ Each array is omitted when empty.
 | `certificateType` | string | `AuthHot` (hot-key authorization) or `ResignCold`      |
 | `coldCredential`  | string | Committee cold credential hash (hex)                   |
 | `hotCredential`   | string | Committee hot credential hash (hex); present for `AuthHot` |
-| `anchor`          | object | Optional `{ "url", "dataHash" }`; present for `ResignCold` |
+| `anchor`          | object | Always serialized; strings are empty unless `ResignCold` supplies metadata |
 
 ### Filtering governance events
 
@@ -803,9 +877,16 @@ adder --filter-type input.governance \
 
 ## Additional Documentation
 
+- [Local CLI integration tests](docs/testing/local-integration.md): run
+  `./scripts/test-integration.sh` to check logging thresholds, diagnostic
+  levels, configuration precedence, filtering, startup failures, RPC recovery,
+  SSE delivery, health, and shutdown using a local UTxO RPC fixture.
+
 For more detailed information, setup manuals, and architecture details, see the
 following:
 
+- [Architecture](./docs/architecture.md) — Input capabilities, lifecycle
+  contracts, configuration, and delivery guarantees.
 - [Dingo-Adder Local N2C Connection Architecture](./docs/dingo-adder.md) —
   Detailed description, text-based connection diagrams, and data flows of our
   local UNIX socket orchestration.
@@ -818,3 +899,11 @@ following:
   — Troubleshooting and detailed configuration guides for the system tray
   application.
 
+### Writing plugins
+
+See the [plugin authoring guide](docs/plugin-authoring.md) for the managed
+interfaces, cancellation and failure contracts, immutable event ownership,
+and registration steps. Start from the [compiled examples](examples/plugins)
+and run the [public lifecycle tests](plugintest/contract.go) in your plugin's
+test suite. The [architecture](docs/architecture.md) links each runtime contract
+to its implementation and regression tests.

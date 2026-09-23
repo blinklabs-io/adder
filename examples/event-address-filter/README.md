@@ -15,8 +15,8 @@ It's useful for building targeted indexers that only process relevant transactio
 
 The example uses environment variables for configuration:
 
-- `CARDANO_NODE_SOCKET_PATH`: Path to the Cardano node socket (default: `/ipc/node.socket`)
-- `CARDANO_NODE_MAGIC`: Network magic number (default: `764824073` for preview network)
+- `CARDANO_NODE_SOCKET_PATH`: Parsed but unused until the code is switched to `WithSocketPath` (default: `/ipc/node.socket`).
+- `CARDANO_NODE_MAGIC`: Network magic number (default: `764824073` for mainnet)
 
 By default, this example connects to a remote IOG Cardano node. To use a local socket instead, uncomment the `WithSocketPath` line and comment out the `WithAddress` line in `main.go`.
 
@@ -84,6 +84,13 @@ Available event types include:
 - `input.block`
 - `input.transaction`
 - `input.rollback`
+- `input.governance`
+- `input.drep-registration`
+- `input.drep-retirement`
+- `input.drep-update`
+
+Go snippets above are option fragments; edit [main.go](main.go) to use them.
+Placeholder identifiers such as `pool1...` must be replaced.
 
 ## Running
 
@@ -94,19 +101,16 @@ go run main.go
 Or with custom environment variables:
 
 ```bash
-export CARDANO_NODE_SOCKET_PATH=/path/to/node.socket
 export CARDANO_NODE_MAGIC=764824073
 go run main.go
 ```
 
-## Expected Output
+## Output and lifecycle
 
-The program will only output transaction events involving the specified address and/or assets:
-```text
-ChainSync status update: {Status: syncing, Tip: 12345678}
-Received event: input.transaction (involving filtered address/asset)
-...
-```
+The callback logs `received event` with a `type` attribute; the status callback logs `chainsync status update`. Only transactions matching both the configured address and asset restriction reach the callback.
+
+The example handles SIGINT/SIGTERM, observes `Failed()` separately from
+diagnostic `ErrorChan()` messages, and calls `Stop()` before returning.
 
 ## Use Cases
 

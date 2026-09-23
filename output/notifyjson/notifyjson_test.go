@@ -114,7 +114,7 @@ func TestOutputEmitsStatusAndMatchedNotification(t *testing.T) {
 	}, 2*time.Second, 10*time.Millisecond)
 	require.NoError(t, o.Stop())
 
-	for _, line := range strings.Split(strings.TrimSpace(output.String()), "\n") {
+	for line := range strings.SplitSeq(strings.TrimSpace(output.String()), "\n") {
 		var record map[string]any
 		require.NoError(t, json.Unmarshal([]byte(line), &record), line)
 		require.Equal(t, float64(schemaVersion), record["schemaVersion"])
@@ -269,6 +269,37 @@ func TestOutputNormalizesNativeEventBeforeTargetMatching(t *testing.T) {
 			output.String(),
 			`"body":"Received 5 ADA at addr1watched."`,
 		)
+	}, 2*time.Second, 10*time.Millisecond)
+	require.NoError(t, o.Stop())
+}
+
+// TestOutputRestartsWithoutAnInterveningStop guards a restart deadlock.
+// requestLoop ends only when Engine.Stop closes the requests channel, so a
+// second Start that went straight into Init would block forever in Init's
+// wait for the previous run's workers. Start releases the previous engine
+// first.
+func TestOutputRestartsWithoutAnInterveningStop(t *testing.T) {
+	var output lockedBuffer
+	o := New(
+		WithConfigPath(writeTestConfig(t)),
+		WithWriter(&output),
+		WithStaleAfter(time.Hour),
+	)
+	require.NoError(t, o.Start())
+
+	restarted := make(chan error, 1)
+	go func() { restarted <- o.Start() }()
+	select {
+	case err := <-restarted:
+		require.NoError(t, err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("second Start deadlocked in Init's wg.Wait")
+	}
+
+	// The restarted plugin still delivers: fresh channels, fresh engine.
+	o.InputChan() <- testTransaction()
+	require.Eventually(t, func() bool {
+		return strings.Contains(output.String(), `"kind":"notification"`)
 	}, 2*time.Second, 10*time.Millisecond)
 	require.NoError(t, o.Stop())
 }

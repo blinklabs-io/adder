@@ -23,7 +23,7 @@ type NotifyOptionFunc func(*NotifyOutput)
 // WithLogger specifies the logger object to use for logging messages
 func WithLogger(logger plugin.Logger) NotifyOptionFunc {
 	return func(o *NotifyOutput) {
-		o.logger = logger
+		o.SetLogger(logger)
 	}
 }
 

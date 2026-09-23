@@ -1,6 +1,6 @@
 # Windows `.msi` installer
 
-This directory builds a signed Windows installer (`.msi`) that installs **both**
+This directory builds an optionally signed Windows installer (`.msi`) that installs **both**
 the `adder` CLI (`adder.exe`) and the `adder-tray` GUI (`adder-tray.exe`) under
 `%ProgramFiles%\Adder\`, with a Start Menu shortcut for the tray.
 
@@ -29,32 +29,17 @@ support / about URL pointing at <https://github.com/blinklabs-io/adder>.
 
 ## Software OpenGL (Mesa / llvmpipe)
 
-The tray GUI is built with Fyne, which needs OpenGL 2.1+. VM / headless / RDP
-hosts (e.g. **VirtualBox** without 3D acceleration) frequently have no hardware
-OpenGL driver, so the tray would render a black window and exit. To make it work
-everywhere, the installer bundles **Mesa3D's `llvmpipe` software renderer** next
-to `adder-tray.exe`:
+The tray GUI uses Fyne/OpenGL. On amd64, the installer stages `opengl32.dll`
+and `libgallium_wgl.dll` from the pinned Mesa `release-mingw` archive. Both DLLs
+must remain beside `adder-tray.exe`. Downloaded archives are verified against
+`MESA_SHA256`; change that digest when overriding `MESA_VERSION`. An explicit
+`MESA_OPENGL_DIR` uses local files instead of downloading and checking an archive.
+The license file is copied when found; a missing license produces a warning.
 
-- `opengl32.dll` is only a loader; `libgallium_wgl.dll` is the megadriver that
-  actually contains `llvmpipe` (split out of `opengl32.dll` since Mesa 21.3.0),
-  so **both** are required. Windows resolves `opengl32.dll` from the application
-  directory before System32, so the tray uses Mesa instead of any host driver.
-- The tray pins `GALLIUM_DRIVER=llvmpipe` at startup (in `cmd/adder-tray`) so
-  Mesa does not attempt the D3D12 (`dozen`) path, which needs `dxil.dll` we do
-  not ship. Set `GALLIUM_DRIVER` yourself to override.
-- The DLLs come from [`pal1000/mesa-dist-win`](https://github.com/pal1000/mesa-dist-win),
-  pinned via `MESA_VERSION`. We use the **`release-mingw`** build, which
-  statically links its C runtime, so **only these two DLLs are shipped** — no
-  extra runtime DLLs are needed. Verified: their only imports are Windows
-  in-box system libraries (`api-ms-win-crt-*` UCRT, `KERNEL32`, `GDI32`,
-  `ADVAPI32`), present on every Windows 10/11. `release-mingw` requires SSSE3,
-  which every x64 CPU since ~2006 has. Mesa is **MIT-licensed**; the license
-  text ships as `OpenGL-Mesa-LICENSE.txt`.
-- If OpenGL still fails to initialize, the tray's log file
-  (`%LOCALAPPDATA%\Adder\Logs\adder-tray.log`) records the error.
-- **amd64 only** — there is no upstream arm64 Mesa build, so arm64 MSIs do not
-  bundle it (the arm64 GUI needs a host OpenGL driver). Bundling is skipped with
-  a warning rather than failing the build.
+Tray startup sets `GALLIUM_DRIVER=llvmpipe` unless the environment already sets
+it. If the window fails to open, inspect
+`%LOCALAPPDATA%\Adder\Logs\adder-tray.log`. Arm64 builds and builds with
+`BUNDLE_MESA=0` need a host graphics driver; Mesa bundling is skipped on arm64.
 
 ## What the installer does NOT do
 
@@ -73,7 +58,7 @@ script (`WIX_VERSION`, default `4.0.5`):
 
 ```powershell
 dotnet tool install --global wix --version 4.0.5
-wix extension add -g WixToolset.Util.wixext   # not required by this .wxs
+wix extension add -g WixToolset.Util.wixext/4.0.5   # required; also added by the build script
 ```
 
 v4 collapses `<Product>`/`<Package>` into a single `<Package>`, uses the
@@ -127,8 +112,8 @@ The script uses `Set-StrictMode` + `$ErrorActionPreference = 'Stop'` and treats
 all signing vars as optional:
 
 - **`JSIGN_KEYSTORE` or `JSIGN_STOREPASS` unset** → the `.msi` is left unsigned
-  and `jsign` is skipped (warns). A plain local run always yields a working
-  **unsigned** msi; CI with the secrets set yields a **signed + timestamped** msi.
+  and `jsign` is skipped (warns). Without both credentials the build leaves the MSI unsigned. Configured
+  signing must succeed; the script checks available signature metadata.
 
 ## Binary build commands
 
@@ -141,11 +126,11 @@ go build -ldflags "-s -w -X '<module>/internal/version.Version=...' -X '<module>
 
 # adder-tray GUI: requires cgo (Fyne → go-gl/OpenGL).
 $env:CGO_ENABLED="1"; $env:GOOS="windows"; $env:GOARCH="amd64"
-go build -ldflags "..." -o adder-tray.exe ./cmd/adder-tray
+go build -ldflags "-H=windowsgui ..." -o adder-tray.exe ./cmd/adder-tray
 ```
 
-> **Toolchain requirement (important):** `adder-tray.exe` **cannot be
-> cross-compiled** from macOS/Linux. Fyne pulls in `go-gl/gl`, whose files are
+> **Toolchain requirement (important):** `adder-tray.exe` requires a matching Windows C toolchain for
+> cross-compilation from macOS/Linux. Fyne pulls in `go-gl/gl`, whose files are
 > excluded unless cgo is enabled, so a C compiler (mingw-w64 `gcc` for `amd64`)
 > must be on `PATH`. Build on a **native Windows runner**. The `adder` CLI is
 > pure Go and *can* be cross-built, but the script builds both on the Windows
@@ -193,47 +178,9 @@ signtool verify /pa adder-<version>-windows-amd64.msi
 `/pa` uses the default authentication-code policy and should report a valid
 signature chain plus a countersignature (timestamp).
 
-## Validation: local vs. CI
+## Installer validation
 
-`adder.wxs` is validated for **XML well-formedness** locally
-(`xmllint --noout packaging/windows/adder.wxs`). Its **WiX/ICE semantics**
-(64-bit folder resolution, component keypaths, per-machine/per-user
-consistency, upgrade plumbing) are only checked by `wix build`, which runs ICE
-validation by default — that happens on the Windows CI runner, not on macOS.
-The `.wxs` is written to be ICE-clean (single component per shortcut, `HKMU`
-keypath under a `perMachine` scope, `Bitness="always64"`), but the authoritative
-lint is the CI `wix build` step.
-
-## CI wiring
-
-Implemented in [`.github/workflows/publish.yml`](../../.github/workflows/publish.yml)
-on the `build-binaries` job, for the `windows-latest`/amd64 and
-`windows-11-arm`/arm64 matrix rows, gated on tag pushes (`refs/tags/v*.*.*`).
-
-The flow per Windows row:
-
-1. `make build` + `make build-tray` produce `adder.exe` and `adder-tray.exe`
-   at the workspace root (CGO toolchain via MSYS2 `MINGW64` / `CLANGARM64`).
-2. **Sign Windows binaries** — downloads `jsign-6.0.jar` (SHA256-pinned),
-   decodes `CERTIFICATE_CHAIN` to `codesign-chain.pem`, then loops jsign over
-   both `.exe` files (RFC3161 timestamp via GlobalSign), using a masked
-   `gcloud auth print-access-token` as `--storepass`.
-3. **Install WiX toolset** — `dotnet tool install --global wix --version 4.0.5`.
-4. **Build and sign MSI** — invokes `pwsh ./packaging/windows/build-msi.ps1`
-   with `ADDER_EXE` / `ADDER_TRAY_EXE` pointing at the just-signed binaries
-   (so the script skips its internal `go build`), and the `JSIGN_*` env vars
-   mapped from the existing `CERTIFICATE_*` secrets and a fresh access token.
-   Cleans up `jsign.jar` + `codesign-chain.pem` after.
-5. **Verify MSI signature** — locates `signtool.exe` under the preinstalled
-   Windows SDK and runs `signtool verify /pa /v <msi>`; fails the job on a
-   bad chain or missing countersignature.
-6. **Upload MSI release asset** — uploads
-   `dist\adder-<version>-windows-<arch>.msi` to the draft release, naming the
-   asset `adder-<RELEASE_TAG>-windows-<arch>.msi` (the existing convention).
-7. **Attest MSI** — `actions/attest@v4` produces a build provenance
-   attestation for the `.msi`.
-
-Reuses the existing repository secrets (no new ones required):
-`CERTIFICATE_KEYSTORE`, `CERTIFICATE_STORE_TYPE`, `CERTIFICATE_KEY_NAME`,
-`CERTIFICATE_CHAIN`, `CERTIFICATE_SA_CREDENTIALS`. These map onto the
-`JSIGN_*` env vars consumed by `build-msi.ps1`.
+The build script runs `wix build` with the Util extension. Validate the MSI on
+Windows; an XML syntax check alone does not check installation, upgrade, or
+component semantics. The [test-msi workflow](../../.github/workflows/test-msi.yml)
+contains the repository's installer test automation.

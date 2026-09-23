@@ -242,9 +242,9 @@ func TestTemplateStepValidateOutputsAndApply(t *testing.T) {
 		got.Output.Config["path"])
 	assert.Equal(t, "json", got.Output.Config["format"])
 
-	step.outputSelect.SetSelected("None (desktop notifications only)")
+	step.outputSelect.SetSelected("Console logging (default)")
 	step.Apply(got)
-	assert.Equal(t, "none", got.Output.Type)
+	assert.Equal(t, "log", got.Output.Type)
 }
 
 // TestTemplateStepAddRemoveAndSummary exercises the per-section add /
@@ -885,4 +885,20 @@ func TestNotificationsStepCheckUpdatesWeeklyHydrationAndApply(
 	gotFalse := &setup.SetupPlan{App: setup.AppConfig{}}
 	stepFalse.Apply(gotFalse)
 	assert.True(t, gotFalse.App.CheckUpdatesWeekly)
+}
+
+func TestTemplateStepRestoresConsoleLogging(t *testing.T) {
+	test.NewApp()
+	plan := &setup.SetupPlan{
+		Filter: setup.FilterConfig{MonitorEverything: true},
+		Output: setup.OutputConfig{Type: "log", Config: map[string]string{"level": "error"}},
+	}
+	step := &templateStep{plan: plan}
+	step.Content()
+	assert.Equal(t, "Console logging (default)", step.outputSelect.Selected)
+	assert.NoError(t, step.Validate())
+	step.Apply(plan)
+	assert.Equal(t, "log", plan.Output.Type)
+	assert.Equal(t, "error", plan.Output.Config["level"])
+	assert.Empty(t, plan.Output.Config["path"])
 }

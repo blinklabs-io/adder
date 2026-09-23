@@ -32,6 +32,7 @@ import (
 	"github.com/blinklabs-io/adder/event"
 	"github.com/blinklabs-io/adder/internal/config"
 	"github.com/blinklabs-io/adder/internal/logging"
+	"github.com/blinklabs-io/adder/internal/nodeconn"
 	"github.com/blinklabs-io/adder/plugin"
 	ouroboros "github.com/blinklabs-io/gouroboros"
 	"github.com/blinklabs-io/gouroboros/ledger"
@@ -86,20 +87,26 @@ const (
 	// "message queue limit exceeded" errors.
 	blockBatchSize = 50
 
+	// eventChanBuffer must be large enough to absorb bursts during
+	// catch-up sync. With PipelineLimit=50 and ~20 events per block we
+	// can see 1000+ events queued before the output drains them.
+	eventChanBuffer = 2048
+
 	maxAutoReconnectDelay = 60 * time.Second
 	defaultKupoTimeout    = 30 * time.Second
 )
 
 type ChainSync struct {
-	logger             plugin.Logger
+	plugin.Base
 	statusUpdateFunc   StatusUpdateFunc
 	blockfetchDoneChan chan struct{}
-	doneChan           chan struct{}
-	wg                 sync.WaitGroup
 	kupoClient         *kugo.Client
+	// connMu guards oConn. The connection is installed by setupConnection,
+	// read by the chainsync callbacks and the supervisor, and taken by
+	// Stop, which do not all run on the same goroutine. Reach it only
+	// through conn, setConn, takeConn and closeConn.
+	connMu             sync.Mutex
 	oConn              *ouroboros.Connection
-	eventChan          chan event.Event
-	errorChan          chan error
 	status             *ChainSyncStatus
 	dialFamily         string
 	kupoUrl            string
@@ -113,13 +120,22 @@ type ChainSync struct {
 	cursorCache        []ocommon.Point
 	lastTip            ochainsync.Tip
 	delayConfirmations uint
-	autoReconnectDelay time.Duration
 	networkMagic       uint32
 	includeCbor        bool
 	ntcTcp             bool
 	intersectTip       bool
 	autoReconnect      bool
 	reconnectCallback  func()
+}
+
+// chainSyncBaseConfig is the Base configuration for this plugin. It is a
+// function rather than a var so tests can call it to set up a ChainSync
+// without going through Start, which needs a live node connection.
+func chainSyncBaseConfig() plugin.BaseConfig {
+	return plugin.BaseConfig{
+		HasOutput:    true,
+		OutputBuffer: eventChanBuffer,
+	}
 }
 
 type ChainSyncStatus struct {
@@ -140,99 +156,109 @@ func New(options ...ChainSyncOptionFunc) *ChainSync {
 		intersectPoints: []ocommon.Point{},
 		status:          &ChainSyncStatus{},
 	}
-	// Use Kupo URL from global config
-	c.kupoUrl = config.GetConfig().KupoUrl
 	for _, option := range options {
 		option(c)
 	}
 	return c
 }
 
-// Start the chain sync input
+// Role identifies this plugin as a pipeline input.
+func (c *ChainSync) Role() plugin.PluginType { return plugin.PluginTypeInput }
+
+// Start the chain sync input.
+//
+// The first connection is dialled synchronously, so a node that is down
+// is reported to the caller rather than retried behind its back. Every
+// later reconnect belongs to the supervisor.
+//
+// Reconnects use connect within the existing run and preserve its channels.
 func (c *ChainSync) Start() error {
-	// Guard against double-start: signal existing goroutines to stop and wait
-	if c.doneChan != nil {
-		close(c.doneChan)
-		c.wg.Wait()
-	}
-	// Only create new channels if they don't exist yet.
-	// During auto-reconnect, Stop() is not called so existing channels
-	// remain valid. Reusing them preserves pipeline goroutine references
-	// that would otherwise be orphaned by a channel swap.
-	if c.eventChan == nil {
-		// Buffer must be large enough to absorb bursts during catch-up sync.
-		// With PipelineLimit=50 and ~20 events/block, we can see 1000+
-		// events queued before the output callback drains them.
-		c.eventChan = make(chan event.Event, 2048)
-	}
-	if c.errorChan == nil {
-		c.errorChan = make(chan error)
-	}
-	c.doneChan = make(chan struct{})
-	if err := c.setupConnection(); err != nil {
+	return c.StartContext(context.Background())
+}
+
+// StartContext starts the plugin with ctx governing setup and run operations.
+// Call Stop to wait for workers and release resources, including after cancellation.
+func (c *ChainSync) StartContext(ctx context.Context) error {
+	return c.StartRun(ctx, chainSyncBaseConfig(), c.start, c.shutdownHooks())
+}
+
+func (c *ChainSync) start(ctx context.Context) error {
+	connErrChan, err := c.connect(ctx)
+	if err != nil {
 		return err
 	}
-	// Start chainsync client
-	c.oConn.ChainSync().Client.Start()
-	if c.oConn.BlockFetch() != nil {
-		c.oConn.BlockFetch().Client.Start()
-	}
-	c.pendingBlockPoints = make([]ocommon.Point, 0)
-	if c.intersectTip {
-		tip, err := c.oConn.ChainSync().Client.GetCurrentTip()
-		if err != nil {
-			return err
-		}
-		c.intersectPoints = []ocommon.Point{tip.Point}
-	}
-	if err := c.oConn.ChainSync().Client.Sync(c.intersectPoints); err != nil {
-		return err
-	}
+	c.Go(func() { c.superviseConnection(ctx, connErrChan) })
 	return nil
 }
 
-// Stop the chain sync input
+// Stop the chain sync input.
+//
+// The connection is closed twice over, because two different orderings
+// can leave one open:
+//
+//   - BeforeWait catches the settled case, and has to run there: closing
+//     the connection is what unblocks the supervisor's read of the
+//     connection error channel, so the wait would not end without it.
+//   - AfterWait catches a dial that was in flight when Stop ran. There,
+//     BeforeWait finds no connection to take, and the dial installs one
+//     afterwards. By AfterWait the supervisor has exited and nothing can
+//     call setConn again, so whatever is installed then is the last word.
+//
+// Without the second close, Stop returns nil while the node connection
+// and its goroutines are still live, and those goroutines call back into
+// a plugin whose channels are closing.
 func (c *ChainSync) Stop() error {
-	var err error
-	// Signal goroutines to stop first
-	if c.doneChan != nil {
-		close(c.doneChan)
-		c.doneChan = nil
-	}
-	// Close connection (this unblocks the error handler goroutine)
-	if c.oConn != nil {
-		err = c.oConn.Close()
-		c.oConn = nil
-	}
-	// Wait for goroutines to exit before closing channels
-	c.wg.Wait()
-	if c.eventChan != nil {
-		close(c.eventChan)
-		c.eventChan = nil
-	}
-	if c.errorChan != nil {
-		close(c.errorChan)
-		c.errorChan = nil
-	}
-	return err
+	return c.Shutdown(c.shutdownHooks())
 }
 
-// ErrorChan returns the plugin's error channel
-func (c *ChainSync) ErrorChan() <-chan error {
-	return c.errorChan
+func (c *ChainSync) shutdownHooks() plugin.ShutdownHooks {
+	return plugin.ShutdownHooks{
+		BeforeWait: func() error {
+			return c.closeConn()
+		},
+		AfterWait: func() error {
+			return c.closeConn()
+		},
+	}
 }
 
-// InputChan always returns nil
-func (c *ChainSync) InputChan() chan<- event.Event {
-	return nil
+// conn returns the current node connection, or nil when there is none:
+// before the first dial, between a failure and its retry, or after Stop.
+func (c *ChainSync) conn() *ouroboros.Connection {
+	c.connMu.Lock()
+	defer c.connMu.Unlock()
+	return c.oConn
 }
 
-// OutputChan returns the output event channel
-func (c *ChainSync) OutputChan() <-chan event.Event {
-	return c.eventChan
+// setConn installs conn as the current node connection.
+func (c *ChainSync) setConn(conn *ouroboros.Connection) {
+	c.connMu.Lock()
+	defer c.connMu.Unlock()
+	c.oConn = conn
 }
 
-func (c *ChainSync) setupConnection() error {
+// takeConn clears the current node connection and returns it, so that
+// exactly one of the racing callers gets a non-nil connection to close.
+func (c *ChainSync) takeConn() *ouroboros.Connection {
+	c.connMu.Lock()
+	defer c.connMu.Unlock()
+	conn := c.oConn
+	c.oConn = nil
+	return conn
+}
+
+// closeConn closes the current node connection, if there is one. The
+// close runs outside the lock: it blocks until the connection's own
+// goroutines are done, and those call back into this plugin.
+func (c *ChainSync) closeConn() error {
+	conn := c.takeConn()
+	if conn == nil {
+		return nil
+	}
+	return conn.Close()
+}
+
+func (c *ChainSync) setupConnection(ctx context.Context) error {
 	// Determine connection parameters
 	var useNtn bool
 	// Lookup network by name, if provided
@@ -241,7 +267,9 @@ func (c *ChainSync) setupConnection() error {
 		if !ok {
 			return fmt.Errorf("unknown network: %s", c.network)
 		}
-		c.networkMagic = network.NetworkMagic
+		if c.networkMagic == 0 {
+			c.networkMagic = network.NetworkMagic
+		}
 		// If network has well-known public root address/port, use those as our dial default
 		if len(network.BootstrapPeers) > 0 {
 			peer := network.BootstrapPeers[0]
@@ -280,7 +308,7 @@ func (c *ChainSync) setupConnection() error {
 		return err
 	}
 	// Create connection
-	c.oConn, err = ouroboros.NewConnection(
+	conn, err := nodeconn.Dial(ctx, c.dialFamily, c.dialAddress,
 		ouroboros.WithNetworkMagic(c.networkMagic),
 		ouroboros.WithNodeToNode(useNtn),
 		ouroboros.WithKeepAlive(true),
@@ -300,114 +328,175 @@ func (c *ChainSync) setupConnection() error {
 	if err != nil {
 		return err
 	}
-	if err := c.oConn.Dial(c.dialFamily, c.dialAddress); err != nil {
-		return err
+	if logger := c.Logger(); logger != nil {
+		logger.Info("connected to node at " + c.dialAddress)
 	}
-	if c.logger != nil {
-		c.logger.Info("connected to node at " + c.dialAddress)
+	c.setConn(conn)
+	return nil
+}
+
+// connect keeps a reconnect inside the current run without replacing channels.
+func (c *ChainSync) connect(ctx context.Context) (<-chan error, error) {
+	if err := c.setupConnection(ctx); err != nil {
+		return nil, err
 	}
-	// Start async error handler
-	c.wg.Add(1)
-	go func() {
-		err, ok := <-c.oConn.ErrorChan()
-		if ok {
-			if c.autoReconnect {
-				c.autoReconnectDelay = 0
-				if c.logger != nil {
-					c.logger.Error(
-						"reconnecting due to error",
-						"address",
-						c.dialAddress,
-						"error",
-						err,
-					)
-				}
-				for {
-					if c.autoReconnectDelay > 0 {
-						if c.logger != nil {
-							c.logger.Info(
-								"waiting to reconnect",
-								"delay",
-								c.autoReconnectDelay,
-							)
-						}
-						time.Sleep(c.autoReconnectDelay)
-						// Double current reconnect delay up to maximum
-						c.autoReconnectDelay = min(
-							c.autoReconnectDelay*2,
-							maxAutoReconnectDelay,
-						)
-					} else {
-						// Set initial reconnect delay
-						c.autoReconnectDelay = 1 * time.Second
-					}
-					// Shutdown current connection
-					if err := c.oConn.Close(); err != nil {
-						if c.logger != nil {
-							c.logger.Warn(
-								"failed to properly close connection",
-								"error",
-								err,
-							)
-						}
-					}
-					// Set the intersect points from the cursor cache
-					if len(c.cursorCache) > 0 {
-						c.intersectPoints = c.cursorCache[:]
-					}
-					// Decrement WaitGroup before calling Start() to avoid deadlock.
-					// Start() calls wg.Wait(), so this goroutine must release its
-					// count first. The new Start() will spawn a fresh error handler.
-					c.wg.Done()
-					// Restart the connection
-					if err := c.Start(); err != nil {
-						if c.logger != nil {
-							c.logger.Error(
-								"reconnecting due to error",
-								"address",
-								c.dialAddress,
-								"error",
-								err,
-							)
-						}
-						// Re-increment since we need to try again in this goroutine
-						c.wg.Add(1)
-						continue
-					}
-					// Successfully restarted - fire callback if set,
-					// then exit (new goroutine from Start() takes over)
-					if c.reconnectCallback != nil {
-						c.reconnectCallback()
-					}
-					return
-				}
-			} else {
-				// Pass error through our own error channel, but check for shutdown
-				select {
-				case <-c.doneChan:
-					c.wg.Done()
-					return
-				default:
-					if c.errorChan != nil {
-						select {
-						case <-c.doneChan:
-							c.wg.Done()
-							return
-						case c.errorChan <- err:
-						}
-					} else if c.logger != nil {
-						c.logger.Warn(
-							"error occurred but no error channel set",
-							"error",
-							err,
-						)
-					}
-				}
+	conn := c.conn()
+	if conn == nil {
+		// Stop took the connection while we were dialling.
+		return nil, errors.New("chainsync: stopped while connecting")
+	}
+	// Protocol startup can block after the handshake. Close this attempt
+	// on cancellation even before Stop can acquire the lifecycle lock.
+	closed := make(chan struct{})
+	stop := context.AfterFunc(ctx, func() {
+		_ = conn.Close()
+		close(closed)
+	})
+	defer func() {
+		if !stop() {
+			<-closed
+		}
+	}()
+	// Start chainsync client
+	conn.ChainSync().Client.Start()
+	if conn.BlockFetch() != nil {
+		conn.BlockFetch().Client.Start()
+	}
+	c.pendingBlockPoints = make([]ocommon.Point, 0)
+	if c.intersectTip {
+		tip, err := conn.ChainSync().Client.GetCurrentTip()
+		if err != nil {
+			return nil, err
+		}
+		c.intersectPoints = []ocommon.Point{tip.Point}
+	}
+	if err := conn.ChainSync().Client.Sync(c.intersectPoints); err != nil {
+		return nil, err
+	}
+	return conn.ErrorChan(), nil
+}
+
+// superviseConnection owns the node connection for the life of a run. It
+// waits for the current connection to fail and then either forwards the
+// error or reconnects, until Stop signals.
+//
+// Reconnect stays in this tracked worker so Shutdown joins every connection
+// attempt before closing channels. Calling Start here would contend with the
+// lifecycle lock while Shutdown waits for this worker.
+func (c *ChainSync) superviseConnection(
+	ctx context.Context,
+	connErrChan <-chan error,
+) {
+	done := c.Done()
+	for {
+		var err error
+		var ok bool
+		select {
+		case <-done:
+			return
+		case err, ok = <-connErrChan:
+			// A closed error stream is still a lost source; reconnect or
+			// fail the run instead of leaving a healthy but idle pipeline.
+			if !ok {
+				err = errors.New("chainsync: connection closed")
 			}
 		}
-		c.wg.Done()
-	}()
-	return nil
+		if ctx.Err() != nil {
+			return
+		}
+		if !c.autoReconnect {
+			// Pass the error through our own error channel, but check for
+			// shutdown first.
+			select {
+			case <-done:
+				return
+			default:
+			}
+			c.Fail(err)
+			return
+		}
+		if logger := c.Logger(); logger != nil {
+			logger.Error(
+				"reconnecting due to error",
+				"address",
+				c.dialAddress,
+				"error",
+				err,
+			)
+		}
+		next, reconnected := c.reconnect(ctx, done)
+		if !reconnected {
+			return
+		}
+		connErrChan = next
+		if c.reconnectCallback != nil {
+			c.reconnectCallback()
+		}
+	}
+}
+
+// reconnect retries the node connection with the pre-existing exponential
+// backoff until it succeeds, and reports the new connection's error
+// channel. It gives up and reports false once done is closed, so a
+// reconnect in flight does not outlive Stop.
+//
+// The backoff waits on done rather than sleeping, which is what lets Stop
+// interrupt a wait that can reach maxAutoReconnectDelay.
+func (c *ChainSync) reconnect(
+	ctx context.Context,
+	done <-chan struct{},
+) (<-chan error, bool) {
+	var delay time.Duration
+	for {
+		if delay > 0 {
+			if logger := c.Logger(); logger != nil {
+				logger.Info("waiting to reconnect", "delay", delay)
+			}
+			select {
+			case <-done:
+				return nil, false
+			case <-time.After(delay):
+			}
+			// Double current reconnect delay up to maximum
+			delay = min(delay*2, maxAutoReconnectDelay)
+		} else {
+			// Set initial reconnect delay
+			delay = 1 * time.Second
+		}
+		// Retire the failed connection before dialling a replacement.
+		if err := c.closeConn(); err != nil {
+			if logger := c.Logger(); logger != nil {
+				logger.Warn(
+					"failed to properly close connection",
+					"error",
+					err,
+				)
+			}
+		}
+		select {
+		case <-done:
+			return nil, false
+		default:
+		}
+		// Set the intersect points from the cursor cache
+		if len(c.cursorCache) > 0 {
+			c.intersectPoints = c.cursorCache[:]
+		}
+		connErrChan, err := c.connect(ctx)
+		if err != nil {
+			if logger := c.Logger(); logger != nil {
+				logger.Error(
+					"reconnecting due to error",
+					"address",
+					c.dialAddress,
+					"error",
+					err,
+				)
+			}
+			continue
+		}
+		return connErrChan, true
+	}
 }
 
 func (c *ChainSync) handleRollBackward(
@@ -425,6 +514,11 @@ func (c *ChainSync) handleRollBackward(
 	// Remove rolled-back events from buffer
 	if len(c.delayBuffer) > 0 {
 		// We iterate backwards to avoid the issues with deleting from a list while iterating over it
+		// slices.Backward is deliberately not used here: it captures the
+		// slice header once, so the values it yields come from the
+		// pre-deletion view. That happens to be equivalent while the
+		// deletions walk downward, but the equivalence rests on aliasing
+		// the backing array rather than on anything the loop states.
 		for i := len(c.delayBuffer) - 1; i >= 0; i-- {
 			for _, evt := range c.delayBuffer[i] {
 				// Look for block event
@@ -438,7 +532,7 @@ func (c *ChainSync) handleRollBackward(
 			}
 		}
 	}
-	c.eventChan <- evt
+	_ = c.Emit(evt)
 
 	// updating status after roll backward
 	c.updateStatus(
@@ -477,7 +571,13 @@ func (c *ChainSync) handleRollForward(
 		}
 		// Request pending block range
 		c.blockfetchDoneChan = make(chan struct{})
-		if err := c.oConn.BlockFetch().Client.GetBlockRange(c.pendingBlockPoints[0], c.pendingBlockPoints[len(c.pendingBlockPoints)-1]); err != nil {
+		// This callback runs on a connection goroutine, so the connection
+		// can be taken by Stop underneath it.
+		conn := c.conn()
+		if conn == nil {
+			return errors.New("chainsync: connection closed during block fetch")
+		}
+		if err := conn.BlockFetch().Client.GetBlockRange(c.pendingBlockPoints[0], c.pendingBlockPoints[len(c.pendingBlockPoints)-1]); err != nil {
 			return err
 		}
 		c.pendingBlockPoints = make([]ocommon.Point, 0)
@@ -545,7 +645,9 @@ func (c *ChainSync) handleRollForward(
 			tmpEvents = append(tmpEvents, govEvt)
 		}
 		// Emit DRep certificate events
-		if drepCerts := event.ExtractDRepCertificates(transaction); len(drepCerts) > 0 {
+		if drepCerts := event.ExtractDRepCertificates(transaction); len(
+			drepCerts,
+		) > 0 {
 			drepCtx := event.NewGovernanceContext(
 				block,
 				transaction,
@@ -576,7 +678,7 @@ func (c *ChainSync) handleRollForward(
 	if c.delayConfirmations == 0 {
 		// Send events immediately if no delay confirmations configured
 		for _, evt := range tmpEvents {
-			c.eventChan <- evt
+			_ = c.Emit(evt)
 		}
 	} else {
 		// Add events to delay buffer
@@ -595,7 +697,7 @@ func (c *ChainSync) handleRollForward(
 						BlockNumber: blockEvt.Block.BlockNumber(),
 					}
 				}
-				c.eventChan <- evt
+				_ = c.Emit(evt)
 			}
 			c.delayBuffer = slices.Delete(c.delayBuffer, 0, 1)
 		}
@@ -621,7 +723,7 @@ func (c *ChainSync) handleBlockFetchBlock(
 		event.NewBlockContext(block, c.networkMagic),
 		event.NewBlockEvent(block, c.includeCbor),
 	)
-	c.eventChan <- blockEvt
+	_ = c.Emit(blockEvt)
 	for t, transaction := range block.Transactions() {
 		resolvedInputs, err := resolveTransactionInputs(transaction, c)
 		if err != nil {
@@ -651,7 +753,7 @@ func (c *ChainSync) handleBlockFetchBlock(
 				resolvedInputs,
 			),
 		)
-		c.eventChan <- txEvt
+		_ = c.Emit(txEvt)
 		// Emit governance event if transaction contains governance data
 		if event.HasGovernanceData(transaction) {
 			govEvt := event.New(
@@ -670,10 +772,12 @@ func (c *ChainSync) handleBlockFetchBlock(
 					c.includeCbor,
 				),
 			)
-			c.eventChan <- govEvt
+			_ = c.Emit(govEvt)
 		}
 		// Emit DRep certificate events
-		if drepCerts := event.ExtractDRepCertificates(transaction); len(drepCerts) > 0 {
+		if drepCerts := event.ExtractDRepCertificates(transaction); len(
+			drepCerts,
+		) > 0 {
 			drepCtx := event.NewGovernanceContext(
 				block,
 				transaction,
@@ -689,7 +793,7 @@ func (c *ChainSync) handleBlockFetchBlock(
 						drepCtx,
 						event.NewDRepCertificateEvent(block, cert),
 					)
-					c.eventChan <- drepEvt
+					_ = c.Emit(drepEvt)
 				}
 			}
 		}
@@ -762,7 +866,9 @@ func getKupoClient(c *ChainSync) (*kugo.Client, error) {
 		return nil, errors.New("invalid kupo URL host")
 	}
 
-	KugoCustomLogger := logging.NewKugoCustomLogger(logging.LevelInfo)
+	KugoCustomLogger := logging.NewKugoCustomLoggerWithLogger(
+		logging.GetLoggerForComponent("kupo"),
+	)
 
 	// Create client with timeout
 	k := kugo.New(
@@ -781,7 +887,12 @@ func getKupoClient(c *ChainSync) (*kugo.Client, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, healthURL.String(), nil)
+	req, err := http.NewRequestWithContext(
+		ctx,
+		http.MethodGet,
+		healthURL.String(),
+		nil,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create health check request: %w", err)
 	}
@@ -898,3 +1009,5 @@ func resolveTransactionInputs(
 	}
 	return resolvedInputs, nil
 }
+
+var _ plugin.ManagedPlugin = (*ChainSync)(nil)

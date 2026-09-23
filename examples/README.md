@@ -8,11 +8,16 @@ Adder communicates with a Cardano Node using the ChainSync protocol to observe a
 
 ### Cardano Node Access
 
-To run these examples, you'll need access to a fully synced Cardano node. You have several options:
+To run these examples, you'll need access to a running Cardano node. You have several options:
 
 1. **Local Node**: Run your own Cardano node and connect via Unix socket
 2. **Remote Node**: Connect to a remote node via TCP/IP
 3. **Public Infrastructure**: Use publicly available Cardano nodes (some examples are pre-configured with IOG nodes)
+
+The publisher uses a local socket; the two filter demos use a hard-coded TCP
+address. Change their source to select another endpoint. Endpoint availability
+is not guaranteed. All three default to mainnet; changing network magic alone
+does not replace global genesis values.
 
 ### Environment Variables
 
@@ -129,7 +134,7 @@ All examples follow a similar pattern:
 4. **Add Filters** (optional): Filter events by type, address, pool, etc.
 5. **Configure Output**: Define how to handle events
 6. **Start Pipeline**: Begin processing events
-7. **Error Handling**: Monitor for pipeline errors
+7. **Lifecycle**: Handle signals, observe `Failed()` and diagnostics separately, and call `Stop()`
 
 ### Event Handlers
 
@@ -174,7 +179,7 @@ Start with the `adder-publisher` example and gradually add features:
 ### Sync Performance
 
 - Start with `WithIntersectTip(true)` to sync from the current tip
-- For historical data, use `WithBulkMode(true)` for faster processing
+- `WithBulkMode(true)` selects bulk Node-to-Node sync; use it only against nodes you control
 - Consider using filters early to reduce event volume
 
 ### Memory Usage

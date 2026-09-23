@@ -25,9 +25,21 @@ func WithCallbackFunc(callbackFunc CallbackFunc) EmbeddedOptionFunc {
 	}
 }
 
-// WithOutputChan specifies an event.Event channel to use for events
+// WithOutputChan specifies an event.Event channel to use for events.
+//
+// The plugin is the only sender on it and closes it in Stop, so a caller
+// may range over the channel. The channel cannot be reused afterwards:
+// see EmbeddedOutput.Stop.
 func WithOutputChan(outputChan chan event.Event) EmbeddedOptionFunc {
 	return func(o *EmbeddedOutput) {
-		o.outputChan = outputChan
+		o.forwardChan = outputChan
+	}
+}
+
+// WithContextCallbackFunc specifies a callback that cooperates with run
+// cancellation. It takes precedence over WithCallbackFunc when both are set.
+func WithContextCallbackFunc(callback ContextCallbackFunc) EmbeddedOptionFunc {
+	return func(o *EmbeddedOutput) {
+		o.contextCallbackFunc = callback
 	}
 }

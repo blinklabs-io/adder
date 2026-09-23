@@ -111,11 +111,9 @@ func (c *EventClient) Start() error {
 	c.started = true
 	c.status.Set(StatusStarting)
 
-	c.wg.Add(1)
-	go func() {
-		defer c.wg.Done()
+	c.wg.Go(func() {
 		c.connectLoop()
-	}()
+	})
 	return nil
 }
 

@@ -25,7 +25,6 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
-	"sync"
 	"time"
 
 	"github.com/blinklabs-io/adder/event"
@@ -44,12 +43,7 @@ const (
 )
 
 type WebhookOutput struct {
-	mu             sync.Mutex
-	errorChan      chan error
-	eventChan      chan event.Event
-	doneChan       chan struct{}
-	wg             sync.WaitGroup
-	logger         plugin.Logger
+	plugin.Base
 	format         string
 	url            string
 	username       string
@@ -77,29 +71,29 @@ func New(options ...WebhookOptionFunc) *WebhookOutput {
 	return w
 }
 
+// Role identifies this plugin as a pipeline output.
+func (w *WebhookOutput) Role() plugin.PluginType { return plugin.PluginTypeOutput }
+
 // Start the webhook output
 func (w *WebhookOutput) Start() error {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	if w.eventChan != nil {
-		return nil
-	}
-	// Guard against double-start: wait for existing goroutine to exit
-	if w.doneChan != nil {
-		close(w.doneChan)
-		w.doneChan = nil
-		w.wg.Wait()
-	}
-	w.eventChan = make(chan event.Event, 10)
-	w.errorChan = make(chan error)
-	w.doneChan = make(chan struct{})
+	return w.StartContext(context.Background())
+}
+
+// StartContext starts the plugin with ctx governing setup and run operations.
+// Call Stop to wait for workers and release resources, including after cancellation.
+func (w *WebhookOutput) StartContext(ctx context.Context) error {
+	return w.StartRun(ctx,
+		plugin.BaseConfig{HasInput: true},
+		w.start,
+		plugin.ShutdownHooks{},
+	)
+}
+
+func (w *WebhookOutput) start(ctx context.Context) error {
 	logger := logging.GetLogger()
 	logger.Info("starting webhook server")
-	w.wg.Add(1)
-	// Pass the channels as arguments so the goroutine never reads the
-	// shared struct fields, which Stop() may mutate concurrently.
-	go func(doneChan <-chan struct{}, eventChan <-chan event.Event, errorChan chan<- error) {
-		defer w.wg.Done()
+	doneChan, eventChan := w.Done(), w.Input()
+	w.Go(func() {
 		for {
 			select {
 			case <-doneChan:
@@ -113,7 +107,6 @@ func (w *WebhookOutput) Start() error {
 				if payload == nil {
 					w.reportError(
 						logger,
-						errorChan,
 						fmt.Errorf(
 							"received event with nil payload (type %q)",
 							evt.Type,
@@ -127,7 +120,6 @@ func (w *WebhookOutput) Start() error {
 					if context == nil {
 						w.reportError(
 							logger,
-							errorChan,
 							fmt.Errorf(
 								"received %q event with nil context",
 								evt.Type,
@@ -138,7 +130,6 @@ func (w *WebhookOutput) Start() error {
 					if _, ok := payload.(event.BlockEvent); !ok {
 						w.reportError(
 							logger,
-							errorChan,
 							unexpectedPayloadErr(evt.Type, payload),
 						)
 						continue
@@ -146,7 +137,6 @@ func (w *WebhookOutput) Start() error {
 					if _, ok := context.(event.BlockContext); !ok {
 						w.reportError(
 							logger,
-							errorChan,
 							unexpectedContextErr(evt.Type, context),
 						)
 						continue
@@ -155,7 +145,6 @@ func (w *WebhookOutput) Start() error {
 					if _, ok := payload.(event.RollbackEvent); !ok {
 						w.reportError(
 							logger,
-							errorChan,
 							unexpectedPayloadErr(evt.Type, payload),
 						)
 						continue
@@ -164,7 +153,6 @@ func (w *WebhookOutput) Start() error {
 					if _, ok := payload.(event.TransactionEvent); !ok {
 						w.reportError(
 							logger,
-							errorChan,
 							unexpectedPayloadErr(evt.Type, payload),
 						)
 						continue
@@ -172,7 +160,6 @@ func (w *WebhookOutput) Start() error {
 					if _, ok := context.(event.TransactionContext); !ok {
 						w.reportError(
 							logger,
-							errorChan,
 							unexpectedContextErr(evt.Type, context),
 						)
 						continue
@@ -181,7 +168,6 @@ func (w *WebhookOutput) Start() error {
 					if _, ok := payload.(event.GovernanceEvent); !ok {
 						w.reportError(
 							logger,
-							errorChan,
 							unexpectedPayloadErr(evt.Type, payload),
 						)
 						continue
@@ -189,7 +175,6 @@ func (w *WebhookOutput) Start() error {
 					if _, ok := context.(event.GovernanceContext); !ok {
 						w.reportError(
 							logger,
-							errorChan,
 							unexpectedContextErr(evt.Type, context),
 						)
 						continue
@@ -197,27 +182,23 @@ func (w *WebhookOutput) Start() error {
 				default:
 					w.reportError(
 						logger,
-						errorChan,
 						fmt.Errorf("received unknown event type %q", evt.Type),
 					)
 					continue
 				}
 				// Send webhook with retry logic and exponential backoff
-				w.sendWebhookWithRetry(doneChan, errorChan, &evt)
+				w.sendWebhookWithRetry(ctx, doneChan, &evt)
 			}
 		}
-	}(w.doneChan, w.eventChan, w.errorChan)
+	})
 	return nil
 }
 
 // reportError surfaces an error on the plugin error channel without
-// blocking. If no consumer is ready, the error is logged instead. This
-// mirrors the non-blocking delivery used by sendWebhookWithRetry.
-func (w *WebhookOutput) reportError(logger plugin.Logger, errorChan chan<- error, err error) {
+// blocking. If no consumer is ready, the error is logged instead.
+func (w *WebhookOutput) reportError(logger plugin.Logger, err error) {
 	logger.Error(err.Error())
-	select {
-	case errorChan <- err:
-	default:
+	if !w.TrySendError(err) {
 		logger.Warn("could not send error to error channel (full)")
 	}
 }
@@ -423,13 +404,17 @@ func sanitizeURL(rawURL string) string {
 
 // log returns the plugin logger, or the global logger if unset.
 func (w *WebhookOutput) log() plugin.Logger {
-	if w.logger != nil {
-		return w.logger
+	if logger := w.Logger(); logger != nil {
+		return logger
 	}
 	return logging.GetLoggerForComponent("output.webhook")
 }
 
 func (w *WebhookOutput) SendWebhook(e *event.Event) error {
+	return w.sendWebhook(context.Background(), e)
+}
+
+func (w *WebhookOutput) sendWebhook(ctx context.Context, e *event.Event) error {
 	logger := w.log()
 	logger.Info("sending event", "type", e.Type, "url", sanitizeURL(w.url))
 	data, err := formatWebhook(e, w.format)
@@ -437,7 +422,7 @@ func (w *WebhookOutput) SendWebhook(e *event.Event) error {
 		return err
 	}
 	// Setup request
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(
 		ctx,
@@ -522,12 +507,22 @@ func (w *WebhookOutput) SendWebhook(e *event.Event) error {
 }
 
 // sendWebhookWithRetry wraps SendWebhook with retry logic and exponential backoff
-func (w *WebhookOutput) sendWebhookWithRetry(doneChan <-chan struct{}, errorChan chan<- error, e *event.Event) {
+func (w *WebhookOutput) sendWebhookWithRetry(
+	ctx context.Context,
+	doneChan <-chan struct{},
+	e *event.Event,
+) {
 	logger := w.log()
 	var lastErr error
 	backoff := w.initialBackoff
 
-	logger.Debug("starting webhook delivery with retry", "url", sanitizeURL(w.url), "max_retries", w.maxRetries)
+	logger.Debug(
+		"starting webhook delivery with retry",
+		"url",
+		sanitizeURL(w.url),
+		"max_retries",
+		w.maxRetries,
+	)
 
 	for attempt := 0; attempt <= w.maxRetries; attempt++ {
 		if attempt > 0 {
@@ -554,13 +549,13 @@ func (w *WebhookOutput) sendWebhookWithRetry(doneChan <-chan struct{}, errorChan
 			}
 
 			// Calculate next backoff with exponential increase
-			backoff = time.Duration(float64(backoff) * w.backoffFactor)
-			if backoff > w.maxBackoff {
-				backoff = w.maxBackoff
-			}
+			backoff = min(
+				time.Duration(float64(backoff)*w.backoffFactor),
+				w.maxBackoff,
+			)
 		}
 
-		err := w.SendWebhook(e)
+		err := w.sendWebhook(ctx, e)
 		if err == nil {
 			if attempt > 0 {
 				logger.Info(
@@ -592,59 +587,19 @@ func (w *WebhookOutput) sendWebhookWithRetry(doneChan <-chan struct{}, errorChan
 	)
 
 	// Send error to error channel for monitoring (non-blocking)
-	select {
-	case errorChan <- fmt.Errorf(
+	if !w.TrySendError(fmt.Errorf(
 		"webhook delivery to %s failed after %d retries: %w",
 		sanitizeURL(w.url),
 		w.maxRetries,
 		lastErr,
-	):
-	default:
-		// Error channel is full, just log
+	)) {
 		logger.Warn("could not send error to error channel (full)")
 	}
 }
 
 // Stop the webhook output
 func (w *WebhookOutput) Stop() error {
-	w.mu.Lock()
-	if w.doneChan != nil {
-		close(w.doneChan)
-		w.doneChan = nil
-	}
-	w.mu.Unlock()
-
-	// Wait for goroutine to exit before closing channels
-	w.wg.Wait()
-
-	w.mu.Lock()
-	if w.eventChan != nil {
-		close(w.eventChan)
-		w.eventChan = nil
-	}
-	if w.errorChan != nil {
-		close(w.errorChan)
-		w.errorChan = nil
-	}
-	w.mu.Unlock()
-	return nil
+	return w.Shutdown(plugin.ShutdownHooks{})
 }
 
-// ErrorChan returns the plugin's error channel
-func (w *WebhookOutput) ErrorChan() <-chan error {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	return w.errorChan
-}
-
-// InputChan returns the input event channel
-func (w *WebhookOutput) InputChan() chan<- event.Event {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	return w.eventChan
-}
-
-// OutputChan always returns nil
-func (w *WebhookOutput) OutputChan() <-chan event.Event {
-	return nil
-}
+var _ plugin.ManagedPlugin = (*WebhookOutput)(nil)

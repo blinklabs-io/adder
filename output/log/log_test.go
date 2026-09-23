@@ -145,9 +145,24 @@ func TestFormatJSONNoSlogWrapper(t *testing.T) {
 	// Should NOT have slog envelope fields
 	var raw map[string]any
 	require.NoError(t, json.Unmarshal([]byte(line), &raw))
-	assert.NotContains(t, raw, "level", "JSON output should not have slog 'level' field")
-	assert.NotContains(t, raw, "msg", "JSON output should not have slog 'msg' field")
-	assert.NotContains(t, raw, "component", "JSON output should not have slog 'component' field")
+	assert.NotContains(
+		t,
+		raw,
+		"level",
+		"JSON output should not have slog 'level' field",
+	)
+	assert.NotContains(
+		t,
+		raw,
+		"msg",
+		"JSON output should not have slog 'msg' field",
+	)
+	assert.NotContains(
+		t,
+		raw,
+		"component",
+		"JSON output should not have slog 'component' field",
+	)
 
 	// Should have event fields
 	assert.Contains(t, raw, "type")
@@ -337,4 +352,52 @@ func TestStopIdempotent(t *testing.T) {
 func TestOutputChanReturnsNil(t *testing.T) {
 	l := New()
 	assert.Nil(t, l.OutputChan())
+}
+
+func TestStartIsIdempotentAndRestartReopensFile(t *testing.T) {
+	tmpFile, err := os.CreateTemp("", "adder-log-reopen-*.log")
+	require.NoError(t, err)
+	tmpPath := tmpFile.Name()
+	require.NoError(t, tmpFile.Close())
+	defer os.Remove(tmpPath)
+
+	l := New(WithFilePath(tmpPath))
+	require.NoError(t, l.Start())
+	first := l.file
+	require.NotNil(t, first)
+
+	require.NoError(t, l.Start())
+	defer func() { require.NoError(t, l.Stop()) }()
+
+	assert.Same(t, first, l.file, "repeated Start must preserve the handle")
+	require.NoError(t, l.Stop())
+	require.NoError(t, l.Start())
+	assert.NotSame(t, first, l.file, "restart must open a fresh handle")
+	assert.ErrorIs(t, first.Close(), os.ErrClosed,
+		"the previous run's descriptor should already be closed")
+}
+
+func TestStopDrainsBufferedEvents(t *testing.T) {
+	tmpFile, err := os.CreateTemp("", "adder-log-drain-*.log")
+	require.NoError(t, err)
+	tmpPath := tmpFile.Name()
+	require.NoError(t, tmpFile.Close())
+	defer os.Remove(tmpPath)
+
+	l := New(WithFilePath(tmpPath), WithFormat(FormatJSON))
+	require.NoError(t, l.Start())
+	for i := range 5 {
+		l.InputChan() <- event.Event{
+			Type:      "chainsync.block",
+			Timestamp: time.Now(),
+			Payload:   event.BlockEvent{BlockBodySize: uint64(i)},
+		}
+	}
+	require.NoError(t, l.Stop())
+
+	data, err := os.ReadFile(tmpPath)
+	require.NoError(t, err)
+	lines := strings.Count(strings.TrimSpace(string(data)), "\n") + 1
+	assert.Equal(t, 5, lines,
+		"every buffered event must be written before Stop returns")
 }

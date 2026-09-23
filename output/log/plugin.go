@@ -15,14 +15,11 @@
 package log
 
 import (
+	"errors"
+
 	"github.com/blinklabs-io/adder/internal/logging"
 	"github.com/blinklabs-io/adder/plugin"
 )
-
-var cmdlineOptions struct {
-	format string
-	path   string
-}
 
 func init() {
 	plugin.Register(
@@ -30,34 +27,47 @@ func init() {
 			Type:               plugin.PluginTypeOutput,
 			Name:               "log",
 			Description:        "display events to the console or write to a file",
-			NewFromOptionsFunc: NewFromCmdlineOptions,
+			NewFromOptionsFunc: newFromOptions,
 			Options: []plugin.PluginOption{
+				{
+					Name:         "level",
+					Type:         plugin.PluginOptionTypeString,
+					Description:  "logging threshold: debug/info emit events; warn/error suppress events; also filters diagnostics",
+					DefaultValue: "info",
+				},
 				{
 					Name:         "format",
 					Type:         plugin.PluginOptionTypeString,
 					Description:  "specifies the output format: text (human-readable, default) or json (machine-parseable)",
 					DefaultValue: "text",
-					Dest:         &cmdlineOptions.format,
 				},
 				{
 					Name:         "path",
 					Type:         plugin.PluginOptionTypeString,
 					Description:  "specifies the file path to write logs to (default is stdout)",
 					DefaultValue: "",
-					Dest:         &cmdlineOptions.path,
 				},
 			},
 		},
 	)
 }
 
-func NewFromCmdlineOptions() plugin.Plugin {
+func newFromOptions(values plugin.Options) (plugin.ManagedPlugin, error) {
+	level, err := logging.ParseLevel(values.String("level"))
+	if err != nil {
+		return nil, err
+	}
+	if values.String("format") != "text" && values.String("format") != "json" {
+		return nil, errors.New("format must be text or json")
+	}
+
 	p := New(
+		WithLevel(level),
 		WithLogger(
 			logging.GetLogger().With("plugin", "output.log"),
 		),
-		WithFormat(cmdlineOptions.format),
-		WithFilePath(cmdlineOptions.path),
+		WithFormat(values.String("format")),
+		WithFilePath(values.String("path")),
 	)
-	return p
+	return p, nil
 }

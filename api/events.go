@@ -52,12 +52,13 @@ type eventClient struct {
 	done       chan struct{}
 }
 
-// NewEventHub creates a hub with the given ring buffer size.
+// NewEventHub creates a hub with the given ring buffer size (zero uses 100).
+// The caller must supply a size that fits in int and available memory.
 func NewEventHub(ringSize uint) *EventHub {
 	if ringSize == 0 {
 		ringSize = defaultRingSize
 	}
-	size := int(ringSize) //nolint:gosec // uint size constraint enforced by API config
+	size := int(ringSize) //nolint:gosec // size bounds are a caller precondition
 	return &EventHub{
 		clients:  make(map[*eventClient]struct{}),
 		ring:     make([]event.Event, size),
@@ -123,9 +124,7 @@ func (h *EventHub) Close() {
 // called or the channel is closed.
 func (h *EventHub) InputChan() chan<- event.Event {
 	ch := make(chan event.Event, clientSendBuffer)
-	h.wg.Add(1)
-	go func() {
-		defer h.wg.Done()
+	h.wg.Go(func() {
 		for {
 			select {
 			case evt, ok := <-ch:
@@ -137,7 +136,7 @@ func (h *EventHub) InputChan() chan<- event.Event {
 				return
 			}
 		}
-	}()
+	})
 	return ch
 }
 
@@ -182,14 +181,20 @@ var wsUpgrader = websocket.Upgrader{
 }
 
 // HandleEvents is the net/http handler for GET /events. It upgrades to
-// WebSocket if possible, otherwise falls back to SSE.
+// WebSocket when requested; other requests use SSE. A rejected WebSocket
+// handshake does not fall back to SSE.
 //
 //	@Summary		Stream Blockchain Events
-//	@Description	Real-time pipeline event streaming. Automatically upgrades to WebSocket if requested by the client, otherwise falls back to Server-Sent Events (SSE). Supports filtering on event types.
+//	@Description	Streams pipeline events using SSE, or WebSocket when an upgrade is requested and accepted. Rejected WebSocket handshakes do not fall back to SSE. Supports filtering on event types.
 //	@Param			types	query	string	false	"Comma-separated list of event types to filter (e.g., input.block,input.transaction)"
 //	@Param			replay	query	boolean	false	"Whether to replay recent events from the ring buffer on connection"	default(true)
 //	@Produce		text/event-stream,application/json
-//	@Success		200	{string}	string	"Event Stream (SSE) or WebSocket Session"
+//	@Success		200	{string}	string	"Event Stream (SSE)"
+//	@Success		101	"WebSocket protocol switch"
+//	@Failure		400	{string}	string	"Invalid WebSocket handshake"
+//	@Failure		403	{string}	string	"WebSocket origin rejected"
+//	@Failure		405	{string}	string	"Invalid WebSocket method"
+//	@Failure		500	{string}	string	"Streaming or WebSocket upgrade unsupported"
 //	@Router			/events [get]
 func (h *EventHub) HandleEvents(w http.ResponseWriter, r *http.Request) {
 	typeFilter := parseTypeFilter(r.URL.Query().Get("types"))
@@ -215,7 +220,7 @@ func parseTypeFilter(types string) map[string]bool {
 		return nil
 	}
 	filter := make(map[string]bool)
-	for _, t := range strings.Split(types, ",") {
+	for t := range strings.SplitSeq(types, ",") {
 		t = strings.TrimSpace(t)
 		if t != "" {
 			filter[t] = true

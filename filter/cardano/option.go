@@ -27,7 +27,7 @@ type CardanoOptionFunc func(*Cardano)
 // WithLogger specifies the logger object to use for logging messages
 func WithLogger(logger plugin.Logger) CardanoOptionFunc {
 	return func(c *Cardano) {
-		c.logger = logger
+		c.SetLogger(logger)
 	}
 }
 

@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="670" viewBox="0 0 1200 670" role="img" aria-labelledby="title desc">
+  <title id="title">Adder input plugins and event flow</title>
+  <desc id="desc">The CLI selects ChainSync, mempool, or UTxO RPC on one network. Events pass through Cardano and event filters to a selected output and a best-effort API observer. Outputs start before inputs.</desc>
+  <defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#94a3b8"/></marker></defs>
+  <rect width="1200" height="670" rx="16" fill="#0b1220"/>
+  <g font-family="Arial, Helvetica, sans-serif">
+    <text x="36" y="45" font-size="28" fill="#ffffff" font-weight="700">Adder: inputs → filters → outputs</text>
+    <text x="36" y="78" font-size="17" fill="#94a3b8">CLI: one input and one output • one configured network per process</text>
+    <text x="36" y="117" font-size="13" fill="#94a3b8" font-weight="700">INPUT ALTERNATIVES</text>
+    <rect x="36" y="135" width="320" height="113" rx="12" fill="#142337" stroke="#34d399" stroke-width="1.5"/>
+    <text x="56" y="164" font-size="20" fill="#34d399" font-weight="700">chainsync</text>
+    <text x="56" y="192" font-size="15" fill="#dbe5f3">Cardano node · NtC / NtN</text>
+    <text x="56" y="215" font-size="15" fill="#dbe5f3">Blocks, transactions, rollback, governance</text>
+    <rect x="36" y="280" width="320" height="113" rx="12" fill="#142337" stroke="#34d399" stroke-width="1.5"/>
+    <text x="56" y="309" font-size="20" fill="#34d399" font-weight="700">mempool</text>
+    <text x="56" y="337" font-size="15" fill="#dbe5f3">Cardano node · LocalTxMonitor</text>
+    <text x="56" y="360" font-size="15" fill="#dbe5f3">Transactions from mempool snapshots</text>
+    <rect x="36" y="425" width="320" height="113" rx="12" fill="#142337" stroke="#34d399" stroke-width="1.5"/>
+    <text x="56" y="454" font-size="20" fill="#34d399" font-weight="700">utxorpc</text>
+    <text x="56" y="482" font-size="15" fill="#dbe5f3">FollowTip or WatchTx stream</text>
+    <text x="56" y="505" font-size="15" fill="#dbe5f3">Mode determines available event types</text>
+    <path d="M 356 191 H 396 V 304 H 438" fill="none" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrow)"/>
+    <path d="M 356 336 H 396 V 304 H 438" fill="none" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrow)"/>
+    <path d="M 356 481 H 396 V 304 H 438" fill="none" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrow)"/>
+    <text x="449" y="207" font-size="13" fill="#94a3b8" font-weight="700">PIPELINE</text>
+    <rect x="440" y="240" width="290" height="113" rx="12" fill="#142337" stroke="#34d399" stroke-width="1.5"/>
+    <text x="460" y="269" font-size="20" fill="#34d399" font-weight="700">Ordered filters</text>
+    <text x="460" y="297" font-size="15" fill="#dbe5f3">CLI: cardano → event</text>
+    <text x="460" y="320" font-size="15" fill="#dbe5f3">Each filter feeds the next</text>
+    <path d="M 585 353 V 390" fill="none" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrow)"/>
+    <rect x="440" y="394" width="290" height="100" rx="12" fill="#142337" stroke="#34d399" stroke-width="1.5"/>
+    <text x="460" y="423" font-size="20" fill="#34d399" font-weight="700">Terminal loop</text>
+    <text x="460" y="451" font-size="15" fill="#dbe5f3">Outputs first, then observer</text>
+    <path d="M 730 444 H 780 V 218 H 823" fill="none" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrow)"/>
+    <path d="M 730 444 H 780 V 440 H 823" fill="none" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrow)" stroke-dasharray="6 5"/>
+    <rect x="825" y="150" width="338" height="137" rx="12" fill="#142337" stroke="#34d399" stroke-width="1.5"/>
+    <text x="845" y="179" font-size="20" fill="#34d399" font-weight="700">Selected output</text>
+    <text x="845" y="207" font-size="15" fill="#dbe5f3">log (default), webhook, telegram,</text>
+    <text x="845" y="230" font-size="15" fill="#dbe5f3">push, notify, notify-json</text>
+    <text x="845" y="253" font-size="15" fill="#dbe5f3">Blocking delivery; no durable queue</text>
+    <rect x="825" y="365" width="338" height="113" rx="12" fill="#142337" stroke="#60a5fa" stroke-width="1.5"/>
+    <text x="845" y="394" font-size="20" fill="#60a5fa" font-weight="700">API observer</text>
+    <text x="845" y="422" font-size="15" fill="#dbe5f3">WebSocket / SSE clients</text>
+    <text x="845" y="445" font-size="15" fill="#dbe5f3">Bounded buffers; best-effort delivery</text>
+    <text x="835" y="515" font-size="14" fill="#94a3b8">Log level does not suppress API events.</text>
+    <text x="36" y="580" font-size="16" fill="#94a3b8">Kupo optionally resolves inputs for chainsync and mempool.</text>
+    <text x="36" y="612" font-size="16" fill="#94a3b8">Go API: multiple inputs/outputs, optional filters and observer; no consumers means discard.</text>
+    <text x="36" y="642" font-size="16" fill="#34d399">Startup: outputs → filters in reverse order → inputs. Event flow follows the arrows above.</text>
+  </g>
+</svg>

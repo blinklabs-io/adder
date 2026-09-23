@@ -8,228 +8,214 @@ This document describes the high-level architecture, plugin system, configuratio
 
 Adder is built around a concurrent **Pipeline-Plugin** architecture. Data flows from **Inputs**, through a sequence of **Filters** (each running in its own goroutine), into **Outputs**. Every stage is connected by Go channels, and every plugin runs concurrently with its neighbors.
 
-```text
-+--------------------+
-|    Input Plugin    |   OutputChan()
-| chainsync/mempool/ | -------------.
-|      utxorpc       |              |
-+--------------------+              |  chanCopyLoop
-         |                          v
-         | ErrorChan()      +---------------+
-         |                  | p.filterChan  |
-         |                  +---------------+
-         |                          |  chanCopyLoop
-         |                          v
-         |                  +---------------+
-         |                  | Filter chain  |   each filter runs its own
-         |                  |   cardano ->  |   goroutine; chanCopyLoop
-         |                  |     event     |   bridges filter[i] -> [i+1]
-         |                  +---------------+
-         |                          |  chanCopyLoop
-         |                          v
-         |                  +---------------+
-         |                  | p.outputChan  |
-         |                  +---------------+
-         |                          |  outputChanLoop
-         |                          v
-         |                  +---------------+
-         |                  | Output Plugin |
-         |                  |  log/webhook/ |
-         |                  | telegram/push |
-         |                  |    /notify    |
-         |                  +---------------+
-         |  errorChanWait (one goroutine per plugin)
-         '-----------------> p.errorChan --> logged by main.go
-```
+![Input plugins, ordered filters, output plugins, and API event delivery](diagrams/data-flow.svg)
 
 ### Topology
 
-`Pipeline` stores inputs, filters, and outputs as slices (`pipeline/pipeline.go:31-33`) and `AddInput` / `AddFilter` / `AddOutput` append to them, so the pipeline package itself supports M inputs, N filters, and P outputs.
+`Pipeline` stores inputs, filters, and outputs as slices. `AddInput`,
+`AddFilter`, and `AddOutput` configure the topology before startup. Inputs merge
+into the first filter; each filter feeds the next. Without filters, inputs feed
+the terminal output loop directly. See [pipeline.go](../pipeline/pipeline.go).
 
-The `adder` CLI uses a narrower subset of that capability (`cmd/adder/main.go:190-214`):
-- **Exactly one input**: `plugin.GetPlugin(plugin.PluginTypeInput, cfg.Input)` — the single plugin named by `--input` / `INPUT` (`chainsync`, `mempool`, or `utxorpc`). There is no CLI flag for adding a second input.
-- **Every registered filter (N)**: `main.go` loops over `plugin.GetPlugins(plugin.PluginTypeFilter)` and adds all of them — currently `cardano` and `event` (`filter/filter.go`). They are chained in registration order; each one's output feeds the next.
-- **Exactly one output**: the single plugin named by `--output` / `OUTPUT` (`log`, `webhook`, `telegram`, `push`, or `notify` — see `output/output.go`).
+The `adder` CLI uses a narrower subset of that capability:
 
-Embedding the `pipeline` package directly in your own Go program is what unlocks the multi-input / multi-output form.
+- **Exactly one input**: the plugin named by `--input` / `INPUT` (`chainsync`, `mempool`, or `utxorpc`).
+- **Every registered filter**: `cardano` then `event`, in registration order.
+- **Exactly one output**: the plugin named by `--output` / `OUTPUT` (`log`, `webhook`, `telegram`, `push`, `notify`, or `notify-json`). The default is `log`.
+- **API observer**: a best-effort copy of events after filtering.
+
+Embedding the `pipeline` package directly in your own Go program unlocks the
+multi-input / multi-output form, including pipelines with no output or observer.
+With no consumers the terminal loop drains and discards events. The application
+uses one network per process; input network selection does not replace the
+shared genesis configuration used for epoch calculations.
+
+### Input plugins
+
+| Plugin | Source | Events before filtering |
+| --- | --- | --- |
+| `chainsync` | Cardano node: NtC over a UNIX socket or explicitly enabled TCP; NtN over TCP | Blocks, transactions, rollbacks, governance, and DRep certificates |
+| `mempool` | Cardano node LocalTxMonitor | Transactions from polled snapshots; hashes present in the previous poll are suppressed |
+| `utxorpc`, `follow-tip` mode (default) | UTxO RPC `SyncService.FollowTip` | Apply: block, transaction, governance, DRep events; Undo/Reset: rollback |
+| `utxorpc`, `watch-tx` mode | UTxO RPC `WatchService.WatchTx` | Apply: transaction, governance, DRep events; Undo: rollback |
+
+Governance and certificate events require the corresponding transaction data.
+UTxO RPC payload completeness depends on the provider; its parsed protobuf path
+cannot supply fields absent from the schema. `watch-tx` is a provider stream,
+not the mempool plugin's polling protocol. See the implementations in
+[chainsync](../input/chainsync/chainsync.go), [mempool](../input/mempool/mempool.go),
+and [utxorpc](../input/utxorpc/mapper.go).
 
 ---
 
 ## 2. The Plugin System
 
-All inputs, filters, and outputs implement the unified `Plugin` interface defined in `plugin/plugin.go`:
+All inputs, filters, and outputs implement `ManagedPlugin`, defined in
+[plugin/plugin.go](../plugin/plugin.go):
 
 ```go
-type Plugin interface {
-	Start() error
-	Stop() error
-	ErrorChan() <-chan error
-	InputChan() chan<- event.Event
-	OutputChan() <-chan event.Event
+type Lifecycle interface {
+    StartContext(context.Context) error
+    Stop() error
+    FailureReporter
+}
+
+type FailureReporter interface {
+    Failed() <-chan struct{}
+    Failure() error
+}
+
+type ManagedPlugin interface {
+    Lifecycle
+    Role() PluginType
+    ErrorChan() <-chan error
+    InputChan() chan<- event.Event
+    OutputChan() <-chan event.Event
 }
 ```
 
-### Plugin Lifecycle States
+Built-ins embed [plugin.Base](../plugin/base.go), which owns private channels,
+cancellation, worker tracking, and failure reporting. Plugins expose channels
+through methods; callers must not close them. Base is optional for custom
+implementations. Its mutexes mean an embedding plugin must not be copied.
+Concrete built-ins retain `Start()` as a convenience wrapper around
+`StartContext(context.Background())`.
 
-```text
-+---------------+         Start()         +---------------+
-|  Constructed  | ----------------------> |    Running    |
-|   (Stopped)   | <---------------------- | (Worker Loop) |
-+---------------+          Stop()         +---------------+
-```
-
-`Start()` is where a plugin creates its channels and spawns its worker
-goroutine; `Stop()` signals that goroutine to exit. The pipeline itself is
-restartable — `Pipeline.Start` detects a closed `doneChan` and recreates
-`doneChan`, `filterChan`, `outputChan`, `errorChan`, and `stopOnce`
-(`pipeline/pipeline.go:94-103`). Because the old channels are closed, callers
-must re-obtain the error channel via `ErrorChan()` after a restart.
+`StartRun` creates each run's channels and runs setup. Workers registered through
+`Base.Go` must respect cancellation; cleanup hooks unblock and release their
+resources. Failed setup cleans up before returning. `Stop` cancels the run,
+joins workers, and closes its channels. Call `Stop` even after cancellation or
+terminal failure, and reacquire channels after restart. The pipeline owns the
+lifecycle of connected instances; do not share an instance across pipelines.
+See [Writing a plugin](plugin-authoring.md) for implementation and test examples.
 
 ### Auto-Registration Mechanism
+
 Adder uses Go's package initialization mechanism for auto-registering plugins.
+
 1. Each plugin package registers itself in an `init()` block calling `plugin.Register()`.
-2. The main command-line interfaces import these plugins blankly (e.g., `_ "github.com/blinklabs-io/adder/input/chainsync"`) in central registration files:
-   - `input/input.go`
-   - `filter/filter.go`
-   - `output/output.go`
-3. `plugin.Register` appends the `PluginEntry` to a package-level slice (`plugin/register.go:54-56`). `main.go` later looks an entry up by type and name and calls its `NewFromOptionsFunc` to construct the instance (`plugin/register.go:113-123`).
+2. Central registration files blank-import the implementations: [input/input.go](../input/input.go), [filter/filter.go](../filter/filter.go), and [output/output.go](../output/output.go).
+3. `Register` validates and copies the definition. The CLI resolves options, then constructs independent instances through `NewFromOptionsFunc(plugin.Options) (plugin.ManagedPlugin, error)`.
+
+Factories validate settings without starting workers or contacting remote
+services. Go callers can construct plugins directly or use
+`plugin.GetPlugin(kind, name, values)` with defaults plus explicit values.
+The [embedded output](../output/embedded/embedded.go) is available to Go callers
+but is not a CLI registration.
 
 ---
 
 ## 3. Configuration Precedence
 
-Adder loads configuration in two passes with different precedence in each, driven by `cmd/adder/main.go`.
+Core and plugin settings use **explicit CLI > environment > YAML > defaults**.
+[Config.LoadWithFlags](../internal/config/config.go) loads core settings;
+[ResolveConfig](../plugin/register.go) creates an immutable plugin snapshot.
+Unknown keys, duplicate YAML keys, and invalid scalar values are errors, even
+for unselected plugins. Required credentials and other plugin-specific checks
+apply when constructing the selected plugins.
 
-**Core config** (`Input`, `Output`, `Api`, `Logging`, etc.) is resolved by a single call to `cfg.LoadWithFlags` (`internal/config/config.go:171-211`). Internally it runs in the *opposite* order to the precedence it produces: it first snapshots the flags the user actually set (`fs.Visit`), then applies unprefixed environment variables via `envconfig`, then unmarshals the YAML file over the top, then re-applies the snapshotted CLI flags last. The net precedence is therefore CLI flags, then YAML, then environment variables (e.g. `INPUT`, `OUTPUT`, `API_ADDRESS`, `LOGGING_LEVEL` — see the `envconfig` tags in `internal/config/config.go`), then internal defaults:
+Plugin YAML keys match option names under `plugins.<type>.<name>`, including
+hyphens such as `socket-path`. Generated environment names use
+`<TYPE>_<NAME>_<OPTION>` (for example, `INPUT_CHAINSYNC_ADDRESS`). Custom aliases
+such as `CARDANO_NETWORK` take precedence within the environment tier;
+explicit CLI flags still win. `CustomFlag` replaces the generated flag name
+with `--<type>-<customflag>`, as in `--filter-address`.
 
-```text
-+-----------------------+
-|  Command Line Flags   |  (Highest Precedence)
-+-----------------------+
-           |
-           v
-+-----------------------+
-|  YAML Config File     |  (via config.yaml)
-+-----------------------+
-           |
-           v
-+-----------------------+
-| Environment Variables |  (via envconfig: INPUT, OUTPUT, API_ADDRESS, ...)
-+-----------------------+
-           |
-           v
-+-----------------------+
-|   Internal Defaults   |  (Lowest Precedence)
-+-----------------------+
-```
+Explicit false, zero, and empty strings are preserved. Top-level `kupo_url` is a
+fallback only when an input's YAML omits `kupo-url`. Direct Go constructors use
+`WithKupoUrl`. Configuration reload does not reconfigure a running pipeline.
 
-**Plugin options** (each `PluginOption.Dest`, bound to a CLI flag in `AddToFlagSet`, `plugin/option.go:45-88`) go through the opposite order in `main.go`: `cfg.LoadWithFlags` (:125) applies CLI flags first, then `plugin.ProcessConfig` (:130) applies YAML, then `plugin.ProcessEnvVars` (:135) applies environment variables — each pass unconditionally overwrites the same `Dest` pointer, so the last one run wins:
-
-```text
-CLI Flags  -->  YAML Config  -->  Environment Variables   (each overwrites the previous)
-(lowest)                          (highest, applied last)
-```
-
-So effective precedence is **environment > YAML > CLI > default** for plugin options, the reverse of the core-config case above. Plugin environment variables are named `<TYPE>_<NAME>_<OPTION>` (e.g. `INPUT_CHAINSYNC_ADDRESS`, built from `plugin/register.go:69-83` and `plugin/option.go:90-104`). An option may also declare a `CustomEnvVar`, which is checked *in addition to* the generated name and, being second in the list, wins if both are set (`plugin/option.go:106-109`) — for example `CARDANO_NETWORK` and `CARDANO_NODE_SOCKET_PATH` on the `chainsync` input (`input/chainsync/plugin.go:52,74`). Similarly, `CustomFlag` replaces the generated flag name with `<type>-<customflag>` (`plugin/option.go:51-55`), which is how `--filter-address` gets its short form.
+`--output-log-level`, `OUTPUT_LOG_LEVEL`, and `plugins.output.log.level` set
+one logging threshold (default `info`). Event records are INFO-level;
+`warn`/`error` consume them without writing. Application diagnostics use the
+same threshold on stderr, including with another output plugin. See the
+[log output documentation](../README.md#log-output-plugin) and
+[configuration migration guide](plugin-configuration-migration.md).
 
 ---
 
 ## 4. Concurrency & Goroutine Model
 
-Adder uses Go channels for event and error flow between plugins, and a small set of mutexes (`lifecycleMu`, `runningMu`) plus `sync.Once` (`stopOnce`) in `Pipeline` to coordinate lifecycle transitions (`Start`/`Stop`) safely.
-
 ### Active Goroutines
 
-When Adder is fully running, the following goroutines are active:
+1. **Main**: Configures the pipeline and API, then waits for SIGINT/SIGTERM or terminal pipeline failure.
+2. **Input workers**: Own source connections, protocol callbacks, and reconnection/polling loops.
+3. **Pipeline workers**: `chanCopyLoop` bridges each stage; `outputChanLoop` sends to outputs sequentially, then attempts a nonblocking observer send. A slow output applies backpressure; a full observer channel drops the event. Error and failure watchers supervise each started plugin.
+4. **Filter and output workers**: Consume their input channels. Base defaults to 10 buffered events; plugins may request a larger buffer. Webhook and Telegram implement their own delivery retries.
+5. **API server**: Serves `/events` over WebSocket or SSE. Its bounded EventHub can drop events for slow clients. `/v1/fcm` and `/v1/qrcode` routes are registered only with the push output.
 
-1. **Main Goroutine**: Manages initial configuration, parses CLI arguments, builds/starts the pipeline, and listens for OS signals (`SIGINT`, `SIGTERM`) to trigger graceful shutdown.
-2. **Input Goroutines**: Owned by the active input plugin. For `chainsync`, the protocol goroutines belong to the gouroboros connection created in `setupConnection` (`input/chainsync/chainsync.go:283-291`); Adder supplies `handleRollForward` / `handleRollBackward` callbacks that decode blocks and transactions and push events onto the plugin's own buffered channel (capacity 2048, `chainsync.go:162-167`).
-3. **Pipeline Goroutines**: Spawned by `Pipeline.Start` (`pipeline/pipeline.go`), one per input/filter/output link:
-   - **`chanCopyLoop`**: One goroutine per input->filter, filter->filter, filter->output, or (when there are no filters) input->output hop, bridging events asynchronously between stages.
-   - **`outputChanLoop`**: A single goroutine that reads matched events from the output channel and dispatches each event to every registered output plugin's input channel **sequentially, in a blocking loop** — a slow or blocked output delays delivery to every output after it. After the fan-out it also does a **non-blocking** send to the registered observer channel, dropping the event if the observer is full (`pipeline/pipeline.go:279-289`); that observer is the API's `EventHub`.
-   - **`errorChanWait`**: One goroutine per active plugin, listening on that plugin's error channel and forwarding errors to the pipeline's central error channel. `main.go:250-256` runs a further goroutine that ranges over `pipe.ErrorChan()` and logs errors without exiting.
-4. **Filter Goroutines**: Each filter's `Start()` creates buffered input and output channels (capacity 10) and spawns one worker goroutine that reads an event, applies its match logic, and forwards matches downstream — `filter/cardano/cardano.go:45-54` and `filter/event/event.go:46-58`.
-5. **Output Goroutines**: Each output plugin's `Start()` likewise spawns one worker goroutine reading from a buffered event channel (capacity 10) — `log`, `webhook`, `telegram`, `notify`, and `push` all follow this shape. The `webhook` and `telegram` plugins additionally implement delivery retries with backoff (`output/webhook/webhook.go:524-` `sendWebhookWithRetry`, `output/telegram/telegram.go:562-` `sendMessageWithRetry`); the others do not.
-6. **API Server Goroutine**: `api.Start` binds the listener and then calls `server.Serve` in a background goroutine (`api/api.go:187-193`). `GET /events` is registered on the bare mux with no group prefix (`cmd/adder/main.go:221`) and serves WebSocket when the client requests an upgrade, otherwise SSE (`api/events.go:194-208`). The `/fcm` and `/qrcode` routes exist only when the `push` output is selected, and they sit under the `/v1` base path (`output/push/api_routes.go:23-38`).
+Events and referenced payload/context data are immutable after publication.
+Fan-out copies the event struct, not its maps or slices; transformations must
+copy the data they change. See [event.Event](../event/event.go).
 
-### Graceful Coordination & Shutdown
+### Startup and Shutdown
 
-Graceful shutdown is owned by `Pipeline.Stop()` (`pipeline/pipeline.go:189-234`):
-- **`Pipeline.stopOnce` (`sync.Once`)**: Ensures the shutdown body below runs exactly once, even if `Stop()` is called more than once concurrently.
-- **`Pipeline.doneChan chan bool`**: Closed first, signaling every `chanCopyLoop`, `outputChanLoop`, and `errorChanWait` goroutine to exit.
-- **`Pipeline.wg` (`sync.WaitGroup`)**: `Stop()` waits on it immediately after closing `doneChan`, so all pipeline goroutines have exited before the next step.
-- **Sequential plugin `Stop()` calls**: Only after `wg.Wait()` returns does `Stop()` call `Stop()` on each input, then each filter, then each output, collecting any errors.
-- **Shared channel closure**: Once all plugins have been stopped, `Stop()` closes `p.errorChan`, `p.filterChan`, and `p.outputChan`.
+![Pipeline startup and shutdown order](diagrams/lifecycle.svg)
 
-Note that `sync.Once` for shutdown safety is used by `Pipeline` and by some plugins (`input/mempool`, `input/utxorpc`, `filter/cardano`, `filter/event`), but not by every plugin — `input/chainsync` and the output plugins (`webhook`, `telegram`, `notify`, `push`) instead rely on channel-closed checks (and, in `webhook`'s case, a mutex) around their own shutdown paths.
+[Pipeline.StartContext](../pipeline/pipeline.go) starts outputs first, filters
+in reverse chain order, then inputs. It installs downstream forwarding before
+starting upstream stages. The diagram shows a successful run; if startup fails,
+forwarding is canceled and joined, then successfully started plugins stop in
+reverse order. The plugin whose startup failed cleans up its own partial setup.
 
-```text
-Pipeline.Stop() called
-               |
-               v
-        stopOnce.Do(...)
-               |
-               v
-      Close p.doneChan
-               |
-               v
-   p.wg.Wait() (pipeline goroutines exit:
-   chanCopyLoop, outputChanLoop, errorChanWait)
-               |
-               v
-   Stop() each input, then each filter,
-   then each output (errors collected)
-               |
-               v
-   Close p.errorChan, p.filterChan, p.outputChan
-               |
-               v
-          Safe Shutdown
-```
+`Pipeline.Stop` cancels the shared context, joins forwarding workers, stops
+acquired plugins in reverse startup order, and closes pipeline channels.
+This means inputs stop before filters and outputs. Shutdown can abandon upstream
+buffered events; output draining does not guarantee end-to-end delivery.
+Stop has no universal timeout, so plugin operations must cooperate with
+cancellation. See [stopPlugins](../pipeline/topology.go).
+
+Recoverable errors use `ErrorChan`. `Base.Fail` retains the first terminal error
+and closes `Failed` independently of that channel. Pipeline failure cancels
+forwarding and marks the pipeline unhealthy; the owner must still call `Stop`.
+The CLI stops the pipeline, closes the event hub, then shuts down the API with a
+ten-second deadline. That deadline does not bound the preceding pipeline stop.
+`/healthcheck` reports pipeline running state, not event freshness or delivery.
+
+### ChainSync Connection and Events
+
+![ChainSync connection, event processing, and shutdown](diagrams/chainsync.svg)
+
+[ChainSync.StartContext](../input/chainsync/chainsync.go) dials and handshakes,
+starts the protocol clients, selects the intersection, and calls `Sync`.
+Callbacks can begin before startup returns. NtN headers trigger BlockFetch;
+NtC callbacks already contain full blocks. Rollbacks emit separate events.
+The node lane groups client operations and transport, not individual wire messages.
+
+An initial connection error fails startup. Later disconnections trigger
+cancellation-aware reconnects when enabled, otherwise terminal failure.
+Shutdown closes the connection before and after joining tracked workers, covering
+an in-flight reconnect, then Base closes the ports. Filters and outputs stop
+after the inputs.
 
 ---
 
 ## 5. Adder Tray Application Architecture
 
-The `adder-tray` system tray application (`cmd/adder-tray/` and `tray/`) does **not** run or wrap the core pipeline itself — no code under `tray/` or `cmd/adder-tray/` imports the `pipeline` package. As the doc comment on `ConnectionManager` (`tray/connection.go:25-27`) puts it, "the tray no longer manages adder as a subprocess but connects to it as an API client". `adder` runs as a separate per-user background process and the tray talks to it over a WebSocket to `GET /events` (`tray/events.go:235-236`, gorilla `websocket.DefaultDialer`); the SSE path in `api/events.go` is the server's fallback for clients that do not request an upgrade, not something the tray uses.
+The `adder-tray` system tray application (`cmd/adder-tray/` and `tray/`) does **not** run or wrap the core pipeline itself — no code under `tray/` or `cmd/adder-tray/` imports the `pipeline` package. As the doc comment on `ConnectionManager` (`tray/connection.go`) puts it, "the tray no longer manages adder as a subprocess but connects to it as an API client". `adder` runs as a separate per-user background process and the tray talks to it over a WebSocket to `GET /events` (`tray/events.go`, gorilla `websocket.DefaultDialer`); the SSE path in `api/events.go` is the server's fallback for clients that do not request an upgrade, not something the tray uses.
 
 ### Key Components
 
-- **Fyne GUI Engine**: `cmd/adder-tray/main.go` creates the Fyne app; `tray/app.go:512` type-asserts it to `desktop.App` and drives the tray menu and icon through `SetSystemTrayMenu` / `SetSystemTrayIcon` (`app.go:623`, `:681`, `:744`), swapping the icon as connection status changes.
-- **Setup Wizard (`tray/wizard/`)**: A step-by-step Fyne flow that assists the user in generating configuration. `SetupRunner.Apply` (`tray/setup/runner.go:82-186`) persists the plan as two separate files: the engine's `config.yaml` (read by the `adder` background process) and the tray's own `adder-tray.yaml` (`tray/config.go:28`). The tray file holds API address/port, autostart, notification prefs, the notification filter, and the rate-limit settings — see the `TrayConfig` struct at `tray/setup/store.go:31-49`. The filter deliberately lives in the tray config rather than the engine config so the tray's notification engine owns target matching (`runner.go:101-103`).
+- **Fyne GUI Engine**: `cmd/adder-tray/main.go` creates the Fyne app; `tray/app.go` type-asserts it to `desktop.App` and drives the tray menu and icon through `SetSystemTrayMenu` / `SetSystemTrayIcon` (`app.go`), swapping the icon as connection status changes.
+- **Setup Wizard (`tray/wizard/`)**: A step-by-step Fyne flow that assists the user in generating configuration. `SetupRunner.Apply` (`tray/setup/runner.go`) persists the plan as two separate files: the engine's `config.yaml` (read by the `adder` background process) and the tray's own `adder-tray.yaml` (`tray/config.go`). The tray file holds API address/port, autostart, notification prefs, the notification filter, and the rate-limit settings — see the `TrayConfig` struct at `tray/setup/store.go`. The filter deliberately lives in the tray config rather than the engine config so the tray's notification engine owns target matching (`runner.go`).
 - **Rules Engine & Rule Derivation (`tray/notifications/`)**:
-  - `RulesFromPlan` (`tray/notifications/rules.go:243`) translates a `setup.SetupPlan` into concrete `Rule` values, with per-target helpers such as `walletRules`, `drepRules`, `poolRules`, `assetRules`, and `policyRules`.
-  - The engine rate-limits notifications: matches beyond `NotifyRateLimit` within `NotifyRateWindow` are coalesced into one batched request emitted at the window boundary, and a non-positive limit disables coalescing (`tray/notifications/engine.go:169-185`). Defaults are 1 notification per 5 seconds (`tray/setup/store.go:53-56`).
+  - `RulesFromPlan` (`tray/notifications/rules.go`) translates a `setup.SetupPlan` into concrete `Rule` values, with per-target helpers such as `walletRules`, `drepRules`, `poolRules`, `assetRules`, and `policyRules`.
+  - The engine rate-limits notifications: matches beyond `NotifyRateLimit` within `NotifyRateWindow` are coalesced into one batched request emitted at the window boundary, and a non-positive limit disables coalescing (`tray/notifications/engine.go`). Defaults are 1 notification per 5 seconds (`tray/setup/store.go`); a configured zero loads the default and a negative limit disables rate limiting.
 - **System Service Integration (`tray/setup/`)**:
-  - `SetupRunner.Apply` calls `Service.EnsureRegistered` then `Service.RestartIfConfigChanged` and afterwards points the tray's API connection at the configured address/port (`runner.go:124-152`). Both service failures are *soft*: the config is still persisted and surfaced via `ApplyResult`.
-  - The `ServiceManager` implementation is per-platform: a launchd LaunchAgent plist driven by `launchctl` on macOS (`service_darwin.go`), a systemd **user** unit on Linux (`service_linux.go`), and on Windows an HKCU `...\CurrentVersion\Run` value that autostarts the *tray*, with the tray launching `adder.exe` itself as a detached, windowless child tracked by PID (`service_windows.go:19-38`). Windows deliberately avoids Task Scheduler and Windows Services so nothing requires elevation. FreeBSD is stubbed out and returns "FreeBSD service management is not implemented" (`service_freebsd.go`).
-  - `App.Shutdown()` (`tray/app.go:855-869`) closes the tray's quit channel, disconnects its API connection, stops the notification engine, and quits the Fyne app — it does not stop the `adder` process, which keeps running independently.
+  - `SetupRunner.Apply` calls `Service.EnsureRegistered` then `Service.RestartIfConfigChanged` and afterwards points the tray's API connection at the configured address/port (`runner.go`). Both service failures are *soft*: the config is still persisted and surfaced via `ApplyResult`.
+  - The `ServiceManager` implementation is per-platform: a launchd LaunchAgent plist driven by `launchctl` on macOS (`service_darwin.go`), a systemd **user** unit on Linux (`service_linux.go`), and on Windows an HKCU `...\CurrentVersion\Run` value that autostarts the *tray*, with the tray launching `adder.exe` itself as a detached, windowless child tracked by PID (`service_windows.go`). Windows deliberately avoids Task Scheduler and Windows Services so nothing requires elevation. FreeBSD is stubbed out and returns "FreeBSD service management is not implemented" (`service_freebsd.go`).
+  - `App.Shutdown()` (`tray/app.go`) closes the tray's quit channel, disconnects its API connection, stops the notification engine, and quits the Fyne app — it does not stop the `adder` process, which keeps running independently.
 
 ### Architectural Layout
 
-```text
-+--------------------------------------------------------------------------+
-|                           adder-tray App (GUI)                           |
-|                     Fyne UI / Wizard / Rules Editor                      |
-+--------------------------------------------------------------------------+
-           |                         |                         |
-         writes                  registers                  connects
-           v                         v                         v
-+----------------------+  +----------------------+  +----------------------+
-|     config.yaml      |  |  OS Service Manager  |  |    adder process     |
-|   (engine config)    |  | (launchctl / systemd |  |  (separate per-user  |
-|                      |  |   / HKCU Run key +   |  | process, own binary) |
-|   adder-tray.yaml    |  |   detached child)    |  +----------------------+
-|(tray + notify prefs) |  +----------------------+
-+----------------------+
-```
+![Tray configuration, service management, and WebSocket event delivery](diagrams/tray.svg)
 
 The "OS Service Manager" box registers and restarts `adder` through the
 platform backend behind `ServiceManager` (`SetupRunner.Apply`,
-`tray/setup/runner.go:124-148`). On macOS and Linux the OS supervises the
+`tray/setup/runner.go`). On macOS and Linux the OS supervises the
 process and the tray never holds a handle to it; on Windows there is no
 service supervisor, so the tray starts `adder.exe` as a detached child and
-tracks it by PID (`tray/setup/service_windows.go:19-38`). Either way the
+tracks it by PID (`tray/setup/service_windows.go`). Either way the
 pipeline runs in the `adder` process, not in the tray. `adder` reads only
 `config.yaml` and runs its own `Input -> Filter -> Output` pipeline and API
 server. The tray's rule derivation (`tray/notifications/rules.go`) turns a

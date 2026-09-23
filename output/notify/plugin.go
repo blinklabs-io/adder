@@ -19,36 +19,31 @@ import (
 	"github.com/blinklabs-io/adder/plugin"
 )
 
-var cmdlineOptions struct {
-	title string
-}
-
 func init() {
 	plugin.Register(
 		plugin.PluginEntry{
 			Type:               plugin.PluginTypeOutput,
 			Name:               "notify",
 			Description:        "display events using operating system notifications",
-			NewFromOptionsFunc: NewFromCmdlineOptions,
+			NewFromOptionsFunc: newFromOptions,
 			Options: []plugin.PluginOption{
 				{
 					Name:         "title",
 					Type:         plugin.PluginOptionTypeString,
 					Description:  "specifies the title to use",
 					DefaultValue: "Adder",
-					Dest:         &cmdlineOptions.title,
 				},
 			},
 		},
 	)
 }
 
-func NewFromCmdlineOptions() plugin.Plugin {
+func newFromOptions(values plugin.Options) (plugin.ManagedPlugin, error) {
 	p := New(
 		WithLogger(
 			logging.GetLogger().With("plugin", "output.notify"),
 		),
-		WithTitle(cmdlineOptions.title),
+		WithTitle(values.String("title")),
 	)
-	return p
+	return p, nil
 }

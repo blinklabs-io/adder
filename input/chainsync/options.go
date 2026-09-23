@@ -24,7 +24,7 @@ type ChainSyncOptionFunc func(*ChainSync)
 // WithLogger specifies the logger object to use for logging messages
 func WithLogger(logger plugin.Logger) ChainSyncOptionFunc {
 	return func(c *ChainSync) {
-		c.logger = logger
+		c.SetLogger(logger)
 	}
 }
 
@@ -122,4 +122,11 @@ func WithReconnectCallback(callback func()) ChainSyncOptionFunc {
 	return func(c *ChainSync) {
 		c.reconnectCallback = callback
 	}
+}
+
+// WithKupoUrl specifies the optional Kupo endpoint for resolving transaction inputs.
+func WithKupoUrl(
+	url string,
+) ChainSyncOptionFunc {
+	return func(c *ChainSync) { c.kupoUrl = url }
 }

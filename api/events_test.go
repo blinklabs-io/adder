@@ -77,7 +77,7 @@ func TestEventHub_RingBufferReplay(t *testing.T) {
 	defer hub.Close()
 
 	// Broadcast some events before any client connects
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		hub.Broadcast(event.Event{
 			Type:      event.TypeBlock,
 			Timestamp: time.Now(),
@@ -97,7 +97,7 @@ func TestEventHub_RingBufferReplay(t *testing.T) {
 
 	// Read the 3 replayed events
 	var received []event.Event
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		conn.SetReadDeadline(time.Now().Add(2 * time.Second))
 		_, msg, readErr := conn.ReadMessage()
 		require.NoError(t, readErr)
@@ -279,8 +279,7 @@ func TestEventHub_SSEFallback(t *testing.T) {
 	found := false
 	for scanner.Scan() {
 		line := scanner.Text()
-		if strings.HasPrefix(line, "data: ") {
-			jsonData := strings.TrimPrefix(line, "data: ")
+		if jsonData, ok := strings.CutPrefix(line, "data: "); ok {
 			var evt event.Event
 			err = json.Unmarshal([]byte(jsonData), &evt)
 			require.NoError(t, err)
@@ -289,6 +288,7 @@ func TestEventHub_SSEFallback(t *testing.T) {
 			break
 		}
 	}
+	require.NoError(t, scanner.Err())
 	assert.True(t, found, "should have received an SSE data line")
 }
 
@@ -307,17 +307,15 @@ func TestEventHub_NonBlockingBroadcast(t *testing.T) {
 	// Broadcast many events rapidly -- should not block even if client
 	// is slow
 	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		for i := 0; i < 200; i++ {
+	wg.Go(func() {
+		for i := range 200 {
 			hub.Broadcast(event.Event{
 				Type:      event.TypeBlock,
 				Timestamp: time.Now(),
 				Payload:   i,
 			})
 		}
-	}()
+	})
 
 	// The broadcast goroutine should complete quickly without blocking
 	done := make(chan struct{})
@@ -368,7 +366,7 @@ func TestEventHub_RingBufferWraparound(t *testing.T) {
 	defer hub.Close()
 
 	// Broadcast 5 events -- ring wraps around
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		hub.Broadcast(event.Event{
 			Type:      event.TypeBlock,
 			Timestamp: time.Now(),
@@ -387,7 +385,7 @@ func TestEventHub_RingBufferWraparound(t *testing.T) {
 	defer conn.Close()
 
 	var received []event.Event
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		conn.SetReadDeadline(time.Now().Add(2 * time.Second))
 		_, msg, readErr := conn.ReadMessage()
 		require.NoError(t, readErr)

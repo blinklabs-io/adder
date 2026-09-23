@@ -5,9 +5,6 @@ api:
   address: 0.0.0.0
   port: 8080
 
-logging:
-  level: debug
-
 input: chainsync
 output: log
 
@@ -33,5 +30,7 @@ plugins:
       delay-confirmations: 0
 
   output:
+    # Pipeline event output and the shared diagnostic severity
     log:
-      level: info
+      level: debug # Emit events and enable debug diagnostics
+      format: text

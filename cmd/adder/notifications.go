@@ -22,6 +22,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/blinklabs-io/adder/plugin"
 	"github.com/blinklabs-io/adder/tray/setup"
 	"github.com/spf13/cobra"
 )
@@ -50,7 +51,7 @@ func normalizeHostPort(address string) (string, error) {
 }
 
 func validateNotificationInput(
-	cmd *cobra.Command,
+	resolved *plugin.Configuration,
 	inputName string,
 	outputName string,
 ) error {
@@ -60,10 +61,11 @@ func validateNotificationInput(
 	if inputName != "chainsync" {
 		return fmt.Errorf("notify-json requires chainsync input, got %q", inputName)
 	}
-	configPath, err := cmd.Flags().GetString("output-notify-json-config")
+	outputOptions, err := resolved.Options(plugin.PluginTypeOutput, outputName)
 	if err != nil {
 		return err
 	}
+	configPath := outputOptions.String("config")
 	if configPath == "" {
 		return errors.New("notify-json config path must not be empty")
 	}
@@ -71,10 +73,11 @@ func validateNotificationInput(
 	if err != nil {
 		return err
 	}
-	inputNetwork, err := cmd.Flags().GetString("input-chainsync-network")
+	inputOptions, err := resolved.Options(plugin.PluginTypeInput, inputName)
 	if err != nil {
 		return err
 	}
+	inputNetwork := inputOptions.String("network")
 	if inputNetwork != cfg.Network.Name {
 		return fmt.Errorf(
 			"notification network %q does not match chainsync network %q",
@@ -85,10 +88,7 @@ func validateNotificationInput(
 	if cfg.Network.CustomAddress == "" {
 		return nil
 	}
-	inputAddress, err := cmd.Flags().GetString("input-chainsync-address")
-	if err != nil {
-		return err
-	}
+	inputAddress := inputOptions.String("address")
 	expectedAddress := net.JoinHostPort(
 		cfg.Network.CustomAddress,
 		strconv.FormatUint(uint64(cfg.Network.CustomPort), 10),
@@ -132,8 +132,7 @@ func newNotificationsCmd() *cobra.Command {
 				Valid:         err == nil,
 			}
 			if err != nil {
-				var validationErr setup.ValidationIssuesError
-				if errors.As(err, &validationErr) {
+				if validationErr, ok := errors.AsType[setup.ValidationIssuesError](err); ok {
 					result.Errors = validationErr.Issues
 				} else {
 					result.Errors = []setup.ValidationIssue{{

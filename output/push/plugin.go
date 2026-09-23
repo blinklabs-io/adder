@@ -19,52 +19,38 @@ import (
 	"github.com/blinklabs-io/adder/plugin"
 )
 
-var cmdlineOptions struct {
-	serviceAccountFilePath string
-	accessTokenUrl         string
-}
-
 func init() {
 	plugin.Register(
 		plugin.PluginEntry{
 			Type:               plugin.PluginTypeOutput,
 			Name:               "push",
 			Description:        "Send push notifications for events",
-			NewFromOptionsFunc: NewFromCmdlineOptions,
+			NewFromOptionsFunc: newFromOptions,
 			Options: []plugin.PluginOption{ // Define any options if needed
 				{
 					Name:         "serviceAccountFilePath",
 					Type:         plugin.PluginOptionTypeString,
 					Description:  "specifies the path to the service account file",
 					DefaultValue: "",
-					Dest:         &cmdlineOptions.serviceAccountFilePath,
 				},
 				{
 					Name:         "accessTokenUrl",
 					Type:         plugin.PluginOptionTypeString,
 					Description:  "specifies the url to get access token from",
 					DefaultValue: "https://www.googleapis.com/auth/firebase.messaging",
-					Dest:         &cmdlineOptions.accessTokenUrl,
 				},
 			},
 		},
 	)
 }
 
-func NewFromCmdlineOptions() plugin.Plugin {
+func newFromOptions(values plugin.Options) (plugin.ManagedPlugin, error) {
 	p, err := New(
 		WithLogger(
 			logging.GetLogger().With("plugin", "output.push"),
 		),
-		WithAccessTokenUrl(cmdlineOptions.accessTokenUrl),
-		WithServiceAccountFilePath(cmdlineOptions.serviceAccountFilePath),
+		WithAccessTokenUrl(values.String("accessTokenUrl")),
+		WithServiceAccountFilePath(values.String("serviceAccountFilePath")),
 	)
-	if err != nil {
-		logging.GetLogger().Error(
-			"failed to create push output plugin",
-			"error", err,
-		)
-		return nil
-	}
-	return p
+	return p, err
 }

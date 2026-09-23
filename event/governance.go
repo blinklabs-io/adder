@@ -17,6 +17,7 @@ package event
 import (
 	"encoding/hex"
 	"math"
+	"slices"
 
 	"github.com/blinklabs-io/gouroboros/cbor"
 	"github.com/blinklabs-io/gouroboros/ledger"
@@ -116,7 +117,7 @@ type UpdateCommitteeActionData struct {
 // CommitteeMember represents a committee member with their term epoch
 type CommitteeMember struct {
 	Credential string `json:"credential"`
-	Epoch      uint   `json:"epoch"`
+	Epoch      uint64 `json:"epoch"`
 }
 
 // NewConstitutionActionData represents a New Constitution governance action
@@ -221,7 +222,7 @@ type ProposalProcedureData struct {
 	RewardAccount string        `json:"rewardAccount"`
 	ActionType    string        `json:"actionType"`
 	ActionData    GovActionData `json:"actionData"`
-	Anchor        AnchorData    `json:"anchor,omitempty"`
+	Anchor        AnchorData    `json:"anchor"`
 }
 
 // VotingProcedureData represents a vote cast
@@ -232,7 +233,7 @@ type VotingProcedureData struct {
 	GovActionTxId  string     `json:"govActionTxId"`
 	GovActionIndex uint32     `json:"govActionIndex"`
 	Vote           string     `json:"vote"`
-	Anchor         AnchorData `json:"anchor,omitempty"`
+	Anchor         AnchorData `json:"anchor"`
 }
 
 // DRepCertificateData represents DRep registration/update/retirement
@@ -241,7 +242,7 @@ type DRepCertificateData struct {
 	DRepHash        string     `json:"drepHash"`
 	DRepId          string     `json:"drepId"`
 	Deposit         int64      `json:"deposit,omitempty"`
-	Anchor          AnchorData `json:"anchor,omitempty"`
+	Anchor          AnchorData `json:"anchor"`
 }
 
 // VoteDelegationCertificateData represents vote delegation
@@ -260,7 +261,7 @@ type CommitteeCertificateData struct {
 	CertificateType string     `json:"certificateType"`
 	ColdCredential  string     `json:"coldCredential"`
 	HotCredential   string     `json:"hotCredential,omitempty"`
-	Anchor          AnchorData `json:"anchor,omitempty"`
+	Anchor          AnchorData `json:"anchor"`
 }
 
 // AnchorData represents a governance anchor (URL + hash)
@@ -319,12 +320,7 @@ func HasGovernanceData(tx ledger.Transaction) bool {
 	if len(tx.ProposalProcedures()) > 0 {
 		return true
 	}
-	for _, cert := range tx.Certificates() {
-		if isGovernanceCertificate(cert) {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(tx.Certificates(), isGovernanceCertificate)
 }
 
 func isGovernanceCertificate(cert ledger.Certificate) bool {

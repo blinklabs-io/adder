@@ -16,6 +16,7 @@ package push
 
 import (
 	"encoding/json"
+	"maps"
 	"net/http"
 	"os"
 	"sync"
@@ -40,7 +41,7 @@ type TokenRequest struct {
 	FCMToken string `json:"fcmToken" validate:"required"`
 }
 
-// Token represents an FCM token object.
+// TokenResponse represents an FCM token object.
 //
 //	@Produce	json
 //	@Success	200	{object}	TokenResponse
@@ -162,12 +163,13 @@ func (s *TokenStore) saveTokens() {
 }
 
 // @Summary		Store FCM Token
-// @Description	Store a new FCM token
+// @Description	Store a token in memory; configured persistence is best-effort. Available with the push output.
 // @Accept			json
 // @Produce		json
 // @Param			body	body		TokenRequest	true	"FCM Token Request"
-// @Success		201		{string}	string			"Created"
+// @Success		201		"Created (empty body)"
 // @Failure		400		{object}	ErrorResponse
+// @Failure		500		{object}	ErrorResponse
 // @Router			/v1/fcm [post]
 func storeFCMToken(w http.ResponseWriter, r *http.Request) {
 	var req TokenRequest
@@ -207,12 +209,13 @@ func storeFCMToken(w http.ResponseWriter, r *http.Request) {
 }
 
 // @Summary		Get FCM Token
-// @Description	Get an FCM token by its value
+// @Description	Get an FCM token by its value. Available with the push output.
 // @Accept			json
 // @Produce		json
 // @Param			token	path		string	true	"FCM Token"
 // @Success		200		{object}	TokenResponse
-// @Failure		404		{object}	ErrorResponse
+// @Failure		404		"Not Found (empty body)"
+// @Failure		500		{object}	ErrorResponse
 // @Router			/v1/fcm/{token} [get]
 func readFCMToken(w http.ResponseWriter, r *http.Request) {
 	token := r.PathValue("token")
@@ -236,12 +239,13 @@ func readFCMToken(w http.ResponseWriter, r *http.Request) {
 }
 
 // @Summary		Delete FCM Token
-// @Description	Delete an FCM token by its value
+// @Description	Delete an FCM token by its value. Available with the push output.
 // @Accept			json
 // @Produce		json
 // @Param			token	path		string	true	"FCM Token"
-// @Success		204		{string}	string	"No Content"
-// @Failure		404		{object}	ErrorResponse
+// @Success		204		"No Content"
+// @Failure		404		"Not Found (empty body)"
+// @Failure		500		{object}	ErrorResponse
 // @Router			/v1/fcm/{token} [delete]
 func deleteFCMToken(w http.ResponseWriter, r *http.Request) {
 	token := r.PathValue("token")
@@ -278,8 +282,6 @@ func GetFcmTokens() map[string]string {
 	defer store.mu.RUnlock()
 	// Return a copy to avoid race conditions
 	tokens := make(map[string]string, len(store.FCMTokens))
-	for k, v := range store.FCMTokens {
-		tokens[k] = v
-	}
+	maps.Copy(tokens, store.FCMTokens)
 	return tokens
 }

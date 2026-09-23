@@ -1,3 +1,5 @@
+# Legacy FCM-only generator input for the checked-in client.
+# Current server routes/responses: ../../docs/swagger.yaml.
 openapi: 3.0.1
 info:
   contact:

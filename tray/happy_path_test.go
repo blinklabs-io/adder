@@ -53,7 +53,7 @@ func TestHappyPath_WizardFinish(t *testing.T) {
 			Port:    9090, // Use different port to avoid conflict
 		},
 		Output: setup.OutputConfig{
-			Type:   "none",
+			Type:   "log",
 			Config: make(map[string]string),
 		},
 		Notify: setup.NotificationPrefs{
@@ -74,7 +74,7 @@ func TestHappyPath_WizardFinish(t *testing.T) {
 	engineCfgPath := filepath.Join(tmpDir, "config.yaml")
 	trayCfgPath := ConfigPath()
 	success := false
-	for i := 0; i < 20; i++ {
+	for range 20 {
 		if _, err := os.Stat(engineCfgPath); err == nil {
 			if _, err := os.Stat(trayCfgPath); err == nil {
 				success = true

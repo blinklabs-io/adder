@@ -15,21 +15,14 @@
 package event
 
 import (
+	"context"
 	"slices"
-	"sync"
 
-	"github.com/blinklabs-io/adder/event"
 	"github.com/blinklabs-io/adder/plugin"
 )
 
 type Event struct {
-	errorChan   chan error
-	inputChan   chan event.Event
-	outputChan  chan event.Event
-	doneChan    chan struct{}
-	wg          sync.WaitGroup
-	stopOnce    sync.Once
-	logger      plugin.Logger
+	plugin.Base
 	filterTypes []string
 }
 
@@ -42,81 +35,54 @@ func New(options ...EventOptionFunc) *Event {
 	return e
 }
 
+// Role identifies this plugin as a pipeline filter.
+func (e *Event) Role() plugin.PluginType { return plugin.PluginTypeFilter }
+
 // Start the event filter
 func (e *Event) Start() error {
-	// Guard against double-start: wait for existing goroutine to exit
-	if e.doneChan != nil {
-		close(e.doneChan)
-		e.wg.Wait()
-	}
-	e.errorChan = make(chan error)
-	e.inputChan = make(chan event.Event, 10)
-	e.outputChan = make(chan event.Event, 10)
-	e.doneChan = make(chan struct{})
-	e.stopOnce = sync.Once{}
-	e.wg.Add(1)
-	go func(doneChan <-chan struct{}, inputChan <-chan event.Event, outputChan chan<- event.Event) {
-		defer e.wg.Done()
+	return e.StartContext(context.Background())
+}
+
+// StartContext starts the plugin with ctx governing setup and run operations.
+// Call Stop to wait for workers and release resources, including after cancellation.
+func (e *Event) StartContext(ctx context.Context) error {
+	return e.StartRun(ctx,
+		plugin.BaseConfig{HasInput: true, HasOutput: true},
+		e.start,
+		plugin.ShutdownHooks{},
+	)
+}
+
+func (e *Event) start(ctx context.Context) error {
+	done, in := e.Done(), e.Input()
+	e.Go(func() {
 		for {
 			select {
-			case <-doneChan:
+			case <-done:
 				return
-			case evt, ok := <-inputChan:
-				// Channel has been closed, which means we're shutting down
+			case evt, ok := <-in:
+				// Channel closed: we're shutting down
 				if !ok {
 					return
 				}
-				// Drop events if we have a type filter configured and the event doesn't match
-				if len(e.filterTypes) > 0 {
-					matched := slices.Contains(e.filterTypes, evt.Type)
-					if !matched {
-						continue
-					}
+				// Drop events if we have a type filter configured and
+				// the event doesn't match
+				if len(e.filterTypes) > 0 &&
+					!slices.Contains(e.filterTypes, evt.Type) {
+					continue
 				}
-				// Send event along, but check for shutdown
-				select {
-				case <-doneChan:
+				if !e.Emit(evt) {
 					return
-				case outputChan <- evt:
 				}
 			}
-		}
-	}(e.doneChan, e.inputChan, e.outputChan)
-	return nil
-}
-
-// Stop the event filter
-func (e *Event) Stop() error {
-	e.stopOnce.Do(func() {
-		if e.doneChan != nil {
-			close(e.doneChan)
-		}
-		// Wait for goroutine to exit before closing channels
-		e.wg.Wait()
-		if e.inputChan != nil {
-			close(e.inputChan)
-		}
-		if e.outputChan != nil {
-			close(e.outputChan)
-		}
-		if e.errorChan != nil {
-			close(e.errorChan)
 		}
 	})
 	return nil
 }
 
-// ErrorChan returns the plugin's error channel
-func (e *Event) ErrorChan() <-chan error {
-	return e.errorChan
+// Stop the event filter
+func (e *Event) Stop() error {
+	return e.Shutdown(plugin.ShutdownHooks{})
 }
 
-// InputChan returns the input event channel
-func (e *Event) InputChan() chan<- event.Event {
-	return e.inputChan
-}
-
-// OutputChan returns the output event channel
-func (e *Event) OutputChan() <-chan event.Event {
-	return e.outputChan
-}
+var _ plugin.ManagedPlugin = (*Event)(nil)

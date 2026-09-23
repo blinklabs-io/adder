@@ -159,7 +159,7 @@ func (s *templateStep) Content() fyne.CanvasObject {
 	outputBox := container.NewVBox(
 		widget.NewSeparator(),
 		widget.NewLabelWithStyle(
-			"External Output Destination (Optional)",
+			"Output Destination",
 			fyne.TextAlignLeading,
 			fyne.TextStyle{Bold: true},
 		),
@@ -264,7 +264,7 @@ func (s *templateStep) refreshSummary() {
 
 func (s *templateStep) buildOutputSelector() {
 	outputs := []string{
-		"None (desktop notifications only)",
+		"Console logging (default)",
 		"Webhook",
 		"Telegram",
 		"Log to File",
@@ -280,7 +280,9 @@ func (s *templateStep) buildOutputSelector() {
 		case "telegram":
 			initialOutput = "Telegram"
 		case "log":
-			initialOutput = "Log to File"
+			if s.plan.Output.Config["path"] != "" {
+				initialOutput = "Log to File"
+			}
 		}
 	}
 	s.outputSelect.SetSelected(initialOutput)
@@ -416,6 +418,7 @@ func (s *templateStep) Validate() error {
 func (s *templateStep) Apply(plan *setup.SetupPlan) {
 	plan.Filter = s.currentFilter()
 
+	level := plan.Output.Config["level"]
 	plan.Output.Config = make(map[string]string)
 	switch s.outputSelect.Selected {
 	case "Webhook":
@@ -438,6 +441,10 @@ func (s *templateStep) Apply(plan *setup.SetupPlan) {
 		plan.Output.Config["path"] = path
 		plan.Output.Config["format"] = "json"
 	default:
-		plan.Output.Type = "none"
+		plan.Output.Type = "log"
+		plan.Output.Config["format"] = "text"
+	}
+	if plan.Output.Type == "log" && level != "" {
+		plan.Output.Config["level"] = level
 	}
 }

@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="410" viewBox="0 0 1200 410" role="img" aria-labelledby="title desc">
+  <title id="title">Dingo and Adder Docker connection</title>
+  <desc id="desc">Dingo connects to preview peers and creates /ipc/node.socket in the shared dingo-ipc volume. Adder mounts the same volume and dials the socket using ChainSync Node-to-Client.</desc>
+  <defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#94a3b8"/></marker></defs>
+  <rect width="1200" height="410" rx="16" fill="#0b1220"/>
+  <g font-family="Arial, Helvetica, sans-serif">
+    <text x="32" y="45" font-size="28" fill="#ffffff" font-weight="700">Dingo and Adder: Docker Compose</text>
+    <text x="32" y="78" font-size="16" fill="#dbe5f3">Preview network · shared UNIX socket</text>
+    <rect x="270" y="110" width="900" height="230" rx="12" fill="#0f1a2c" stroke="#475569" stroke-width="1.5"/>
+    <text x="294" y="141" font-size="13" fill="#94a3b8" font-weight="700">DOCKER RUNTIME</text>
+    <rect x="30" y="185" width="205" height="110" rx="12" fill="#142337" stroke="#34d399" stroke-width="1.5"/>
+    <text x="50" y="217" font-size="21" fill="#34d399" font-weight="700">Cardano peers</text>
+    <text x="50" y="247" font-size="16" fill="#dbe5f3">Preview network</text>
+    <rect x="295" y="185" width="210" height="110" rx="12" fill="#142337" stroke="#34d399" stroke-width="1.5"/>
+    <text x="315" y="217" font-size="21" fill="#34d399" font-weight="700">Dingo</text>
+    <text x="315" y="247" font-size="16" fill="#dbe5f3">dingo service</text>
+    <rect x="575" y="185" width="275" height="110" rx="12" fill="#142337" stroke="#60a5fa" stroke-width="1.5"/>
+    <text x="595" y="217" font-size="21" fill="#60a5fa" font-weight="700">Shared volume</text>
+    <text x="595" y="247" font-size="16" fill="#dbe5f3">dingo-ipc → /ipc</text>
+    <text x="595" y="271" font-size="16" fill="#dbe5f3">/ipc/node.socket</text>
+    <rect x="925" y="185" width="220" height="110" rx="12" fill="#142337" stroke="#34d399" stroke-width="1.5"/>
+    <text x="945" y="217" font-size="21" fill="#34d399" font-weight="700">Adder</text>
+    <text x="945" y="247" font-size="16" fill="#dbe5f3">adder service</text>
+    <text x="945" y="271" font-size="16" fill="#dbe5f3">ChainSync · NtC</text>
+    <path d="M 295 240 H 239" fill="none" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrow)"/>
+    <path d="M 505 240 H 571" fill="none" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrow)"/>
+    <text x="516" y="223" font-size="13" fill="#94a3b8">creates</text>
+    <path d="M 925 240 H 854" fill="none" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrow)"/>
+    <text x="871" y="223" font-size="13" fill="#94a3b8">dials</text>
+    <text x="294" y="325" font-size="15" fill="#94a3b8">Both services mount the socket volume at /ipc.</text>
+    <text x="32" y="378" font-size="16" fill="#dbe5f3">Adder reads config-preview.yaml; filtered events go to the log output.</text>
+  </g>
+</svg>

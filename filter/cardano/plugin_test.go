@@ -15,6 +15,7 @@
 package cardano
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -30,11 +31,13 @@ func TestPluginRegistration(t *testing.T) {
 	) // Get all registered plugins
 
 	// Find the "cardano" plugin
-	var p plugin.Plugin
+	var p plugin.ManagedPlugin
 	for _, entry := range plugins {
 		if entry.Name == "cardano" {
 			// Create a new instance of the plugin
-			p = entry.NewFromOptionsFunc()
+			var err error
+			p, err = entry.New(nil)
+			assert.NoError(t, err)
 			break
 		}
 	}
@@ -48,10 +51,10 @@ func TestPluginRegistration(t *testing.T) {
 
 func TestPluginStartStop(t *testing.T) {
 	// Create a new plugin instance
-	p := NewFromCmdlineOptions()
+	p := mustConfiguredPlugin(t, nil)
 
 	// Start the plugin
-	err := p.Start()
+	err := p.StartContext(context.Background())
 	assert.NoError(t, err, "Plugin should start without errors")
 
 	// Stop the plugin
@@ -61,10 +64,10 @@ func TestPluginStartStop(t *testing.T) {
 
 func TestPluginChannels(t *testing.T) {
 	// Create a new plugin instance
-	p := NewFromCmdlineOptions()
+	p := mustConfiguredPlugin(t, nil)
 
 	// Start the plugin (channels are created in Start())
-	err := p.Start()
+	err := p.StartContext(context.Background())
 	assert.NoError(t, err, "Plugin should start without errors")
 	defer p.Stop()
 
@@ -85,10 +88,10 @@ func TestPluginChannels(t *testing.T) {
 
 func TestPluginEventProcessing(t *testing.T) {
 	// Create a new plugin instance
-	p := NewFromCmdlineOptions()
+	p := mustConfiguredPlugin(t, nil)
 
 	// Start the plugin
-	err := p.Start()
+	err := p.StartContext(context.Background())
 	assert.NoError(t, err, "Plugin should start without errors")
 
 	// Create a test event with a TransactionEvent payload

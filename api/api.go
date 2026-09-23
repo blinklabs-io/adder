@@ -120,7 +120,7 @@ func ResetHealthCheckers() {
 
 // New initializes the singleton API instance. The debug parameter is retained
 // for backward compatibility; access-log verbosity is now governed by the
-// configured logging level (LOGGING_LEVEL), not by this flag.
+// configured output log level (OUTPUT_LOG_LEVEL), not by this flag.
 func New(debug bool, options ...APIOption) *APIv1 {
 	_ = debug
 	once.Do(func() {
@@ -202,13 +202,19 @@ func (a *APIv1) Shutdown(ctx context.Context) error {
 	if server == nil {
 		return nil
 	}
+	// Shutdown marks the HTTP server as stopping before closing its listeners,
+	// so Serve reports ErrServerClosed instead of an unexpected accept error.
+	if err := server.Shutdown(ctx); err != nil &&
+		!errors.Is(err, net.ErrClosed) {
+		return fmt.Errorf("shutting down API server: %w", err)
+	}
+	// Start may return before Serve registers the listener with net/http.
+	// In that case Shutdown cannot close it, so retain this fallback.
 	if listener != nil {
-		if err := listener.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
+		if err := listener.Close(); err != nil &&
+			!errors.Is(err, net.ErrClosed) {
 			return fmt.Errorf("closing API listener: %w", err)
 		}
-	}
-	if err := server.Shutdown(ctx); err != nil && !errors.Is(err, net.ErrClosed) {
-		return fmt.Errorf("shutting down API server: %w", err)
 	}
 	a.mu.Lock()
 	a.server = nil

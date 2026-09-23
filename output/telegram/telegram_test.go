@@ -15,12 +15,43 @@
 package telegram
 
 import (
+	"context"
+	"slices"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/blinklabs-io/adder/event"
+	"github.com/blinklabs-io/adder/plugin"
+	"github.com/blinklabs-io/adder/plugintest"
 	"github.com/go-telegram/bot/models"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
+
+// recordingLogger is a plugin.Logger that captures Error messages, so a
+// test can observe that a worker actually processed an event instead of
+// sleeping and hoping.
+type recordingLogger struct {
+	mu       sync.Mutex
+	messages []string
+}
+
+func (l *recordingLogger) Info(string, ...any)  {}
+func (l *recordingLogger) Warn(string, ...any)  {}
+func (l *recordingLogger) Debug(string, ...any) {}
+
+func (l *recordingLogger) Error(msg string, _ ...any) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.messages = append(l.messages, msg)
+}
+
+func (l *recordingLogger) errorMessages() []string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return slices.Clone(l.messages)
+}
 
 // Cardano network magics used by the tests as BlockContext fixtures and to
 // exercise getBaseURL's mapping.
@@ -141,11 +172,16 @@ func TestTruncateMessage(t *testing.T) {
 
 	t.Run("over limit truncated with suffix", func(t *testing.T) {
 		msg := ""
-		for i := 0; i < 500; i++ {
+		for range 500 {
 			msg += "aaaaaaaaaa" // 5000 chars
 		}
 		result := truncateMessage(msg, 4096)
-		assert.LessOrEqual(t, utf16Len(result), 4096, "result must be within Telegram UTF-16 limit")
+		assert.LessOrEqual(
+			t,
+			utf16Len(result),
+			4096,
+			"result must be within Telegram UTF-16 limit",
+		)
 		assert.Contains(t, result, "… [truncated]")
 		assert.True(t, utf16Len(result) < utf16Len(msg))
 	})
@@ -177,7 +213,12 @@ func TestFormatBlockMessage(t *testing.T) {
 		NetworkMagic: mainnetNetworkMagic,
 	}
 
-	result := formatBlockMessage(be, bc, "https://cexplorer.io", models.ParseModeHTML)
+	result := formatBlockMessage(
+		be,
+		bc,
+		"https://cexplorer.io",
+		models.ParseModeHTML,
+	)
 
 	assert.Contains(t, result, "New Cardano Block")
 	assert.Contains(t, result, "Conway")
@@ -199,9 +240,18 @@ func TestFormatBlockMessageMarkdown(t *testing.T) {
 	bc := event.BlockContext{
 		Era: "Conway", BlockNumber: 1, SlotNumber: 1, NetworkMagic: mainnetNetworkMagic,
 	}
-	result := formatBlockMessage(be, bc, "https://cexplorer.io", models.ParseModeMarkdownV1)
-	assert.Contains(t, result, "*Block Number:*") // Markdown bold (single asterisk per Telegram API)
-	assert.Contains(t, result, "](https")         // Markdown link
+	result := formatBlockMessage(
+		be,
+		bc,
+		"https://cexplorer.io",
+		models.ParseModeMarkdownV1,
+	)
+	assert.Contains(
+		t,
+		result,
+		"*Block Number:*",
+	) // Markdown bold (single asterisk per Telegram API)
+	assert.Contains(t, result, "](https") // Markdown link
 }
 
 func TestEscapeMarkdownV2(t *testing.T) {
@@ -213,16 +263,36 @@ func TestEscapeMarkdownV2(t *testing.T) {
 
 func TestEscapeMarkdownV2URL(t *testing.T) {
 	// Only \ and ) must be escaped in URL; dots and other chars stay
-	assert.Equal(t, "https://example.com/path", escapeMarkdownV2URL("https://example.com/path"))
-	assert.Equal(t, `https://example.com/path\)`, escapeMarkdownV2URL("https://example.com/path)"))
+	assert.Equal(
+		t,
+		"https://example.com/path",
+		escapeMarkdownV2URL("https://example.com/path"),
+	)
+	assert.Equal(
+		t,
+		`https://example.com/path\)`,
+		escapeMarkdownV2URL("https://example.com/path)"),
+	)
 	// One backslash in URL becomes two in output (escaped for MarkdownV2)
-	assert.Equal(t, `https://example.com/path\\`, escapeMarkdownV2URL("https://example.com/path\\"))
+	assert.Equal(
+		t,
+		`https://example.com/path\\`,
+		escapeMarkdownV2URL("https://example.com/path\\"),
+	)
 }
 
 func TestEscapeForMode(t *testing.T) {
 	assert.Equal(t, "Conway", escapeForMode("Conway", models.ParseModeHTML))
-	assert.Equal(t, "Conway", escapeForMode("Conway", models.ParseModeMarkdownV1))
-	assert.Equal(t, `1\.500000`, escapeForMode("1.500000", models.ParseModeMarkdown))
+	assert.Equal(
+		t,
+		"Conway",
+		escapeForMode("Conway", models.ParseModeMarkdownV1),
+	)
+	assert.Equal(
+		t,
+		`1\.500000`,
+		escapeForMode("1.500000", models.ParseModeMarkdown),
+	)
 }
 
 func TestFormatBlockMessageMarkdownV2(t *testing.T) {
@@ -235,11 +305,28 @@ func TestFormatBlockMessageMarkdownV2(t *testing.T) {
 	bc := event.BlockContext{
 		Era: "Conway", BlockNumber: 1, SlotNumber: 1, NetworkMagic: mainnetNetworkMagic,
 	}
-	result := formatBlockMessage(be, bc, "https://cexplorer.io", models.ParseModeMarkdown)
-	assert.Contains(t, result, "*Block Number:*") // MarkdownV2 bold (single asterisk)
-	assert.Contains(t, result, "](https")         // link with unescaped URL
-	assert.Contains(t, result, `\.\.\.`)          // truncated hash has escaped dots
-	assert.Contains(t, result, "Conway")          // Era not escaped for display (Era has no special chars in "Conway")
+	result := formatBlockMessage(
+		be,
+		bc,
+		"https://cexplorer.io",
+		models.ParseModeMarkdown,
+	)
+	assert.Contains(
+		t,
+		result,
+		"*Block Number:*",
+	) // MarkdownV2 bold (single asterisk)
+	assert.Contains(t, result, "](https") // link with unescaped URL
+	assert.Contains(
+		t,
+		result,
+		`\.\.\.`,
+	) // truncated hash has escaped dots
+	assert.Contains(
+		t,
+		result,
+		"Conway",
+	) // Era not escaped for display (Era has no special chars in "Conway")
 }
 
 func TestFormatRollbackMessageMarkdownV2(t *testing.T) {
@@ -248,8 +335,12 @@ func TestFormatRollbackMessageMarkdownV2(t *testing.T) {
 		SlotNumber: 12345,
 	}
 	result := formatRollbackMessage(re, models.ParseModeMarkdown)
-	assert.Contains(t, result, "*Slot Number:*") // MarkdownV2 bold (single asterisk)
-	assert.Contains(t, result, `\.\.\.`)         // truncated hash
+	assert.Contains(
+		t,
+		result,
+		"*Slot Number:*",
+	) // MarkdownV2 bold (single asterisk)
+	assert.Contains(t, result, `\.\.\.`) // truncated hash
 }
 
 func TestFormatTransactionMessageMarkdownV2(t *testing.T) {
@@ -258,9 +349,22 @@ func TestFormatTransactionMessageMarkdownV2(t *testing.T) {
 		TransactionHash: "txhash1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
 		BlockNumber:     100, SlotNumber: 200, NetworkMagic: mainnetNetworkMagic,
 	}
-	result := formatTransactionMessage(te, tc, "https://cexplorer.io", models.ParseModeMarkdown)
-	assert.Contains(t, result, "*Transaction Hash:*") // MarkdownV2 bold (single asterisk)
-	assert.Contains(t, result, `0\.200000`)           // Fee in ADA with escaped dot
+	result := formatTransactionMessage(
+		te,
+		tc,
+		"https://cexplorer.io",
+		models.ParseModeMarkdown,
+	)
+	assert.Contains(
+		t,
+		result,
+		"*Transaction Hash:*",
+	) // MarkdownV2 bold (single asterisk)
+	assert.Contains(
+		t,
+		result,
+		`0\.200000`,
+	) // Fee in ADA with escaped dot
 }
 
 func TestFormatRollbackMessage(t *testing.T) {
@@ -287,7 +391,12 @@ func TestFormatTransactionMessage(t *testing.T) {
 		NetworkMagic:    mainnetNetworkMagic,
 	}
 
-	result := formatTransactionMessage(te, tc, "https://cexplorer.io", models.ParseModeHTML)
+	result := formatTransactionMessage(
+		te,
+		tc,
+		"https://cexplorer.io",
+		models.ParseModeHTML,
+	)
 
 	assert.Contains(t, result, "New Cardano Transaction")
 	assert.Contains(t, result, "100")
@@ -306,15 +415,15 @@ func TestProcessEventInvalidPayloadNoPanic(t *testing.T) {
 			Era: "Conway", BlockNumber: 1, SlotNumber: 1, NetworkMagic: mainnetNetworkMagic,
 		},
 	}
-	tg.processEvent(evt)
+	tg.processEvent(context.Background(), evt)
 
 	// Wrong payload type for rollback
 	evt2 := &event.Event{Type: event.TypeRollback, Payload: 12345}
-	tg.processEvent(evt2)
+	tg.processEvent(context.Background(), evt2)
 
 	// Unknown event type
 	evt3 := &event.Event{Type: "unknown.type", Payload: "x"}
-	tg.processEvent(evt3)
+	tg.processEvent(context.Background(), evt3)
 }
 
 func TestWithOptions(t *testing.T) {
@@ -353,4 +462,52 @@ func TestWithOptions(t *testing.T) {
 		WithDisableLinkPreview(true)(tg)
 		assert.True(t, tg.disablePreview)
 	})
+}
+
+// TestStopReturnsWhileTheEventWorkerIsParked guards the shutdown deadlock
+// the plugin.Base conversion fixed. Stop used to close the done channel and
+// then nil the field before waiting for its workers, so an event worker that
+// entered its select after the assignment received on a nil channel and
+// never woke: Stop's wait blocked forever.
+//
+// The plugin is built by hand rather than with New: New calls getMe against
+// the live Telegram API, and Start would too, so neither can run offline.
+func TestStopReturnsWhileTheEventWorkerIsParked(t *testing.T) {
+	logger := &recordingLogger{}
+	tg := &TelegramOutput{chatID: 1}
+	tg.SetLogger(logger)
+	plugintest.StartBase(t, &tg.Base, plugin.BaseConfig{HasInput: true})
+	done, in := tg.Done(), tg.Input()
+	tg.Go(func() { tg.eventLoop(tg.Context(), done, in) })
+
+	// Push one event through first so the worker completes an iteration
+	// and re-enters its select: re-entering is the precise condition the
+	// old bug needed, and a worker parked on its very first select could
+	// not exercise it. processEvent logs and returns on a nil payload, so
+	// this reaches no bot.
+	tg.InputChan() <- event.Event{Type: event.TypeBlock}
+	require.Eventually(t, func() bool {
+		return slices.Contains(logger.errorMessages(), "event has nil payload")
+	}, 5*time.Second, 10*time.Millisecond,
+		"the event worker never consumed the event")
+
+	stopped := make(chan error, 1)
+	go func() { stopped <- tg.Stop() }()
+
+	select {
+	case err := <-stopped:
+		require.NoError(t, err)
+	case <-time.After(5 * time.Second):
+		t.Fatal(
+			"Stop did not return: the event worker is parked on a nil done channel",
+		)
+	}
+
+	// The done channel stays closed in place after shutdown, so even a
+	// worker that re-read it late would return instead of parking.
+	select {
+	case <-tg.Done():
+	default:
+		t.Fatal("Done must stay closed after Stop, not become nil")
+	}
 }

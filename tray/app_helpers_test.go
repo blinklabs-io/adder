@@ -145,7 +145,7 @@ func TestAddRecentAlertKeepsNewestTen(t *testing.T) {
 		mMenu:   fyne.NewMenu("Adder"),
 	}
 
-	for i := 0; i < 12; i++ {
+	for i := range 12 {
 		trayApp.addRecentAlert(notifications.Request{
 			Title: "Block Minted",
 			Event: event.Event{
@@ -238,7 +238,7 @@ func TestAddRecentAlertDedupsReplayedEvents(t *testing.T) {
 		Payload:   map[string]any{"blockHash": "hash"},
 	}
 	// Same event replayed by the ring buffer on 3 reconnects.
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		trayApp.addRecentAlert(notifications.Request{
 			Title: "🔄 Chain Rollback",
 			Event: evt,
@@ -269,7 +269,7 @@ func TestAddRecentAlertConnectionEventsNotDeduped(t *testing.T) {
 		mMenu:   fyne.NewMenu("Adder"),
 	}
 	// Connection alerts have empty Type — intentionally repeatable.
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		trayApp.addRecentAlert(notifications.Request{
 			Title: "Adder Connection",
 			Event: event.Event{},
@@ -368,7 +368,7 @@ func TestSetupTrayBuildsDesktopMenu(t *testing.T) {
 		Filter:  setup.FilterConfig{MonitorEverything: true},
 		API:     setup.APIConfig{Address: "127.0.0.1", Port: 8080},
 		Output: setup.OutputConfig{
-			Type:   "none",
+			Type:   "log",
 			Config: make(map[string]string),
 		},
 	}
@@ -618,7 +618,7 @@ func TestOnWizardFinishReloadsTrayConfigOnSuccess(t *testing.T) {
 		Network: setup.NetworkConfig{Name: "mainnet"},
 		Filter:  setup.FilterConfig{MonitorEverything: true},
 		API:     setup.APIConfig{Address: "127.0.0.1", Port: 9090},
-		Output:  setup.OutputConfig{Type: "none", Config: make(map[string]string)},
+		Output:  setup.OutputConfig{Type: "log", Config: make(map[string]string)},
 		Notify:  make(setup.NotificationPrefs),
 	}, nil)
 

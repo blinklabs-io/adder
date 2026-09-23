@@ -21,7 +21,7 @@ type EventOptionFunc func(*Event)
 // WithLogger specifies the logger object to use for logging messages
 func WithLogger(logger plugin.Logger) EventOptionFunc {
 	return func(e *Event) {
-		e.logger = logger
+		e.SetLogger(logger)
 	}
 }
 

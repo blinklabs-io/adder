@@ -35,10 +35,21 @@ os.Setenv("HTTP_PROXY", "http://proxy_name:proxy_port")
 ## Configuration of Server URL
 
 Default configuration comes with `Servers` field that contains server objects as defined in the OpenAPI specification.
+The default `/v1` is relative; set an absolute URL before making requests:
+
+```go
+configuration := openapi.NewConfiguration()
+configuration.Servers = openapi.ServerConfigurations{
+    {URL: "http://127.0.0.1:8080/v1"},
+}
+```
+
+FCM routes require the push output. Successful POST/DELETE responses have empty
+bodies; inspect the HTTP status rather than the generated string return value.
 
 ### Select Server Configuration
 
-For using other server than the one defined on index 0 set context value `openapi.ContextServerIndex` of type `int`.
+After adding another entry to `configuration.Servers`, select it by setting context value `openapi.ContextServerIndex` of type `int`.
 
 ```go
 ctx := context.WithValue(context.Background(), openapi.ContextServerIndex, 1)
@@ -46,7 +57,7 @@ ctx := context.WithValue(context.Background(), openapi.ContextServerIndex, 1)
 
 ### Templated Server URL
 
-Templated server URL is formatted using default variables from configuration or from context value `openapi.ContextServerVariables` of type `map[string]string`.
+For a server configured with template variables (the default `/v1` has none), the URL is formatted using defaults or context value `openapi.ContextServerVariables` of type `map[string]string`.
 
 ```go
 ctx := context.WithValue(context.Background(), openapi.ContextServerVariables, map[string]string{
@@ -98,8 +109,8 @@ Endpoints do not require authorization.
 
 ## Documentation for Utility Methods
 
-Due to the fact that model structure members are all pointers, this package contains
-a number of utility functions to easily obtain pointers to values of basic types.
+Optional response fields are pointers; the required request token is a string.
+This package contains utility functions to obtain pointers to basic types.
 Each of these functions takes a value of the given basic type and returns a pointer to it:
 
 * `PtrBool`
