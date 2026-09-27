@@ -1,14 +1,14 @@
 module github.com/blinklabs-io/adder
 
-go 1.26.0
+go 1.26.5
 
 require (
 	connectrpc.com/connect v1.20.0
 	fyne.io/fyne/v2 v2.8.1
 	github.com/SundaeSwap-finance/kugo v1.3.1
 	github.com/SundaeSwap-finance/ogmigo/v6 v6.2.1
-	github.com/blinklabs-io/gouroboros v0.204.1
-	github.com/blinklabs-io/ouroboros-mock v0.19.0
+	github.com/blinklabs-io/gouroboros v0.207.2
+	github.com/blinklabs-io/ouroboros-mock v0.20.2
 	github.com/blinklabs-io/plutigo v0.7.1
 	github.com/btcsuite/btcd/btcutil v1.2.0
 	github.com/gen2brain/beeep v0.11.2
@@ -58,7 +58,7 @@ require (
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.1 // indirect
 	github.com/esiqveland/notify v0.13.3 // indirect
 	github.com/fsnotify/fsnotify v1.10.1 // indirect
-	github.com/fxamacker/cbor/v2 v2.9.3 // indirect
+	github.com/fxamacker/cbor/v2 v2.9.4 // indirect
 	github.com/fyne-io/gl-js v0.2.1-0.20260315212741-029c47fd27e8 // indirect
 	github.com/fyne-io/glfw-js v0.4.0 // indirect
 	github.com/fyne-io/image v0.1.1 // indirect
