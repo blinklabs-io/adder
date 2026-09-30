@@ -1,14 +1,14 @@
 module github.com/blinklabs-io/adder
 
-go 1.26.0
+go 1.26.5
 
 require (
 	connectrpc.com/connect v1.21.0
 	fyne.io/fyne/v2 v2.8.1
 	github.com/SundaeSwap-finance/kugo v1.3.1
 	github.com/SundaeSwap-finance/ogmigo/v6 v6.2.1
-	github.com/blinklabs-io/gouroboros v0.204.1
-	github.com/blinklabs-io/ouroboros-mock v0.19.0
+	github.com/blinklabs-io/gouroboros v0.208.0
+	github.com/blinklabs-io/ouroboros-mock v0.20.3
 	github.com/blinklabs-io/plutigo v0.7.2
 	github.com/btcsuite/btcd/btcutil v1.2.0
 	github.com/gen2brain/beeep v0.11.2
