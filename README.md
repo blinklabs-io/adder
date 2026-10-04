@@ -95,7 +95,7 @@ input.transaction:
                         "nameHex": "abcd123...",
                         "amount": 123,
                         "fingerprint": "asset1abcd...",
-                        "policy": "54321..."
+                        "policyId": "54321..."
                     }
                 ]
             }

@@ -33,7 +33,7 @@ import (
 )
 
 type tokenProvider interface {
-	GetToken() (string, error)
+	GetToken(context.Context) (string, error)
 }
 
 type googleTokenProvider struct {
@@ -41,7 +41,7 @@ type googleTokenProvider struct {
 	accessTokenUrl         string
 }
 
-func (g *googleTokenProvider) GetToken() (string, error) {
+func (g *googleTokenProvider) GetToken(ctx context.Context) (string, error) {
 	data, err := os.ReadFile(g.serviceAccountFilePath)
 	if err != nil {
 		return "", fmt.Errorf("failed to read credential file: %w", err)
@@ -52,7 +52,7 @@ func (g *googleTokenProvider) GetToken() (string, error) {
 		return "", fmt.Errorf("failed to parse credential file: %w", err)
 	}
 
-	token, err := conf.TokenSource(context.Background()).Token()
+	token, err := conf.TokenSource(ctx).Token()
 	if err != nil {
 		return "", fmt.Errorf("failed to get token: %w", err)
 	}
@@ -132,7 +132,6 @@ func (p *PushOutput) start(ctx context.Context) error {
 	logger := p.log()
 	logger.Info("starting push notification server")
 	in := p.Input()
-	//nolint:contextcheck // DrainOnStop lets delivery finish after run cancellation.
 	p.Go(func() {
 		for {
 			evt, ok := <-in
@@ -141,7 +140,10 @@ func (p *PushOutput) start(ctx context.Context) error {
 				return
 			}
 			// Get access token per each event
-			if err := p.GetAccessToken(); err != nil {
+			if err := p.GetAccessToken(ctx); err != nil {
+				if ctx.Err() != nil {
+					return
+				}
 				err = fmt.Errorf("failed to get access token: %w", err)
 				slog.Error(err.Error())
 				p.TrySendError(err)
@@ -183,7 +185,7 @@ func (p *PushOutput) start(ctx context.Context) error {
 				)
 
 				// Send notification
-				p.processFcmNotifications(title, body)
+				p.processFcmNotifications(ctx, title, body)
 
 			case event.TypeRollback:
 				payload := evt.Payload
@@ -254,7 +256,7 @@ func (p *PushOutput) start(ctx context.Context) error {
 					)
 				}
 				// Send notification
-				p.processFcmNotifications(title, body)
+				p.processFcmNotifications(ctx, title, body)
 
 			default:
 				fmt.Println("Adder")
@@ -282,7 +284,10 @@ func truncToken(token string) string {
 	return token[:8] + "..." + token[len(token)-8:]
 }
 
-func (p *PushOutput) processFcmNotifications(title, body string) {
+func (p *PushOutput) processFcmNotifications(
+	ctx context.Context,
+	title, body string,
+) {
 	logger := p.log()
 	// Fetch new FCM tokens and add to p.fcmTokens
 	p.refreshFcmTokens()
@@ -314,7 +319,10 @@ func (p *PushOutput) processFcmNotifications(title, body string) {
 			continue
 		}
 
-		if err := fcm.Send(p.accessToken, p.projectID, msg); err != nil {
+		if err := fcm.Send(ctx, p.accessToken, p.projectID, msg); err != nil {
+			if ctx.Err() != nil {
+				return
+			}
 			logger.Error(
 				"Failed to send message to token",
 				"token",
@@ -336,8 +344,8 @@ func (p *PushOutput) processFcmNotifications(title, body string) {
 	}
 }
 
-func (p *PushOutput) GetAccessToken() error {
-	token, err := p.tokenProvider.GetToken()
+func (p *PushOutput) GetAccessToken(ctx context.Context) error {
+	token, err := p.tokenProvider.GetToken(ctx)
 	if err != nil {
 		return err
 	}

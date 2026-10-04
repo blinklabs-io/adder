@@ -74,7 +74,12 @@ func NewMessage(token string, opts ...MessageOption) (*Message, error) {
 	return msg, nil
 }
 
-func Send(accessToken string, projectId string, msg *Message) error {
+func Send(
+	ctx context.Context,
+	accessToken string,
+	projectId string,
+	msg *Message,
+) error {
 	fcmURL := &url.URL{
 		Scheme: "https",
 		Host:   "fcm.googleapis.com",
@@ -87,8 +92,8 @@ func Send(accessToken string, projectId string, msg *Message) error {
 		return err
 	}
 
-	// Create a new HTTP request with a 10-second timeout context
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	// Bound delivery while preserving cancellation from the owning plugin.
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(
 		ctx,

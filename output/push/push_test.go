@@ -16,6 +16,7 @@ package push
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"net/http"
 	"os"
@@ -38,8 +39,23 @@ type mockTokenProvider struct {
 	err   error
 }
 
-func (m *mockTokenProvider) GetToken() (string, error) {
+func (m *mockTokenProvider) GetToken(context.Context) (string, error) {
 	return m.token, m.err
+}
+
+type blockingTokenProvider struct {
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (p *blockingTokenProvider) GetToken(ctx context.Context) (string, error) {
+	close(p.entered)
+	select {
+	case <-ctx.Done():
+		return "", ctx.Err()
+	case <-p.release:
+		return "token", nil
+	}
 }
 
 func createDummyCredentialsFile(t *testing.T, projectID string) string {
@@ -185,14 +201,11 @@ func TestPushOutput_ShutdownDuringInFlightRequest(t *testing.T) {
 		http.DefaultTransport = origTransport
 	})
 
-	// Slow outbound server (stalls for 100ms, then fails)
+	requestStarted := make(chan struct{})
 	http.DefaultTransport = mockRoundTripper(func(req *http.Request) (*http.Response, error) {
-		time.Sleep(100 * time.Millisecond)
-		return &http.Response{
-			StatusCode: http.StatusInternalServerError,
-			Body:       io.NopCloser(bytes.NewBufferString("FCM Simulated 500 Error")),
-			Header:     make(http.Header),
-		}, nil
+		close(requestStarted)
+		<-req.Context().Done()
+		return nil, req.Context().Err()
 	})
 
 	// Send an event
@@ -209,14 +222,55 @@ func TestPushOutput_ShutdownDuringInFlightRequest(t *testing.T) {
 
 	p.InputChan() <- evt
 
-	// Give the worker a short moment to pick up the event and enter fcm.Send
-	time.Sleep(10 * time.Millisecond)
+	select {
+	case <-requestStarted:
+	case <-time.After(time.Second):
+		t.Fatal("FCM request did not start")
+	}
 
 	// Concurrently call Stop() while the request is in-flight.
 	// If the race detector or panic bug is present, this will trigger them.
-	err = p.Stop()
-	require.NoError(t, err)
+	stopped := make(chan error, 1)
+	go func() { stopped <- p.Stop() }()
+	select {
+	case err := <-stopped:
+		require.NoError(t, err)
+	case <-time.After(time.Second):
+		t.Fatal("Stop did not cancel the in-flight FCM request")
+	}
+}
 
-	// Sleep slightly to let the mock finish its time.Sleep and try to send on p.errorChan.
-	time.Sleep(150 * time.Millisecond)
+func TestPushOutput_StopCancelsTokenAcquisition(t *testing.T) {
+	provider := &blockingTokenProvider{
+		entered: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+	defer close(provider.release)
+
+	credentialsPath := createDummyCredentialsFile(t, "test-fcm-project")
+	p, err := New(
+		WithServiceAccountFilePath(credentialsPath),
+		WithTokenProvider(provider),
+	)
+	require.NoError(t, err)
+	require.NoError(t, p.Start())
+
+	p.InputChan() <- event.Event{
+		Type:    event.TypeRollback,
+		Payload: event.RollbackEvent{},
+	}
+	select {
+	case <-provider.entered:
+	case <-time.After(time.Second):
+		t.Fatal("token acquisition did not start")
+	}
+
+	stopped := make(chan error, 1)
+	go func() { stopped <- p.Stop() }()
+	select {
+	case err := <-stopped:
+		require.NoError(t, err)
+	case <-time.After(time.Second):
+		t.Fatal("Stop did not cancel token acquisition")
+	}
 }
