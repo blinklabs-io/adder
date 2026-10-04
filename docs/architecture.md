@@ -13,7 +13,7 @@ Adder is built around a concurrent **Pipeline-Plugin** architecture. Data flows 
 ```text
 +--------------------+
 |    Input Plugin    |   OutputChan()
-| chainsync/mempool/  | -------------.
+| chainsync/mempool/ | -------------.
 |      utxorpc       |              |
 +--------------------+              |  chanCopyLoop
          |                          v

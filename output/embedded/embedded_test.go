@@ -90,8 +90,12 @@ func TestSuppliedChannelIsClosedByStop(t *testing.T) {
 	require.NoError(t, e.Start())
 	require.NoError(t, e.Stop())
 
-	_, open := <-forward
-	assert.False(t, open, "Stop should have closed the supplied channel")
+	select {
+	case _, open := <-forward:
+		assert.False(t, open, "Stop should have closed the supplied channel")
+	case <-time.After(2 * time.Second):
+		t.Fatal("Stop did not close the supplied channel")
+	}
 }
 
 func TestRestartWithASuppliedChannelIsRefused(t *testing.T) {

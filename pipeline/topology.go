@@ -62,18 +62,21 @@ func (p *Pipeline) validateTopology() error {
 					return fmt.Errorf("%s: nil plugin", label)
 				}
 			}
-			// Pointer plugins have instance identity. Value plugins
-			// with non-comparable fields cannot be keys in this map.
-			if value.Comparable() {
-				if previous, exists := seen[component]; exists {
-					return fmt.Errorf(
-						"%s: plugin instance already used at %s",
-						label,
-						previous,
-					)
-				}
-				seen[component] = label
+			if !value.Comparable() {
+				return fmt.Errorf(
+					"%s: plugin implementation %T must be comparable",
+					label,
+					component,
+				)
 			}
+			if previous, exists := seen[component]; exists {
+				return fmt.Errorf(
+					"%s: plugin instance already used at %s",
+					label,
+					previous,
+				)
+			}
+			seen[component] = label
 			if role := component.Role(); role != group.role {
 				return fmt.Errorf(
 					"%s: %T declares role %d, expected %s",

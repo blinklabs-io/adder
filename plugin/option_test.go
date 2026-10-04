@@ -216,6 +216,30 @@ func TestInvalidOptionDefinition(t *testing.T) {
 	}
 }
 
+func TestValidateHTTPURL(t *testing.T) {
+	for _, value := range []string{
+		"http://example.com", "https://example.com:443/path", "http://[::1]:3001",
+	} {
+		require.NoError(t, ValidateHTTPURL(value), value)
+	}
+	for _, value := range []string{
+		"example.com", "ftp://example.com", "http://example.com:0", "http://example.com:65536",
+	} {
+		require.Error(t, ValidateHTTPURL(value), value)
+	}
+}
+
+func TestValidateHostPort(t *testing.T) {
+	for _, value := range []string{"node:3001", "127.0.0.1:1", "[::1]:65535"} {
+		require.NoError(t, ValidateHostPort(value), value)
+	}
+	for _, value := range []string{
+		"", ":3001", "node:", "node:0", "node:65536", "::1:3001",
+	} {
+		require.Error(t, ValidateHostPort(value), value)
+	}
+}
+
 func TestSplitAndTrim(t *testing.T) {
 	testCases := []struct {
 		name     string

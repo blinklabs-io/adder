@@ -43,9 +43,10 @@ func newFromOptions(values plugin.Options) (plugin.ManagedPlugin, error) {
 	if values.String("config") == "" {
 		return nil, errors.New("config path is required")
 	}
-	if _, err := setup.ReadNotificationConfig(values.String("config")); err != nil {
+	cfg, err := setup.ReadNotificationConfig(values.String("config"))
+	if err != nil {
 		return nil, fmt.Errorf("invalid notification configuration: %w", err)
 	}
 
-	return New(WithConfigPath(values.String("config"))), nil
+	return New(WithConfigPath(values.String("config")), withConfig(cfg)), nil
 }

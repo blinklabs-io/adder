@@ -185,7 +185,6 @@ type restartablePlugin struct {
 	errorChan  chan error
 	inputChan  chan event.Event
 	outputChan chan event.Event
-	doneChan   chan struct{}
 	stopOnce   sync.Once
 	wg         sync.WaitGroup
 	received   []event.Event
@@ -202,7 +201,6 @@ func (r *restartablePlugin) StartContext(ctx context.Context) error {
 	r.errorChan = make(chan error)
 	r.inputChan = make(chan event.Event, 10)
 	r.outputChan = make(chan event.Event, 10)
-	r.doneChan = make(chan struct{})
 	r.stopOnce = sync.Once{}
 	r.received = nil
 	r.mu.Unlock()
@@ -235,9 +233,6 @@ func (r *restartablePlugin) Stop() error {
 	r.stopOnce.Do(func() {
 		if r.cancel != nil {
 			r.cancel()
-		}
-		if r.doneChan != nil {
-			close(r.doneChan)
 		}
 		// Wait for goroutine to exit before closing other channels
 		r.wg.Wait()

@@ -37,10 +37,12 @@ warning and the CLI remains runnable at
 `/Applications/Adder.app/Contents/MacOS/adder`. The script preserves an existing non-Adder path when its target exists.
 A dangling symlink can be replaced by its absent-path check.
 
-To uninstall, disable configured autostart through the tray and quit it. Remove
-`/Applications/Adder.app`; remove `/usr/local/bin/adder` only after checking
-that the symlink points into that bundle. User configuration and logs remain
-in their separate directories.
+To uninstall, disable configured autostart through the tray and quit it. Run
+`launchctl bootout gui/$(id -u)/io.blinklabs.adder` if the service is loaded,
+then remove `~/Library/LaunchAgents/io.blinklabs.adder.plist` and
+`/Applications/Adder.app`. Remove `/usr/local/bin/adder` only after checking
+that the symlink points into that bundle. User configuration and logs remain in
+their separate directories.
 
 ## What the installer does NOT do
 

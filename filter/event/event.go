@@ -58,6 +58,8 @@ func (e *Event) start(ctx context.Context) error {
 	e.Go(func() {
 		for {
 			select {
+			case <-ctx.Done():
+				return
 			case <-done:
 				return
 			case evt, ok := <-in:

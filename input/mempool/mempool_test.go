@@ -69,15 +69,8 @@ func requireConnClosed(t *testing.T, conn *ouroboros.Connection) {
 	}
 }
 
-// TestStopDuringPollDoesNotRaceOnTheConnection pins the lock around oConn.
-// pollOnce reads the connection from a worker while Stop retires it from
-// the caller's goroutine, with no happens-before edge between them: Stop
-// does that work in BeforeWait, which runs before the wait that would
-// otherwise order the two. Unguarded, that is a data race by the Go memory
-// model, and the read can also observe a half-written interface value.
-//
-// Reverting the accessors to a bare field read and write fails this test
-// under -race.
+// TestStopDuringPollDoesNotRaceOnTheConnection keeps worker reads and shutdown
+// writes to the connection behind the same lock.
 func TestStopDuringPollDoesNotRaceOnTheConnection(t *testing.T) {
 	// Which of Stop's steps the poll lands in is a race, so repeat.
 	const rounds = 20
@@ -113,14 +106,8 @@ func TestStopDuringPollDoesNotRaceOnTheConnection(t *testing.T) {
 	}
 }
 
-// TestStopClosesAConnectionInstalledDuringTheWait pins the AfterWait close.
-// BeforeWait sees nothing when a dial is still in flight: setupConnection
-// installs its connection afterwards, Stop returns nil, and the node
-// connection and its goroutines stay live behind a plugin whose channels
-// are closing.
-//
-// Dropping the AfterWait hook fails this test — the connection's error
-// channel never closes, so requireConnClosed times out.
+// TestStopClosesAConnectionInstalledDuringTheWait ensures AfterWait closes a
+// connection installed after BeforeWait inspected the plugin.
 func TestStopClosesAConnectionInstalledDuringTheWait(t *testing.T) {
 	m := &Mempool{pollInterval: time.Hour}
 	plugintest.StartBase(t, &m.Base, plugin.BaseConfig{HasOutput: true})
@@ -144,10 +131,7 @@ func TestStopClosesAConnectionInstalledDuringTheWait(t *testing.T) {
 	assert.Nil(t, m.conn(), "Stop must not leave a connection installed")
 }
 
-// TestFailedStartDoesNotLeaveThePluginRunning pins that Start unwinds
-// itself. Init marks the plugin running before the connection is set up,
-// so returning the error on its own would hand back a plugin that reports
-// Running with nothing running in it.
+// TestFailedStartDoesNotLeaveThePluginRunning pins failed-start cleanup.
 func TestFailedStartDoesNotLeaveThePluginRunning(t *testing.T) {
 	// No socket path and no address: setupConnection rejects it before it
 	// touches the network.
@@ -208,26 +192,11 @@ func TestStopCancelsInitialConnectionSetup(t *testing.T) {
 	require.NoError(t, m.Stop())
 }
 
-// TestStopReleasesRunningPollLoop is a regression test for a deadlock that
-// was live in the pre-Base code. Stop() closed m.doneChan and then set the
-// field to nil before waiting for the workers, while pollLoop re-read
-// m.doneChan inside its select. select re-evaluates its channel operands
-// every time it runs, so a pollLoop that reached the select after Stop had
-// nil'd the field saw a nil channel, which is never ready. The loop then
-// went on ticking forever and Stop()'s wg.Wait() never returned. The window
-// is the whole of pollOnce, which in production is an in-flight poll of the
-// node.
-//
-// Base.signalStop leaves doneChan in place, closed, and pollLoop captures it
-// once at the top, so the shutdown signal is observable no matter when the
-// loop next reaches its select.
+// TestStopReleasesRunningPollLoop ensures the poll worker retains the closed
+// Done channel while Stop waits for it.
 func TestStopReleasesRunningPollLoop(t *testing.T) {
-	// Stopping a pollLoop that is parked in its select was always safe:
-	// the close wakes it. The ordering that hung is a pollLoop caught
-	// between iterations, so drive it with a tick interval short enough
-	// that it is spinning rather than parked, and repeat, since which of
-	// the two states Stop lands in is a race. The pre-Base code hung on
-	// roughly one round in ten under -race.
+	// A short interval exercises Stop both while the worker is selecting and
+	// while it is between iterations.
 	const rounds = 50
 	for i := range rounds {
 		m := &Mempool{pollInterval: time.Microsecond}
@@ -248,8 +217,7 @@ func TestStopReleasesRunningPollLoop(t *testing.T) {
 	}
 }
 
-// TestStopIsIdempotent covers the sync.Once that Base.Shutdown replaced:
-// a second Stop() must not double-close the plugin channels.
+// TestStopIsIdempotent ensures a second Stop does not close channels twice.
 func TestStopIsIdempotent(t *testing.T) {
 	m := &Mempool{pollInterval: time.Hour}
 	plugintest.StartBase(t, &m.Base, plugin.BaseConfig{HasOutput: true})

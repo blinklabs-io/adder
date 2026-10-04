@@ -1,3 +1,17 @@
+// Copyright 2026 Blink Labs Software
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package config
 
 import (
@@ -80,6 +94,7 @@ func TestLoadEnvVarTypeError(t *testing.T) {
 	err := c.Load("")
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "error processing environment")
+	assert.ErrorContains(t, err, "not-a-number")
 }
 
 func TestLoadYAMLErrorBeforeEnv(t *testing.T) {
@@ -133,6 +148,17 @@ shelley_genesis:
 	assert.Equal(t, uint64(100), c.ByronGenesis.EpochLength)
 	assert.Equal(t, uint64(50), c.ByronGenesis.ByronSlotsPerEpoch)
 	assert.Equal(t, uint64(200), c.ShelleyGenesis.EpochLength)
+}
+
+func TestLoadDefaultsByronSlotsToConfiguredEpochLength(t *testing.T) {
+	clearConfigEnv(t)
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	require.NoError(t, os.WriteFile(path, []byte(
+		"byron_genesis:\n  epoch_length: 1000\n",
+	), 0o600))
+	c := New()
+	require.NoError(t, c.Load(path))
+	require.Equal(t, uint64(1000), c.ByronGenesis.ByronSlotsPerEpoch)
 }
 
 func TestLoadYAMLReadError(t *testing.T) {

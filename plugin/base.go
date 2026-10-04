@@ -131,6 +131,9 @@ type Base struct {
 // before StartRun returns.
 // Hooks must tolerate partially initialized resources. Neither setup nor
 // a tracked worker may call StartRun or Shutdown on this Base.
+// Shutdown hooks must stop and join dependency-owned callback sources before
+// returning; callbacks invoked after Shutdown completes do not belong to a run
+// and could otherwise observe channels created by a later restart.
 func (b *Base) StartRun(
 	ctx context.Context,
 	cfg BaseConfig,

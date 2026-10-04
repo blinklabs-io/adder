@@ -46,7 +46,7 @@ func Dial(
 			<-closed
 		}
 	}()
-	options = append(options, ouroboros.WithConnection(raw))
+	options = appendConnectionOption(options, raw)
 	conn, err := ouroboros.NewConnection(options...)
 	if err != nil {
 		_ = raw.Close()
@@ -57,4 +57,14 @@ func Dial(
 		return nil, err
 	}
 	return conn, nil
+}
+
+func appendConnectionOption(
+	options []ouroboros.ConnectionOptionFunc,
+	conn net.Conn,
+) []ouroboros.ConnectionOptionFunc {
+	return append(
+		append([]ouroboros.ConnectionOptionFunc(nil), options...),
+		ouroboros.WithConnection(conn),
+	)
 }

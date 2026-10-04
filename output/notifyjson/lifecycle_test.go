@@ -17,8 +17,10 @@ package notifyjson
 import (
 	"errors"
 	"io"
+	"os"
 	"testing"
 
+	"github.com/blinklabs-io/adder/plugin"
 	"github.com/blinklabs-io/adder/plugintest"
 	"github.com/stretchr/testify/require"
 )
@@ -48,6 +50,22 @@ func TestFailedInitialWriteUnwindsEngine(t *testing.T) {
 	o := New(WithConfigPath(writeTestConfig(t)), WithWriter(failedWriter{}))
 	plugintest.FailedStart(t, o)
 	o.writer = io.Discard
+	require.NoError(t, o.Start())
+	require.NoError(t, o.Stop())
+}
+
+func TestFactoryUsesValidatedConfigSnapshot(t *testing.T) {
+	path := writeTestConfig(t)
+	managed, err := plugin.GetPlugin(
+		plugin.PluginTypeOutput,
+		"notify-json",
+		map[string]any{"config": path},
+	)
+	require.NoError(t, err)
+	o := managed.(*Output)
+	o.writer = io.Discard
+	require.NoError(t, os.WriteFile(path, []byte("not json"), 0o600))
+
 	require.NoError(t, o.Start())
 	require.NoError(t, o.Stop())
 }

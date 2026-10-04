@@ -24,10 +24,11 @@ import (
 	ouroboros "github.com/blinklabs-io/gouroboros"
 	"github.com/blinklabs-io/gouroboros/protocol/chainsync"
 	"github.com/blinklabs-io/gouroboros/protocol/common"
+	"github.com/blinklabs-io/gouroboros/protocol/localtxmonitor"
 	"github.com/stretchr/testify/require"
 )
 
-// Node serves local node-to-client handshakes and an idle chainsync stream.
+// Node serves local node-to-client ChainSync and LocalTxMonitor sessions.
 func Node(t *testing.T) string {
 	t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -61,6 +62,13 @@ func Node(t *testing.T) string {
 								return c.Server.AwaitReply()
 							},
 						),
+					)),
+					ouroboros.WithLocalTxMonitorConfig(localtxmonitor.NewConfig(
+						localtxmonitor.WithGetMempoolFunc(func(
+							localtxmonitor.CallbackContext,
+						) (uint64, uint32, []localtxmonitor.TxAndEraId, error) {
+							return 0, 0, nil, nil
+						}),
 					)),
 				)
 				if err != nil {

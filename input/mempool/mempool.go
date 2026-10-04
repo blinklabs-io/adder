@@ -521,7 +521,7 @@ func (m *Mempool) resolveTransactionInputs(
 		}
 		pattern := fmt.Sprintf("%d@%s", txIndex, txID)
 		ctx, cancel := context.WithTimeout(
-			context.Background(),
+			m.Context(),
 			defaultKupoTimeout,
 		)
 		matches, err := k.Matches(ctx, kugo.Pattern(pattern))

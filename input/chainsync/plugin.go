@@ -18,7 +18,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"net"
 	"strconv"
 	"strings"
 
@@ -123,8 +122,8 @@ func newFromOptions(values plugin.Options) (plugin.ManagedPlugin, error) {
 		}
 	}
 	if values.String("address") != "" {
-		if _, _, err := net.SplitHostPort(values.String("address")); err != nil {
-			return nil, errors.New("address must be host:port")
+		if err := plugin.ValidateHostPort(values.String("address")); err != nil {
+			return nil, fmt.Errorf("address: %w", err)
 		}
 	}
 	if values.String("network") == "" && values.String("address") == "" &&

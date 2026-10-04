@@ -45,6 +45,9 @@ var knownEraHistory = map[string]EraHistory{
 	"preview": {
 		ShelleyEpochLength: 86400,
 	},
+	"sanchonet": {
+		ShelleyEpochLength: 86400,
+	},
 }
 
 // EpochFromSlot returns the epoch containing slot.
@@ -62,10 +65,10 @@ func (h EraHistory) EpochFromSlot(slot uint64) uint64 {
 		(slot-h.ShelleyStartSlot)/h.ShelleyEpochLength
 }
 
-// EpochFromSlot derives a mainnet epoch. ChainSync status uses the instance's
-// configured era history instead.
+// EpochFromSlot derives an epoch using the process-wide genesis configuration.
+// ChainSync status uses the instance's configured era history instead.
 func EpochFromSlot(slot uint64) uint64 {
-	return knownEraHistory["mainnet"].EpochFromSlot(slot)
+	return eraHistoryFromConfig(config.GetConfig()).EpochFromSlot(slot)
 }
 
 func (c *ChainSync) resolveEraHistory() {

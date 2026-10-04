@@ -419,6 +419,10 @@ func (s *templateStep) Apply(plan *setup.SetupPlan) {
 	plan.Filter = s.currentFilter()
 
 	level := plan.Output.Config["level"]
+	format := ""
+	if plan.Output.Type == "log" {
+		format = plan.Output.Config["format"]
+	}
 	plan.Output.Config = make(map[string]string)
 	switch s.outputSelect.Selected {
 	case "Webhook":
@@ -442,7 +446,10 @@ func (s *templateStep) Apply(plan *setup.SetupPlan) {
 		plan.Output.Config["format"] = "json"
 	default:
 		plan.Output.Type = "log"
-		plan.Output.Config["format"] = "text"
+		if format != "json" {
+			format = "text"
+		}
+		plan.Output.Config["format"] = format
 	}
 	if plan.Output.Type == "log" && level != "" {
 		plan.Output.Config["level"] = level

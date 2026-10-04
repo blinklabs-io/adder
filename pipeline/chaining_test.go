@@ -38,6 +38,18 @@ type chainPlugin struct {
 	stops  int
 }
 
+type nonComparablePlugin []int
+
+func (nonComparablePlugin) Role() plugin.PluginType            { return plugin.PluginTypeInput }
+func (nonComparablePlugin) Start() error                       { return nil }
+func (nonComparablePlugin) StartContext(context.Context) error { return nil }
+func (nonComparablePlugin) Stop() error                        { return nil }
+func (nonComparablePlugin) ErrorChan() <-chan error            { return nil }
+func (nonComparablePlugin) InputChan() chan<- event.Event      { return nil }
+func (nonComparablePlugin) OutputChan() <-chan event.Event     { return nil }
+func (nonComparablePlugin) Failed() <-chan struct{}            { return nil }
+func (nonComparablePlugin) Failure() error                     { return nil }
+
 func (p *chainPlugin) Role() plugin.PluginType { return p.role }
 
 func (p *chainPlugin) Start() error { return p.StartContext(context.Background()) }
@@ -171,7 +183,7 @@ func TestChainStartsConsumersFirstAndPreservesEventOrder(t *testing.T) {
 }
 
 func TestTopologyRejectedBeforeAnyPluginStarts(t *testing.T) {
-	for _, scenario := range []string{"nil", "typed nil", "wrong role", "duplicate", "already running"} {
+	for _, scenario := range []string{"nil", "typed nil", "wrong role", "duplicate", "non-comparable", "already running"} {
 		t.Run(scenario, func(t *testing.T) {
 			p := pipeline.New()
 			sink := newChainPlugin(plugin.PluginTypeOutput, "sink", nil)
@@ -188,6 +200,8 @@ func TestTopologyRejectedBeforeAnyPluginStarts(t *testing.T) {
 				)
 			case "duplicate":
 				p.AddOutput(sink)
+			case "non-comparable":
+				p.AddInput(nonComparablePlugin{1})
 			case "already running":
 				source := newChainPlugin(
 					plugin.PluginTypeInput,

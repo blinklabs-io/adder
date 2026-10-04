@@ -16,6 +16,7 @@ package webhook
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -33,6 +34,18 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+type retrySignalWriter struct {
+	once     sync.Once
+	retrying chan struct{}
+}
+
+func (w *retrySignalWriter) Write(p []byte) (int, error) {
+	if bytes.Contains(p, []byte("retrying")) {
+		w.once.Do(func() { close(w.retrying) })
+	}
+	return len(p), nil
+}
 
 const mainnetNetworkMagic = 764824073
 
@@ -480,6 +493,37 @@ func TestWebhookOutput_ShutdownDuringInFlightRequest(t *testing.T) {
 			require.Empty(t, logs.String(), "normal shutdown must not log retry/failure warnings")
 		})
 	}
+}
+
+func TestWebhookRetryBackoffHonorsRunContext(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	t.Cleanup(srv.Close)
+	signal := &retrySignalWriter{retrying: make(chan struct{})}
+	w := New(
+		WithUrl(srv.URL, false),
+		WithRetryConfig(3, time.Hour, time.Hour),
+		WithLogger(slog.New(slog.NewTextHandler(signal, nil))),
+	)
+	ctx, cancel := context.WithCancel(context.Background())
+	require.NoError(t, w.StartContext(ctx))
+	w.InputChan() <- blockEvent()
+	select {
+	case <-signal.retrying:
+	case <-time.After(time.Second):
+		t.Fatal("webhook did not enter retry backoff")
+	}
+	cancel()
+	exited := make(chan struct{})
+	go func() { w.Wait(); close(exited) }()
+	select {
+	case <-exited:
+	case <-time.After(time.Second):
+		_ = w.Stop()
+		t.Fatal("webhook retry backoff ignored parent cancellation")
+	}
+	require.NoError(t, w.Stop())
 }
 
 // TestWebhookDeliverySuccess verifies successful HTTP POST delivery to a webhook endpoint.

@@ -275,6 +275,11 @@ func run(cmd *cobra.Command) error {
 			terminalErr,
 		)
 	}
+	// A signal and a terminal failure can become ready together. Preserve an
+	// already-recorded failure regardless of which select case won.
+	if terminalErr == nil {
+		terminalErr = pipe.Failure()
+	}
 
 	// Graceful shutdown using Stop() method
 	if err := pipe.Stop(); err != nil {

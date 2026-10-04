@@ -96,6 +96,8 @@ func (w *WebhookOutput) start(ctx context.Context) error {
 	w.Go(func() {
 		for {
 			select {
+			case <-ctx.Done():
+				return
 			case <-doneChan:
 				return
 			case evt, ok := <-eventChan:
@@ -541,11 +543,15 @@ func (w *WebhookOutput) sendWebhookWithRetry(
 				"error",
 				lastErr,
 			)
-			// Responsive sleep
+			timer := time.NewTimer(backoff)
 			select {
-			case <-doneChan:
+			case <-ctx.Done():
+				timer.Stop()
 				return
-			case <-time.After(backoff):
+			case <-doneChan:
+				timer.Stop()
+				return
+			case <-timer.C:
 			}
 
 			// Calculate next backoff with exponential increase

@@ -15,11 +15,29 @@
 package cardano
 
 import (
+	"context"
 	"testing"
+	"time"
 
 	"github.com/blinklabs-io/adder/plugintest"
+	"github.com/stretchr/testify/require"
 )
 
 func TestLifecycleContract(t *testing.T) {
 	plugintest.Lifecycle(t, New())
+}
+
+func TestWorkerHonorsParentCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	p := New()
+	require.NoError(t, p.StartContext(ctx))
+	cancel()
+	exited := make(chan struct{})
+	go func() { p.Wait(); close(exited) }()
+	select {
+	case <-exited:
+	case <-time.After(time.Second):
+		t.Fatal("filter worker ignored parent cancellation")
+	}
+	require.NoError(t, p.Stop())
 }

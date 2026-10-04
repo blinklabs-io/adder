@@ -204,23 +204,28 @@ func (a *APIv1) Shutdown(ctx context.Context) error {
 	}
 	// Shutdown marks the HTTP server as stopping before closing its listeners,
 	// so Serve reports ErrServerClosed instead of an unexpected accept error.
+	var errs []error
+	var shutdownErr error
 	if err := server.Shutdown(ctx); err != nil &&
 		!errors.Is(err, net.ErrClosed) {
-		return fmt.Errorf("shutting down API server: %w", err)
+		shutdownErr = fmt.Errorf("shutting down API server: %w", err)
+		errs = append(errs, shutdownErr)
 	}
 	// Start may return before Serve registers the listener with net/http.
 	// In that case Shutdown cannot close it, so retain this fallback.
 	if listener != nil {
 		if err := listener.Close(); err != nil &&
 			!errors.Is(err, net.ErrClosed) {
-			return fmt.Errorf("closing API listener: %w", err)
+			errs = append(errs, fmt.Errorf("closing API listener: %w", err))
 		}
 	}
-	a.mu.Lock()
-	a.server = nil
-	a.listener = nil
-	a.mu.Unlock()
-	return nil
+	if shutdownErr == nil {
+		a.mu.Lock()
+		a.server = nil
+		a.listener = nil
+		a.mu.Unlock()
+	}
+	return errors.Join(errs...)
 }
 
 // AddRoute registers handler for method+path under the configured group base

@@ -97,6 +97,7 @@ The artifact is written to `dist\adder-<version>-windows-<arch>.msi`
 | `ADDER_TRAY_EXE`  | optional     | _(unset → script runs `go build`)_        | Path to a prebuilt `adder-tray.exe`. See `ADDER_EXE`. |
 | `BUNDLE_MESA`     | optional     | `1`                                       | Set to `0` to skip bundling Mesa software OpenGL (the GUI then needs a host OpenGL driver). Always skipped for `arm64` (no upstream build). |
 | `MESA_VERSION`    | optional     | `26.1.3`                                  | Pinned [`pal1000/mesa-dist-win`](https://github.com/pal1000/mesa-dist-win) release tag to download (`release-mingw`). |
+| `MESA_SHA256`     | optional     | digest pinned in `build-msi.ps1`           | Expected SHA-256 of the Mesa archive. Override it whenever `MESA_VERSION` changes. |
 | `MESA_OPENGL_DIR` | optional     | _(unset → download)_                      | Use Mesa DLLs from an already-extracted directory instead of downloading (offline / air-gapped builds). |
 | `JSIGN_KEYSTORE`  | signing      | _(unset → skip)_                          | Keystore reference: cloud HSM/KMS name (e.g. Key Vault URL), PKCS#11 config, or `.p12` path holding the EV certificate. |
 | `JSIGN_STOREPASS` | signing      | _(unset → skip)_                          | Keystore / token password or cloud credential. |

@@ -54,15 +54,17 @@ func (c *Cardano) StartContext(ctx context.Context) error {
 }
 
 func (c *Cardano) start(ctx context.Context) error {
-	c.Go(c.processEvents)
+	c.Go(func() { c.processEvents(ctx) })
 	return nil
 }
 
 // processEvents handles incoming events and applies filters
-func (c *Cardano) processEvents() {
+func (c *Cardano) processEvents(ctx context.Context) {
 	done, in := c.Done(), c.Input()
 	for {
 		select {
+		case <-ctx.Done():
+			return
 		case <-done:
 			return
 		case evt, ok := <-in:

@@ -178,7 +178,7 @@ Start with the `adder-publisher` example and gradually add features:
 ### Sync Performance
 
 - Start with `WithIntersectTip(true)` to sync from the current tip
-- `WithBulkMode(true)` selects bulk Node-to-Node sync; use it only against nodes you control
+- Node-to-Node ChainSync always uses bulk synchronization; connect it only to nodes you control
 - Consider using filters early to reduce event volume
 
 ### Memory Usage

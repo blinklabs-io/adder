@@ -61,6 +61,7 @@ type Output struct {
 	writeMu            sync.Mutex
 	engine             *notifications.Engine
 	config             setup.NotificationConfig
+	configLoaded       bool
 }
 
 func New(options ...Option) *Output {
@@ -92,9 +93,16 @@ func (o *Output) start(ctx context.Context) error {
 	if o.configPath == "" {
 		return errors.New("notify-json config path must not be empty")
 	}
-	cfg, err := setup.ReadNotificationConfig(o.configPath)
-	if err != nil {
+	if err := ctx.Err(); err != nil {
 		return err
+	}
+	cfg := o.config
+	if !o.configLoaded {
+		var err error
+		cfg, err = setup.ReadNotificationConfig(o.configPath)
+		if err != nil {
+			return err
+		}
 	}
 	o.config = cfg
 	o.staleAfter = o.staleAfterOverride
@@ -113,6 +121,9 @@ func (o *Output) start(ctx context.Context) error {
 		),
 	)
 	o.engine.Start()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if err := o.writeRecord(statusRecord{
 		SchemaVersion: schemaVersion,
 		Kind:          "status",

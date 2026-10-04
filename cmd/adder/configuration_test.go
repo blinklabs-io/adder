@@ -67,9 +67,11 @@ func TestFactoryErrorsAreDescriptive(t *testing.T) {
 		message string
 	}{
 		{plugin.PluginTypeInput, "chainsync", map[string]any{"network": "typo"}, "network"},
+		{plugin.PluginTypeInput, "chainsync", map[string]any{"address": ":3001"}, "address"},
 		{plugin.PluginTypeInput, "chainsync", map[string]any{"network-magic": uint64(1) << 32}, "network-magic"},
 		{plugin.PluginTypeInput, "chainsync", map[string]any{"intersect-point": "1.ab"}, "hash"},
 		{plugin.PluginTypeInput, "mempool", map[string]any{"socket-path": "/tmp/not-opened.sock", "poll-interval": "0s"}, "poll-interval"},
+		{plugin.PluginTypeInput, "mempool", map[string]any{"address": "node:", "ntc-tcp": true}, "address"},
 		{plugin.PluginTypeInput, "utxorpc", map[string]any{"url": "https://example.invalid", "mode": "typo"}, "mode"},
 		{plugin.PluginTypeInput, "utxorpc", map[string]any{"url": "https://example.invalid", "intersect-point": "typo"}, "intersect-point"},
 		{plugin.PluginTypeOutput, "log", map[string]any{"format": "typo"}, "format"},
@@ -85,6 +87,16 @@ func TestFactoryErrorsAreDescriptive(t *testing.T) {
 			require.NotContains(t, err.Error(), "password")
 		})
 	}
+}
+
+func TestChainSyncFactoryAcceptsBracketedIPv6(t *testing.T) {
+	p, err := plugin.GetPlugin(
+		plugin.PluginTypeInput,
+		"chainsync",
+		map[string]any{"address": "[::1]:3001"},
+	)
+	require.NoError(t, err)
+	require.NotNil(t, p)
 }
 
 func TestCLIPluginPrecedenceAndKupoEmpty(t *testing.T) {
@@ -104,6 +116,9 @@ func TestCLIPluginPrecedenceAndKupoEmpty(t *testing.T) {
 	)
 	resolved, err := c.ResolvePlugins(fs)
 	require.NoError(t, err)
+	filterOptions, err := resolved.Options(plugin.PluginTypeFilter, "event")
+	require.NoError(t, err)
+	require.Equal(t, "input.block", filterOptions.String("type"))
 	p, err := resolved.New(plugin.PluginTypeFilter, "event")
 	require.NoError(t, err)
 	require.NotNil(t, p)

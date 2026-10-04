@@ -17,7 +17,6 @@ package mempool
 import (
 	"errors"
 	"fmt"
-	"net"
 	"time"
 
 	"github.com/blinklabs-io/adder/internal/logging"
@@ -102,8 +101,8 @@ func newFromOptions(values plugin.Options) (plugin.ManagedPlugin, error) {
 		}
 	}
 	if values.String("address") != "" {
-		if _, _, err := net.SplitHostPort(values.String("address")); err != nil {
-			return nil, errors.New("address must be host:port")
+		if err := plugin.ValidateHostPort(values.String("address")); err != nil {
+			return nil, fmt.Errorf("address: %w", err)
 		}
 		if !values.Bool("ntc-tcp") {
 			return nil, errors.New("address requires ntc-tcp=true")

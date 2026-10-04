@@ -17,6 +17,7 @@ package plugin
 import (
 	"errors"
 	"fmt"
+	"net"
 	"net/url"
 	"strconv"
 	"strings"
@@ -165,6 +166,28 @@ func ValidateHTTPURL(value string) error {
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") ||
 		u.Hostname() == "" {
 		return errors.New("expected an absolute http or https URL")
+	}
+	if port := u.Port(); port != "" {
+		if err := validatePort(port); err != nil {
+			return errors.New("expected a URL port between 1 and 65535")
+		}
+	}
+	return nil
+}
+
+// ValidateHostPort checks TCP endpoints, including bracketed IPv6 addresses.
+func ValidateHostPort(value string) error {
+	host, port, err := net.SplitHostPort(value)
+	if err != nil || host == "" || validatePort(port) != nil {
+		return errors.New("expected host:port with a port between 1 and 65535")
+	}
+	return nil
+}
+
+func validatePort(port string) error {
+	value, err := strconv.ParseUint(port, 10, 16)
+	if err != nil || value == 0 {
+		return errors.New("invalid port")
 	}
 	return nil
 }

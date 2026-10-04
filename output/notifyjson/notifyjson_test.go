@@ -273,12 +273,9 @@ func TestOutputNormalizesNativeEventBeforeTargetMatching(t *testing.T) {
 	require.NoError(t, o.Stop())
 }
 
-// TestOutputRestartsWithoutAnInterveningStop guards a restart deadlock.
-// requestLoop ends only when Engine.Stop closes the requests channel, so a
-// second Start that went straight into Init would block forever in Init's
-// wait for the previous run's workers. Start releases the previous engine
-// first.
-func TestOutputRestartsWithoutAnInterveningStop(t *testing.T) {
+// TestOutputDuplicateStartIsNoOp verifies that the current run continues to
+// deliver until Stop.
+func TestOutputDuplicateStartIsNoOp(t *testing.T) {
 	var output lockedBuffer
 	o := New(
 		WithConfigPath(writeTestConfig(t)),
@@ -296,7 +293,7 @@ func TestOutputRestartsWithoutAnInterveningStop(t *testing.T) {
 		t.Fatal("second Start deadlocked in Init's wg.Wait")
 	}
 
-	// The restarted plugin still delivers: fresh channels, fresh engine.
+	// The original run still delivers after the duplicate Start.
 	o.InputChan() <- testTransaction()
 	require.Eventually(t, func() bool {
 		return strings.Contains(output.String(), `"kind":"notification"`)

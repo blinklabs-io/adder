@@ -136,12 +136,13 @@ func (c *Config) LoadWithFlags(configFile string, fs *pflag.FlagSet) error {
 		var parse *envconfig.ParseError
 		if errors.As(err, &parse) {
 			return fmt.Errorf(
-				"error processing environment %s: invalid %s",
+				"error processing environment %s as %s: %w",
 				parse.KeyName,
 				parse.TypeName,
+				err,
 			)
 		}
-		return errors.New("error processing environment: invalid configuration")
+		return fmt.Errorf("error processing environment: %w", err)
 	}
 	if fs != nil {
 		for name, dest := range map[string]*string{
@@ -255,7 +256,7 @@ func (c *Config) ResolvePlugins(
 		data["input"] = make(map[string]map[string]any)
 	}
 	for _, entry := range plugin.GetPlugins(plugin.PluginTypeInput) {
-		if entry.Name != "chainsync" && entry.Name != "mempool" {
+		if !entryHasOption(entry, "kupo-url") {
 			continue
 		}
 		if data["input"][entry.Name] == nil {
@@ -266,4 +267,13 @@ func (c *Config) ResolvePlugins(
 		}
 	}
 	return plugin.ResolveConfig(data, fs, nil)
+}
+
+func entryHasOption(entry plugin.PluginEntry, name string) bool {
+	for _, option := range entry.Options {
+		if option.Name == name {
+			return true
+		}
+	}
+	return false
 }

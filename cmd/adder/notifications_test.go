@@ -153,11 +153,13 @@ func TestNotificationValidationUsesResolvedSources(t *testing.T) {
 		name      string
 		env       map[string]string
 		flags     []string
+		yamlStale bool
 		wantError string
 	}{
 		{name: "YAML only"},
 		{
-			name: "environment overrides YAML",
+			name:      "environment overrides YAML",
+			yamlStale: true,
 			env: map[string]string{
 				"OUTPUT_NOTIFY_JSON_CONFIG": path,
 				"INPUT_CHAINSYNC_NETWORK":   "preview",
@@ -193,7 +195,7 @@ func TestNotificationValidationUsesResolvedSources(t *testing.T) {
 				"input":  {"chainsync": {"network": "preview", "address": "node.example:3001"}},
 				"output": {"notify-json": {"config": path}},
 			}
-			if test.name == "environment overrides YAML" {
+			if test.yamlStale {
 				data["input"]["chainsync"]["network"] = "mainnet"
 				data["input"]["chainsync"]["address"] = "other.example:3001"
 				data["output"]["notify-json"]["config"] = "unused.json"

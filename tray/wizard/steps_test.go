@@ -245,6 +245,7 @@ func TestTemplateStepValidateOutputsAndApply(t *testing.T) {
 	step.outputSelect.SetSelected("Console logging (default)")
 	step.Apply(got)
 	assert.Equal(t, "log", got.Output.Type)
+	assert.Equal(t, "json", got.Output.Config["format"])
 }
 
 // TestTemplateStepAddRemoveAndSummary exercises the per-section add /

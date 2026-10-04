@@ -17,10 +17,13 @@ package chainsync
 import (
 	"testing"
 
+	"github.com/blinklabs-io/adder/internal/config"
 	"github.com/stretchr/testify/require"
 )
 
 func TestEpochFromSlotByNetwork(t *testing.T) {
+	// Shelley epochs are startEpoch+(slot-startSlot)/epochLength; mainnet,
+	// preprod, and the one-day testnets therefore produce 429, 235, and 1157.
 	tests := []struct {
 		name    string
 		options []ChainSyncOptionFunc
@@ -42,6 +45,12 @@ func TestEpochFromSlotByNetwork(t *testing.T) {
 		{
 			name:    "preview by name",
 			options: []ChainSyncOptionFunc{WithNetwork("preview")},
+			slot:    100000000,
+			want:    1157,
+		},
+		{
+			name:    "sanchonet by name",
+			options: []ChainSyncOptionFunc{WithNetwork("sanchonet")},
 			slot:    100000000,
 			want:    1157,
 		},
@@ -94,7 +103,23 @@ func TestEpochFromSlotByNetwork(t *testing.T) {
 
 func TestEpochFromSlotEraBoundaries(t *testing.T) {
 	history := knownEraHistory["preprod"]
+	// Preprod uses four 21,600-slot Byron epochs, then 432,000-slot epochs.
 	require.Equal(t, uint64(3), history.EpochFromSlot(86399))
 	require.Equal(t, uint64(4), history.EpochFromSlot(86400))
 	require.Equal(t, uint64(5), history.EpochFromSlot(518400))
+}
+
+func TestEpochFromSlotUsesGlobalGenesisConfiguration(t *testing.T) {
+	cfg := config.GetConfig()
+	previous := *cfg
+	t.Cleanup(func() { *cfg = previous })
+	endSlot := uint64(99)
+	cfg.ByronGenesis.EpochLength = 10
+	cfg.ByronGenesis.EndSlot = &endSlot
+	cfg.ShelleyTransEpoch = 10
+	cfg.ShelleyGenesis.EpochLength = 50
+
+	require.Equal(t, uint64(9), EpochFromSlot(99))
+	require.Equal(t, uint64(10), EpochFromSlot(100))
+	require.Equal(t, uint64(11), EpochFromSlot(150))
 }

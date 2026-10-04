@@ -72,8 +72,8 @@ func TestChainSyncCallbacksReachLogOutput(t *testing.T) {
 					require.NoError(t, c.handleBlockFetchBlock(blockfetch.CallbackContext{}, 0, block))
 				}
 				require.NoError(t, c.handleRollBackward(protocolchainsync.CallbackContext{}, protocolcommon.Point{Slot: 1999, Hash: []byte{0xaa, 0xbb}}, protocolchainsync.Tip{}))
-				// Pipeline.Stop cancels forwarding rather than draining upstream;
-				// wait for delivery before checking the output's drain/close path.
+				// Pipeline.Stop does not drain upstream forwarding, so the callback
+				// events must reach the output before shutdown.
 				require.Eventually(t, func() bool {
 					data, err := os.ReadFile(path)
 					return err == nil && strings.Count(string(data), "\n") == 4
