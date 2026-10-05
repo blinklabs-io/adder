@@ -54,7 +54,7 @@ mod-tidy:
 	go mod tidy
 
 clean:
-	rm -f $(BINARY_OUTPUTS) $(TRAY_BINARY_OUTPUT)
+	rm -f $(BINARIES) $(addsuffix .exe,$(BINARIES)) adder-tray adder-tray.exe
 
 format: mod-tidy
 	go fmt ./...
