@@ -55,27 +55,31 @@ func TestParentCancellationStopsReconnectWorker(t *testing.T) {
 	)
 	t.Cleanup(server.Close)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	u := New(WithURL(server.URL))
-	require.NoError(t, u.StartContext(ctx))
-	defer func() { require.NoError(t, u.Stop()) }()
+	for _, mode := range []string{modeFollowTip, modeWatchTx} {
+		t.Run(mode, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			u := New(WithURL(server.URL), WithMode(mode))
+			require.NoError(t, u.StartContext(ctx))
+			defer func() { require.NoError(t, u.Stop()) }()
 
-	select {
-	case err := <-u.ErrorChan():
-		require.Error(t, err)
-	case <-time.After(5 * time.Second):
-		t.Fatal("UTxO RPC worker did not enter reconnect backoff")
-	}
+			select {
+			case err := <-u.ErrorChan():
+				require.Error(t, err)
+			case <-time.After(5 * time.Second):
+				t.Fatal("UTxO RPC worker did not enter reconnect backoff")
+			}
 
-	cancel()
-	exited := make(chan struct{})
-	go func() {
-		u.Wait()
-		close(exited)
-	}()
-	select {
-	case <-exited:
-	case <-time.After(2 * time.Second):
-		t.Fatal("UTxO RPC reconnect worker ignored parent cancellation")
+			cancel()
+			exited := make(chan struct{})
+			go func() {
+				u.Wait()
+				close(exited)
+			}()
+			select {
+			case <-exited:
+			case <-time.After(2 * time.Second):
+				t.Fatal("UTxO RPC reconnect worker ignored parent cancellation")
+			}
+		})
 	}
 }

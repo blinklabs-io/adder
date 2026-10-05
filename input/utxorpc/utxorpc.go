@@ -147,13 +147,10 @@ func (u *Utxorpc) Stop() error {
 }
 
 func (u *Utxorpc) run() {
-	done := u.Done()
 	ctx := u.Context()
 	backoff := time.Second
 	for {
 		select {
-		case <-done:
-			return
 		case <-ctx.Done():
 			return
 		default:
@@ -190,8 +187,6 @@ func (u *Utxorpc) run() {
 		}
 
 		select {
-		case <-done:
-			return
 		case <-ctx.Done():
 			return
 		case <-time.After(backoff):
@@ -209,7 +204,6 @@ func (u *Utxorpc) run() {
 func (u *Utxorpc) runFollowTipOnce() error {
 	ctx, cancel := context.WithCancel(u.Context())
 	defer cancel()
-	done := u.Done()
 	if ctx.Err() != nil {
 		return nil
 	}
@@ -225,7 +219,7 @@ func (u *Utxorpc) runFollowTipOnce() error {
 
 	for {
 		select {
-		case <-done:
+		case <-ctx.Done():
 			return nil
 		default:
 		}
@@ -256,7 +250,6 @@ func (u *Utxorpc) runFollowTipOnce() error {
 func (u *Utxorpc) runWatchTxOnce() error {
 	ctx, cancel := context.WithCancel(u.Context())
 	defer cancel()
-	done := u.Done()
 	if ctx.Err() != nil {
 		return nil
 	}
@@ -272,7 +265,7 @@ func (u *Utxorpc) runWatchTxOnce() error {
 
 	for {
 		select {
-		case <-done:
+		case <-ctx.Done():
 			return nil
 		default:
 		}
