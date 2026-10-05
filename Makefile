@@ -6,6 +6,10 @@ GO_FILES=$(shell find $(ROOT_DIR) -name '*.go')
 
 # Gather list of expected binaries
 BINARIES=$(shell cd $(ROOT_DIR)/cmd && ls -1 | grep -v ^common | grep -v ^adder-tray)
+GOOS ?= $(shell go env GOOS)
+BINARY_SUFFIX := $(if $(filter windows,$(GOOS)),.exe,)
+BINARY_OUTPUTS := $(addsuffix $(BINARY_SUFFIX),$(BINARIES))
+TRAY_BINARY_OUTPUT := adder-tray$(BINARY_SUFFIX)
 
 # Extract Go module name from go.mod
 GOMODULE=$(shell grep ^module $(ROOT_DIR)/go.mod | awk '{ print $$2 }')
@@ -27,7 +31,7 @@ TRAY_CGO_CFLAGS=$(strip $(GO_CGO_CFLAGS) $(if $(filter windows/arm64,$(GOOS)/$(G
 .PHONY: build build-tray mod-tidy clean test wizard-screenshots bundle-macos pkg-macos pkg-macos-adhoc
 
 # Alias for building program binary
-build: $(BINARIES)
+build: $(BINARY_OUTPUTS)
 
 # Create a local Adder.app for macOS
 bundle-macos:
@@ -50,7 +54,7 @@ mod-tidy:
 	go mod tidy
 
 clean:
-	rm -f $(BINARIES)
+	rm -f $(BINARIES) $(addsuffix .exe,$(BINARIES)) adder-tray adder-tray.exe
 
 format: mod-tidy
 	go fmt ./...
@@ -77,14 +81,14 @@ wizard-screenshots:
 build-tray: mod-tidy $(GO_FILES)
 	CGO_CFLAGS="$(TRAY_CGO_CFLAGS)" CGO_ENABLED=1 go build \
 		$(TRAY_LDFLAGS) \
-		-o adder-tray$(if $(filter windows,$(GOOS)),.exe,) \
+		-o $(TRAY_BINARY_OUTPUT) \
 		./cmd/adder-tray
 
 # Build our program binaries
 # Depends on GO_FILES to determine when rebuild is needed
-$(BINARIES): mod-tidy $(GO_FILES)
+$(BINARY_OUTPUTS): mod-tidy $(GO_FILES)
 	CGO_ENABLED=0 go build \
 		$(GO_LDFLAGS) \
 		-tags nodbus \
-		-o $(@)$(if $(filter windows,$(GOOS)),.exe,)  \
-		./cmd/$(@)
+		-o $(@) \
+		./cmd/$(patsubst %.exe,%,$(@))

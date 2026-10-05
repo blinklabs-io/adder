@@ -1,6 +1,8 @@
 # Binaries for programs and plugins
 /adder
+/adder.exe
 /adder-tray
+/adder-tray.exe
 
 # macOS installer build output (packaging/macos/build-pkg.sh)
 /dist/
