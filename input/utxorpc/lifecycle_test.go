@@ -15,12 +15,15 @@
 package utxorpc
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/blinklabs-io/adder/plugintest"
+	"github.com/stretchr/testify/require"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
 )
@@ -40,3 +43,39 @@ func TestLifecycleContract(t *testing.T) {
 }
 
 func TestFailedStartContract(t *testing.T) { plugintest.FailedStart(t, New()) }
+
+func TestParentCancellationStopsReconnectWorker(t *testing.T) {
+	server := httptest.NewServer(
+		h2c.NewHandler(
+			http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				http.Error(w, "unavailable", http.StatusServiceUnavailable)
+			}),
+			&http2.Server{},
+		),
+	)
+	t.Cleanup(server.Close)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	u := New(WithURL(server.URL))
+	require.NoError(t, u.StartContext(ctx))
+	defer func() { require.NoError(t, u.Stop()) }()
+
+	select {
+	case err := <-u.ErrorChan():
+		require.Error(t, err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("UTxO RPC worker did not enter reconnect backoff")
+	}
+
+	cancel()
+	exited := make(chan struct{})
+	go func() {
+		u.Wait()
+		close(exited)
+	}()
+	select {
+	case <-exited:
+	case <-time.After(2 * time.Second):
+		t.Fatal("UTxO RPC reconnect worker ignored parent cancellation")
+	}
+}

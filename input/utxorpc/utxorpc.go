@@ -148,10 +148,13 @@ func (u *Utxorpc) Stop() error {
 
 func (u *Utxorpc) run() {
 	done := u.Done()
+	ctx := u.Context()
 	backoff := time.Second
 	for {
 		select {
 		case <-done:
+			return
+		case <-ctx.Done():
 			return
 		default:
 		}
@@ -164,6 +167,9 @@ func (u *Utxorpc) run() {
 			err = u.runWatchTxOnce()
 		default:
 			err = fmt.Errorf("utxorpc: unknown mode %q", u.mode)
+		}
+		if ctx.Err() != nil {
+			return
 		}
 
 		if !u.autoReconnect {
@@ -185,6 +191,8 @@ func (u *Utxorpc) run() {
 
 		select {
 		case <-done:
+			return
+		case <-ctx.Done():
 			return
 		case <-time.After(backoff):
 		}
