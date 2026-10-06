@@ -36,8 +36,8 @@ func TestSetupPlanRoundTrip(t *testing.T) {
 					},
 				},
 				Output: OutputConfig{
-					Type:   "none",
-					Config: map[string]string{},
+					Type:   "log",
+					Config: map[string]string{"level": "error"},
 				},
 				API:    APIConfig{Address: "127.0.0.1", Port: 8080},
 				Notify: NotificationPrefs{},
@@ -115,7 +115,7 @@ func TestSetupPlanRoundTrip(t *testing.T) {
 					Pools:   []string{"pool1abc", "pool1def"},
 				},
 				Output: OutputConfig{
-					Type:   "none",
+					Type:   "log",
 					Config: map[string]string{},
 				},
 				API:    APIConfig{Address: "127.0.0.1", Port: 8080},
@@ -182,7 +182,7 @@ func TestSetupPlanFromEngineConfigHandlesCustomAddressAndLogDefaults(
 			ListenPort:    9090,
 		},
 		Output: "log",
-		Plugin: map[string]map[string]map[any]any{
+		Plugin: map[string]map[string]map[string]any{
 			"input": {
 				"chainsync": {
 					"network": "preprod",
@@ -216,7 +216,7 @@ func TestSetupPlanFromEngineConfigHandlesCustomAddressAndLogDefaults(
 	assert.Empty(t, got.Filter.Wallets)
 	assert.Empty(t, got.Filter.DReps)
 	assert.Empty(t, got.Filter.Pools)
-	assert.Equal(t, "none", got.Output.Type)
+	assert.Equal(t, "log", got.Output.Type)
 	assert.True(t, got.App.AutoStart)
 	assert.True(t, got.App.CheckUpdatesWeekly)
 	assert.True(t, got.Notify[NotifyPrefConnectionIssues])
@@ -260,7 +260,7 @@ func TestSetupPlanFromEngineConfigHandlesSparseConfig(t *testing.T) {
 	assert.Empty(t, got.Filter.Wallets)
 	assert.Empty(t, got.Filter.DReps)
 	assert.Empty(t, got.Filter.Pools)
-	assert.Equal(t, "none", got.Output.Type)
+	assert.Equal(t, "log", got.Output.Type)
 	assert.NotNil(t, got.Output.Config)
 }
 
@@ -272,7 +272,7 @@ func TestSetupPlanFromEngineConfigHandlesSparseConfig(t *testing.T) {
 // engine config.
 func TestToEngineConfigClearsCardanoFilterKnobs(t *testing.T) {
 	base := config.Config{
-		Plugin: map[string]map[string]map[any]any{
+		Plugin: map[string]map[string]map[string]any{
 			"filter": {
 				"cardano": {
 					"address": "addr1old",
@@ -294,7 +294,7 @@ func TestToEngineConfigClearsCardanoFilterKnobs(t *testing.T) {
 			Policies: []string{"polnew"},
 		},
 		Output: OutputConfig{
-			Type:   "none",
+			Type:   "log",
 			Config: make(map[string]string),
 		},
 	}
@@ -334,7 +334,7 @@ func TestToEngineConfig_CombinedWalletDRepPoolNeverWritesFilterKnobs(
 			Pools:   []string{"pool1dd", "pool1ee"},
 		},
 		Output: OutputConfig{
-			Type:   "none",
+			Type:   "log",
 			Config: map[string]string{},
 		},
 	}
@@ -358,7 +358,7 @@ func TestToEngineConfig_CombinedWalletDRepPoolNeverWritesFilterKnobs(
 // cycle, the legacy knobs get scrubbed from engine.yaml).
 func TestSetupPlanFromEngineConfigMigratesLegacyCardanoKnobs(t *testing.T) {
 	engine := config.Config{
-		Plugin: map[string]map[string]map[any]any{
+		Plugin: map[string]map[string]map[string]any{
 			"filter": {
 				"cardano": {
 					"address": "addr1legacy",
@@ -393,7 +393,7 @@ func TestSetupPlanFromEngineConfigMigratesLegacyAssetAndPolicyKnobs(
 	t *testing.T,
 ) {
 	engine := config.Config{
-		Plugin: map[string]map[string]map[any]any{
+		Plugin: map[string]map[string]map[string]any{
 			"filter": {
 				"cardano": {
 					"asset":  "asset1abc,asset1def",
@@ -464,7 +464,7 @@ func TestToEngineConfigWritesCustomNodeAddress(t *testing.T) {
 		},
 		Filter: FilterConfig{MonitorEverything: true},
 		Output: OutputConfig{
-			Type:   "none",
+			Type:   "log",
 			Config: make(map[string]string),
 		},
 	}

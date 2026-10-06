@@ -23,7 +23,7 @@ type MempoolOptionFunc func(*Mempool)
 // WithLogger specifies the logger to use
 func WithLogger(logger plugin.Logger) MempoolOptionFunc {
 	return func(m *Mempool) {
-		m.logger = logger
+		m.SetLogger(logger)
 	}
 }
 

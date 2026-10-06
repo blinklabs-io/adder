@@ -23,7 +23,6 @@ import (
 	"log/slog"
 	"math/big"
 	"os"
-	"sync"
 
 	"github.com/blinklabs-io/adder/event"
 	"github.com/blinklabs-io/adder/internal/logging"
@@ -34,7 +33,7 @@ import (
 )
 
 type tokenProvider interface {
-	GetToken() (string, error)
+	GetToken(context.Context) (string, error)
 }
 
 type googleTokenProvider struct {
@@ -42,7 +41,7 @@ type googleTokenProvider struct {
 	accessTokenUrl         string
 }
 
-func (g *googleTokenProvider) GetToken() (string, error) {
+func (g *googleTokenProvider) GetToken(ctx context.Context) (string, error) {
 	data, err := os.ReadFile(g.serviceAccountFilePath)
 	if err != nil {
 		return "", fmt.Errorf("failed to read credential file: %w", err)
@@ -53,7 +52,7 @@ func (g *googleTokenProvider) GetToken() (string, error) {
 		return "", fmt.Errorf("failed to parse credential file: %w", err)
 	}
 
-	token, err := conf.TokenSource(context.Background()).Token()
+	token, err := conf.TokenSource(ctx).Token()
 	if err != nil {
 		return "", fmt.Errorf("failed to get token: %w", err)
 	}
@@ -61,11 +60,7 @@ func (g *googleTokenProvider) GetToken() (string, error) {
 }
 
 type PushOutput struct {
-	mu                     sync.Mutex
-	wg                     sync.WaitGroup
-	errorChan              chan error
-	eventChan              chan event.Event
-	logger                 plugin.Logger
+	plugin.Base
 	accessToken            string
 	accessTokenUrl         string
 	projectID              string
@@ -109,41 +104,49 @@ func New(options ...PushOptionFunc) (*PushOutput, error) {
 
 // log returns the plugin logger, or the global logger if unset.
 func (p *PushOutput) log() plugin.Logger {
-	if p.logger != nil {
-		return p.logger
+	if logger := p.Logger(); logger != nil {
+		return logger
 	}
 	return logging.GetLoggerForComponent("output.push")
 }
 
+// Role identifies this plugin as a pipeline output.
+func (p *PushOutput) Role() plugin.PluginType { return plugin.PluginTypeOutput }
+
+// Start the push notification output
 func (p *PushOutput) Start() error {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	if p.eventChan != nil {
-		return nil
-	}
-	p.eventChan = make(chan event.Event, 10)
-	p.errorChan = make(chan error, 16)
+	return p.StartContext(context.Background())
+}
+
+// StartContext starts the plugin with ctx governing setup and run operations.
+// Call Stop to wait for workers and release resources, including after cancellation.
+func (p *PushOutput) StartContext(ctx context.Context) error {
+	return p.StartRun(ctx,
+		plugin.BaseConfig{HasInput: true, DrainOnStop: true},
+		p.start,
+		plugin.ShutdownHooks{},
+	)
+}
+
+func (p *PushOutput) start(ctx context.Context) error {
 	logger := p.log()
 	logger.Info("starting push notification server")
-	eventChan := p.eventChan
-	errorChan := p.errorChan
-	p.wg.Add(1)
-	go func(eventChan <-chan event.Event, errorChan chan<- error) {
-		defer p.wg.Done()
+	in := p.Input()
+	p.Go(func() {
 		for {
-			evt, ok := <-eventChan
+			evt, ok := <-in
 			// Channel has been closed, which means we're shutting down
 			if !ok {
 				return
 			}
 			// Get access token per each event
-			if err := p.GetAccessToken(); err != nil {
+			if err := p.GetAccessToken(ctx); err != nil {
+				if ctx.Err() != nil {
+					return
+				}
 				err = fmt.Errorf("failed to get access token: %w", err)
 				slog.Error(err.Error())
-				select {
-				case errorChan <- err:
-				default:
-				}
+				p.TrySendError(err)
 				continue
 			}
 
@@ -182,7 +185,7 @@ func (p *PushOutput) Start() error {
 				)
 
 				// Send notification
-				p.processFcmNotifications(errorChan, title, body)
+				p.processFcmNotifications(ctx, title, body)
 
 			case event.TypeRollback:
 				payload := evt.Payload
@@ -253,14 +256,14 @@ func (p *PushOutput) Start() error {
 					)
 				}
 				// Send notification
-				p.processFcmNotifications(errorChan, title, body)
+				p.processFcmNotifications(ctx, title, body)
 
 			default:
 				fmt.Println("Adder")
 				fmt.Printf("New Event!\nEvent: %v", evt)
 			}
 		}
-	}(eventChan, errorChan)
+	})
 	return nil
 }
 
@@ -281,7 +284,10 @@ func truncToken(token string) string {
 	return token[:8] + "..." + token[len(token)-8:]
 }
 
-func (p *PushOutput) processFcmNotifications(errorChan chan<- error, title, body string) {
+func (p *PushOutput) processFcmNotifications(
+	ctx context.Context,
+	title, body string,
+) {
 	logger := p.log()
 	// Fetch new FCM tokens and add to p.fcmTokens
 	p.refreshFcmTokens()
@@ -306,14 +312,17 @@ func (p *PushOutput) processFcmNotifications(errorChan chan<- error, title, body
 				"error",
 				err,
 			)
-			select {
-			case errorChan <- fmt.Errorf("failed to create message for token %s: %w", truncToken(fcmToken), err):
-			default:
-			}
+			p.TrySendError(fmt.Errorf(
+				"failed to create message for token %s: %w",
+				truncToken(fcmToken), err,
+			))
 			continue
 		}
 
-		if err := fcm.Send(p.accessToken, p.projectID, msg); err != nil {
+		if err := fcm.Send(ctx, p.accessToken, p.projectID, msg); err != nil {
+			if ctx.Err() != nil {
+				return
+			}
 			logger.Error(
 				"Failed to send message to token",
 				"token",
@@ -321,10 +330,10 @@ func (p *PushOutput) processFcmNotifications(errorChan chan<- error, title, body
 				"error",
 				err,
 			)
-			select {
-			case errorChan <- fmt.Errorf("failed to send message to token %s: %w", truncToken(fcmToken), err):
-			default:
-			}
+			p.TrySendError(fmt.Errorf(
+				"failed to send message to token %s: %w",
+				truncToken(fcmToken), err,
+			))
 			continue
 		}
 		logger.Info(
@@ -335,8 +344,8 @@ func (p *PushOutput) processFcmNotifications(errorChan chan<- error, title, body
 	}
 }
 
-func (p *PushOutput) GetAccessToken() error {
-	token, err := p.tokenProvider.GetToken()
+func (p *PushOutput) GetAccessToken(ctx context.Context) error {
+	token, err := p.tokenProvider.GetToken(ctx)
 	if err != nil {
 		return err
 	}
@@ -368,43 +377,9 @@ func (p *PushOutput) GetProjectId() error {
 	return nil
 }
 
-// Stop the embedded output
+// Stop the push output
 func (p *PushOutput) Stop() error {
-	p.mu.Lock()
-	if p.eventChan != nil {
-		close(p.eventChan)
-		p.eventChan = nil
-	}
-	p.mu.Unlock()
-
-	p.wg.Wait()
-
-	p.mu.Lock()
-	if p.errorChan != nil {
-		close(p.errorChan)
-		p.errorChan = nil
-	}
-	p.mu.Unlock()
-	return nil
-}
-
-// ErrorChan returns the plugin's error channel
-func (p *PushOutput) ErrorChan() <-chan error {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	return p.errorChan
-}
-
-// InputChan returns the input event channel
-func (p *PushOutput) InputChan() chan<- event.Event {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	return p.eventChan
-}
-
-// OutputChan always returns nil
-func (p *PushOutput) OutputChan() <-chan event.Event {
-	return nil
+	return p.Shutdown(plugin.ShutdownHooks{})
 }
 
 // This should probably go in gouroboros module
@@ -508,3 +483,5 @@ func metadatumToAny(md common.TransactionMetadatum) any {
 		return nil
 	}
 }
+
+var _ plugin.ManagedPlugin = (*PushOutput)(nil)

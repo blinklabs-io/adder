@@ -97,7 +97,7 @@ func TestSimulateStartAction(t *testing.T) {
 	// 4. Verification: Wait for connection
 	fmt.Println("[Step 3] Waiting for StatusConnected...")
 	success := false
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		status := a.conn.status.Status()
 		fmt.Printf("Current Status: %s\n", status)
 		if status == StatusConnected {

@@ -25,7 +25,7 @@ type WebhookOptionFunc func(*WebhookOutput)
 // WithLogger specifies the logger object to use for logging messages
 func WithLogger(logger plugin.Logger) WebhookOptionFunc {
 	return func(o *WebhookOutput) {
-		o.logger = logger
+		o.SetLogger(logger)
 	}
 }
 

@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="425" viewBox="0 0 1200 425" role="img" aria-labelledby="title desc">
+  <title id="title">Native Adder and Dingo socket relay</title>
+  <desc id="desc">The container start helper publishes the Linux guest /ipc/node.socket at ~/dingo-ipc/node.socket on macOS. The native Adder process dials the host socket.</desc>
+  <defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#94a3b8"/></marker></defs>
+  <rect width="1200" height="425" rx="16" fill="#0b1220"/>
+  <g font-family="Arial, Helvetica, sans-serif">
+    <text x="32" y="45" font-size="28" fill="#ffffff" font-weight="700">Native Adder on macOS</text>
+    <text x="32" y="78" font-size="16" fill="#dbe5f3">Dingo runs in a Linux guest; Adder runs on the host.</text>
+    <rect x="30" y="110" width="1140" height="240" rx="12" fill="#0f1a2c" stroke="#475569" stroke-width="1.5"/>
+    <text x="50" y="141" font-size="13" fill="#94a3b8" font-weight="700">macOS HOST</text>
+    <rect x="55" y="165" width="340" height="145" rx="12" fill="#0b1220" stroke="#475569" stroke-width="1.5"/>
+    <text x="75" y="191" font-size="13" fill="#94a3b8" font-weight="700">LINUX CONTAINER</text>
+    <rect x="75" y="208" width="300" height="82" rx="12" fill="#142337" stroke="#34d399" stroke-width="1.5"/>
+    <text x="95" y="240" font-size="21" fill="#34d399" font-weight="700">Dingo</text>
+    <text x="95" y="270" font-size="16" fill="#dbe5f3">/ipc/node.socket</text>
+    <rect x="515" y="208" width="320" height="82" rx="12" fill="#142337" stroke="#60a5fa" stroke-width="1.5"/>
+    <text x="535" y="240" font-size="21" fill="#60a5fa" font-weight="700">Host socket</text>
+    <text x="535" y="270" font-size="16" fill="#dbe5f3">~/dingo-ipc/node.socket</text>
+    <rect x="945" y="208" width="200" height="82" rx="12" fill="#142337" stroke="#34d399" stroke-width="1.5"/>
+    <text x="965" y="240" font-size="21" fill="#34d399" font-weight="700">Adder</text>
+    <text x="965" y="270" font-size="16" fill="#dbe5f3">Native Go process</text>
+    <path d="M 395 250 H 511" fill="none" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrow)"/>
+    <text x="403" y="230" font-size="14" fill="#94a3b8">socket relay</text>
+    <path d="M 945 250 H 839" fill="none" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrow)"/>
+    <text x="863" y="230" font-size="14" fill="#94a3b8">dials NtC</text>
+    <text x="32" y="390" font-size="16" fill="#dbe5f3">scripts/container-dingo-start.sh configures --publish-socket and prints the Adder command.</text>
+  </g>
+</svg>

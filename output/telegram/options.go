@@ -27,7 +27,7 @@ type TelegramOptionFunc func(*TelegramOutput)
 // WithLogger specifies the logger object to use for logging messages
 func WithLogger(logger plugin.Logger) TelegramOptionFunc {
 	return func(t *TelegramOutput) {
-		t.logger = logger
+		t.SetLogger(logger)
 	}
 }
 

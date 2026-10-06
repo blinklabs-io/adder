@@ -29,6 +29,8 @@ import (
 	"github.com/blinklabs-io/adder/internal/config"
 	"github.com/blinklabs-io/adder/internal/logging"
 	"github.com/blinklabs-io/adder/internal/ui/assets"
+	_ "github.com/blinklabs-io/adder/output/log"
+	"github.com/blinklabs-io/adder/plugin"
 	"github.com/blinklabs-io/adder/tray"
 	"github.com/blinklabs-io/adder/tray/setup"
 )
@@ -58,13 +60,24 @@ func main() {
 	if f := openTrayLogFile(); f != nil {
 		logOut = io.MultiWriter(f, os.Stderr)
 	}
-	logging.ConfigureWithWriter(logOut)
+	level := slog.LevelInfo
+	resolved, err := cfg.ResolvePlugins(nil)
+	if err == nil {
+		var options plugin.Options
+		options, err = resolved.Options(plugin.PluginTypeOutput, "log")
+		if err == nil {
+			level, err = logging.ParseLevel(options.String("level"))
+		}
+	}
+	logging.ConfigureWithWriter(logOut, level)
+	if err != nil {
+		logging.GetLogger().Warn("failed to resolve output log level; using info", "error", err)
+	}
 	slog.SetDefault(logging.GetLogger())
 	// Route the standard library logger to the same sink so Fyne/GLFW
 	// diagnostics (which use the stdlib logger) are captured too.
 	log.SetOutput(logOut)
-	cfgLevel := config.GetConfig().Logging.Level
-	slog.Debug("logging initialized", "level", cfgLevel)
+	slog.Debug("logging initialized", "level", level.String())
 
 	// Capture an otherwise-silent panic (e.g. an OpenGL/window init failure on
 	// a GPU-less VM) to the log before the process exits.

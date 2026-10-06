@@ -17,12 +17,21 @@ package notifyjson
 import (
 	"io"
 	"time"
+
+	"github.com/blinklabs-io/adder/tray/setup"
 )
 
 type Option func(*Output)
 
 func WithConfigPath(path string) Option {
 	return func(o *Output) { o.configPath = path }
+}
+
+func withConfig(cfg setup.NotificationConfig) Option {
+	return func(o *Output) {
+		o.config = cfg
+		o.configLoaded = true
+	}
 }
 
 func WithWriter(w io.Writer) Option {

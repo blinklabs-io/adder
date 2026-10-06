@@ -182,7 +182,7 @@ func TestExtractUpdateCommitteeAction(t *testing.T) {
 			Credentials: []common.Credential{
 				cred1,
 			},
-			CredEpochs: map[*common.Credential]uint{
+			CredEpochs: map[*common.Credential]uint64{
 				cred2: 500,
 				cred3: 600,
 			},

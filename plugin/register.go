@@ -16,6 +16,10 @@ package plugin
 
 import (
 	"fmt"
+	"os"
+	"slices"
+	"strings"
+	"sync"
 
 	"github.com/spf13/pflag"
 )
@@ -41,24 +45,62 @@ func PluginTypeName(pluginType PluginType) string {
 	}
 }
 
+// PluginEntry declares a factory and its configuration schema.
+// Factories must validate semantic constraints and return errors without starting workers.
 type PluginEntry struct {
-	NewFromOptionsFunc func() Plugin
+	NewFromOptionsFunc func(Options) (ManagedPlugin, error)
 	Name               string
 	Description        string
 	Options            []PluginOption
 	Type               PluginType
 }
 
-var pluginEntries []PluginEntry
+var (
+	registryMu    sync.RWMutex
+	pluginEntries []PluginEntry
+)
 
-func Register(pluginEntry PluginEntry) {
-	pluginEntries = append(pluginEntries, pluginEntry)
+// Register publishes a definition. Invalid or duplicate definitions are programmer errors.
+func Register(entry PluginEntry) {
+	registryMu.Lock()
+	defer registryMu.Unlock()
+	if PluginTypeName(entry.Type) == "" || entry.Name == "" ||
+		entry.NewFromOptionsFunc == nil {
+		panic("invalid plugin definition")
+	}
+	for _, existing := range pluginEntries {
+		if existing.Type == entry.Type && existing.Name == entry.Name {
+			panic("duplicate plugin definition: " + entry.Name)
+		}
+	}
+	seen := make(map[string]bool)
+	for _, option := range entry.Options {
+		if option.Name == "" || seen[option.Name] {
+			panic("invalid or duplicate option definition")
+		}
+		if _, err := option.normalize(option.DefaultValue); err != nil {
+			panic(err)
+		}
+		seen[option.Name] = true
+	}
+	entry.Options = slices.Clone(entry.Options)
+	pluginEntries = append(pluginEntries, entry)
+}
+
+func entries() []PluginEntry {
+	registryMu.RLock()
+	defer registryMu.RUnlock()
+	result := slices.Clone(pluginEntries)
+	for i := range result {
+		result[i].Options = slices.Clone(result[i].Options)
+	}
+	return result
 }
 
 func PopulateCmdlineOptions(fs *pflag.FlagSet) error {
-	for _, plugin := range pluginEntries {
-		for _, option := range plugin.Options {
-			if err := option.AddToFlagSet(fs, PluginTypeName(plugin.Type), plugin.Name); err != nil {
+	for _, entry := range entries() {
+		for _, option := range entry.Options {
+			if err := option.AddToFlagSet(fs, PluginTypeName(entry.Type), entry.Name); err != nil {
 				return err
 			}
 		}
@@ -66,57 +108,192 @@ func PopulateCmdlineOptions(fs *pflag.FlagSet) error {
 	return nil
 }
 
-func ProcessEnvVars() error {
-	for _, plugin := range pluginEntries {
-		// Generate env var prefix based on plugin type and name
-		envVarPrefix := fmt.Sprintf(
-			"%s-%s-",
-			PluginTypeName(plugin.Type),
-			plugin.Name,
+func GetPlugins(kind PluginType) []PluginEntry {
+	var result []PluginEntry
+	for _, entry := range entries() {
+		if entry.Type == kind {
+			result = append(result, entry)
+		}
+	}
+	return result
+}
+
+// New constructs an independent instance from defaults and explicit values.
+// It does not read process environment or command-line flags.
+func (e PluginEntry) New(values map[string]any) (ManagedPlugin, error) {
+	options, err := e.resolve(values, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	p, err := e.NewFromOptionsFunc(options)
+	if err != nil {
+		return nil, fmt.Errorf("%s.%s: %w", PluginTypeName(e.Type), e.Name, err)
+	}
+	if p == nil {
+		return nil, fmt.Errorf(
+			"%s.%s: factory returned nil",
+			PluginTypeName(e.Type),
+			e.Name,
 		)
-		for _, option := range plugin.Options {
-			if err := option.ProcessEnvVars(envVarPrefix); err != nil {
-				return err
+	}
+	return p, nil
+}
+
+// GetPlugin constructs a registered plugin with instance-owned configuration.
+func GetPlugin(
+	kind PluginType,
+	name string,
+	values map[string]any,
+) (ManagedPlugin, error) {
+	for _, entry := range GetPlugins(kind) {
+		if entry.Name == name {
+			return entry.New(values)
+		}
+	}
+	return nil, fmt.Errorf("unknown %s plugin %q", PluginTypeName(kind), name)
+}
+
+type configuredPlugin struct {
+	entry  PluginEntry
+	values Options
+}
+
+// Configuration is an immutable snapshot of resolved plugin options.
+type Configuration struct{ plugins map[string]configuredPlugin }
+
+// Options returns resolved scalar values without rereading flags or environment.
+// The returned value exposes no mutable option storage.
+func (c *Configuration) Options(kind PluginType, name string) (Options, error) {
+	item, ok := c.plugins[PluginTypeName(kind)+"."+name]
+	if !ok {
+		return Options{}, fmt.Errorf("unknown %s plugin %q", PluginTypeName(kind), name)
+	}
+	return item.values, nil
+}
+
+// New constructs an instance using this snapshot, without rereading flags or environment.
+func (c *Configuration) New(
+	kind PluginType,
+	name string,
+) (ManagedPlugin, error) {
+	key := PluginTypeName(kind) + "." + name
+	item, ok := c.plugins[key]
+	if !ok {
+		return nil, fmt.Errorf(
+			"unknown %s plugin %q",
+			PluginTypeName(kind),
+			name,
+		)
+	}
+	p, err := item.entry.NewFromOptionsFunc(item.values)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", key, err)
+	}
+	if p == nil {
+		return nil, fmt.Errorf("%s: factory returned nil", key)
+	}
+	return p, nil
+}
+
+// ResolveConfig validates all supplied keys and scalar values, then snapshots
+// defaults < YAML < environment < explicitly changed flags. A nil lookup uses
+// os.LookupEnv; supply a lookup returning false for hermetic resolution.
+// Custom environment aliases override generated names at the environment tier.
+// Plugin-specific semantic validation happens when Configuration.New is called.
+func ResolveConfig(
+	data map[string]map[string]map[string]any,
+	fs *pflag.FlagSet,
+	lookup func(string) (string, bool),
+) (*Configuration, error) {
+	if lookup == nil {
+		lookup = os.LookupEnv
+	}
+	definitions := entries()
+	known := make(map[string]bool)
+	for _, entry := range definitions {
+		known[PluginTypeName(entry.Type)+"."+entry.Name] = true
+	}
+	for kind, plugins := range data {
+		if kind != "input" && kind != "output" && kind != "filter" {
+			return nil, fmt.Errorf("unknown plugin type %q", kind)
+		}
+		for name := range plugins {
+			if !known[kind+"."+name] {
+				return nil, fmt.Errorf("unknown %s plugin %q", kind, name)
 			}
 		}
 	}
-	return nil
+	result := &Configuration{plugins: make(map[string]configuredPlugin)}
+	for _, entry := range definitions {
+		kind := PluginTypeName(entry.Type)
+		options, err := entry.resolve(data[kind][entry.Name], fs, lookup)
+		if err != nil {
+			return nil, fmt.Errorf("%s.%s: %w", kind, entry.Name, err)
+		}
+		result.plugins[kind+"."+entry.Name] = configuredPlugin{entry, options}
+	}
+	return result, nil
 }
 
-func ProcessConfig(
-	pluginConfig map[string]map[string]map[any]any,
-) error {
-	for _, plugin := range pluginEntries {
-		if pluginTypeData, ok := pluginConfig[PluginTypeName(plugin.Type)]; ok {
-			if pluginData, ok := pluginTypeData[plugin.Name]; ok {
-				for _, option := range plugin.Options {
-					if err := option.ProcessConfig(pluginData); err != nil {
-						return err
+func (e PluginEntry) resolve(
+	data map[string]any,
+	fs *pflag.FlagSet,
+	lookup func(string) (string, bool),
+) (Options, error) {
+	values := make(map[string]any, len(e.Options))
+	for _, option := range e.Options {
+		values[option.Name] = option.DefaultValue
+	}
+	for key := range data {
+		if _, ok := values[key]; !ok {
+			return Options{}, fmt.Errorf("unknown option %q", key)
+		}
+	}
+	for _, option := range e.Options {
+		value, err := option.normalize(option.DefaultValue)
+		if err != nil {
+			return Options{}, err
+		}
+		if supplied, ok := data[option.Name]; ok {
+			value, err = option.normalize(supplied)
+		}
+		if err != nil {
+			return Options{}, err
+		}
+		if lookup != nil {
+			env := strings.ToUpper(
+				strings.ReplaceAll(
+					PluginTypeName(e.Type)+"-"+e.Name+"-"+option.Name,
+					"-",
+					"_",
+				),
+			)
+			for _, name := range []string{env, option.CustomEnvVar} {
+				if name == "" {
+					continue
+				}
+				if raw, ok := lookup(name); ok {
+					value, err = option.parse(raw)
+					if err != nil {
+						return Options{}, fmt.Errorf(
+							"environment %s: %w",
+							name,
+							err,
+						)
 					}
 				}
 			}
 		}
-	}
-	return nil
-}
-
-func GetPlugins(pluginType PluginType) []PluginEntry {
-	ret := []PluginEntry{}
-	for _, plugin := range pluginEntries {
-		if plugin.Type == pluginType {
-			ret = append(ret, plugin)
-		}
-	}
-	return ret
-}
-
-func GetPlugin(pluginType PluginType, name string) Plugin {
-	for _, plugin := range pluginEntries {
-		if plugin.Type == pluginType {
-			if plugin.Name == name {
-				return plugin.NewFromOptionsFunc()
+		if fs != nil {
+			flag := fs.Lookup(option.flagName(PluginTypeName(e.Type), e.Name))
+			if flag != nil && flag.Changed {
+				value, err = option.parse(flag.Value.String())
+			}
+			if err != nil {
+				return Options{}, err
 			}
 		}
+		values[option.Name] = value
 	}
-	return nil
+	return Options{values: values}, nil
 }

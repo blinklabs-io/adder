@@ -23,7 +23,6 @@ import (
 	"time"
 
 	"github.com/SundaeSwap-finance/ogmigo/v6"
-	"github.com/blinklabs-io/adder/internal/config"
 	"github.com/blinklabs-io/adder/internal/logging"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -32,11 +31,9 @@ import (
 // TestConfigureWithWriter_DefaultLevel verifies the logger's default logging behavior
 // when configured with the "info" logging level.
 func TestConfigureWithWriter_DefaultLevel(t *testing.T) {
-	// Ensure config level is set to default/info
-	config.GetConfig().Logging.Level = "info"
 
 	var buf bytes.Buffer
-	logging.ConfigureWithWriter(&buf)
+	logging.ConfigureWithWriter(&buf, slog.LevelInfo)
 	logger := logging.GetLogger()
 
 	logger.Debug("this is debug")
@@ -62,13 +59,9 @@ func TestConfigureWithWriter_DefaultLevel(t *testing.T) {
 // TestConfigureWithWriter_DebugLevel verifies that when set to "debug",
 // debug logs are written to the configured output.
 func TestConfigureWithWriter_DebugLevel(t *testing.T) {
-	config.GetConfig().Logging.Level = "debug"
-	defer func() {
-		config.GetConfig().Logging.Level = "info"
-	}()
 
 	var buf bytes.Buffer
-	logging.ConfigureWithWriter(&buf)
+	logging.ConfigureWithWriter(&buf, slog.LevelDebug)
 	logger := logging.GetLogger()
 
 	logger.Debug("this is debug log")
@@ -84,13 +77,9 @@ func TestConfigureWithWriter_DebugLevel(t *testing.T) {
 // TestConfigureWithWriter_WarnErrorLevels verifies that when set to "error",
 // lower levels such as warning are ignored while error logs are captured.
 func TestConfigureWithWriter_WarnErrorLevels(t *testing.T) {
-	config.GetConfig().Logging.Level = "error"
-	defer func() {
-		config.GetConfig().Logging.Level = "info"
-	}()
 
 	var buf bytes.Buffer
-	logging.ConfigureWithWriter(&buf)
+	logging.ConfigureWithWriter(&buf, slog.LevelError)
 	logger := logging.GetLogger()
 
 	logger.Warn("this is warning log")
@@ -127,7 +116,7 @@ func TestConfigureWithWriter_LeakProfileAvailability(t *testing.T) {
 // logger is returned and behaves correctly for component specific logging.
 func TestLoggerCreation(t *testing.T) {
 	var buf bytes.Buffer
-	logging.ConfigureWithWriter(&buf)
+	logging.ConfigureWithWriter(&buf, slog.LevelInfo)
 
 	logger := logging.GetLogger()
 	assert.NotNil(t, logger, "global logger should not be nil")
@@ -158,7 +147,7 @@ func TestLoggerCreation(t *testing.T) {
 }
 
 // TestLogLevelConfiguration configures each level (debug, info, warn, error)
-// dynamically in config.GetConfig().Logging.Level and asserts that only the
+// through an explicitly resolved threshold and asserts that only the
 // appropriate logs appear in the captured output.
 func TestLogLevelConfiguration(t *testing.T) {
 	levels := []struct {
@@ -205,15 +194,11 @@ func TestLogLevelConfiguration(t *testing.T) {
 
 	for _, tc := range levels {
 		t.Run(tc.configLevel, func(t *testing.T) {
-			// Update global config and restore afterwards
-			oldLevel := config.GetConfig().Logging.Level
-			config.GetConfig().Logging.Level = tc.configLevel
-			defer func() {
-				config.GetConfig().Logging.Level = oldLevel
-			}()
 
 			var buf bytes.Buffer
-			logging.ConfigureWithWriter(&buf)
+			level, err := logging.ParseLevel(tc.configLevel)
+			require.NoError(t, err)
+			logging.ConfigureWithWriter(&buf, level)
 			logger := logging.GetLogger()
 
 			logger.Debug("debug msg")
@@ -249,14 +234,8 @@ func TestLogLevelConfiguration(t *testing.T) {
 // and parses/asserts the resulting JSON has all required custom fields.
 func TestLoggerOutput(t *testing.T) {
 	var buf bytes.Buffer
-	// Ensure info level is set to capture logs
-	oldLevel := config.GetConfig().Logging.Level
-	config.GetConfig().Logging.Level = "info"
-	defer func() {
-		config.GetConfig().Logging.Level = oldLevel
-	}()
 
-	logging.ConfigureWithWriter(&buf)
+	logging.ConfigureWithWriter(&buf, slog.LevelInfo)
 	logger := logging.GetLogger()
 
 	// Log structured message with custom attributes
@@ -286,8 +265,23 @@ func TestLoggerOutput(t *testing.T) {
 
 // TestConfigure verifies that the Configure setup function runs cleanly without panicking.
 func TestConfigure(t *testing.T) {
-	logging.Configure()
+	logging.Configure(slog.LevelInfo)
 	assert.NotNil(t, logging.GetLogger(), "global logger should be configured and non-nil")
+}
+
+func TestKupoUsesConfiguredThreshold(t *testing.T) {
+	for _, level := range []slog.Level{slog.LevelDebug, slog.LevelInfo, slog.LevelWarn, slog.LevelError} {
+		t.Run(level.String(), func(t *testing.T) {
+			var buf bytes.Buffer
+			logging.ConfigureWithWriter(&buf, level)
+			logger := logging.NewKugoCustomLoggerWithLogger(logging.GetLoggerForComponent("kupo"))
+			child := logger.With(ogmigo.KeyValue{Key: "request", Value: "test"})
+			child.Debug("debug message")
+			child.Info("info message")
+			require.Equal(t, level <= slog.LevelDebug, bytes.Contains(buf.Bytes(), []byte("debug message")))
+			require.Equal(t, level <= slog.LevelInfo, bytes.Contains(buf.Bytes(), []byte("info message")))
+		})
+	}
 }
 
 // TestKugoCustomLogger verifies the constructor, key-value converter, and logging levels

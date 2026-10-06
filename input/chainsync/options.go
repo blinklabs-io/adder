@@ -24,7 +24,7 @@ type ChainSyncOptionFunc func(*ChainSync)
 // WithLogger specifies the logger object to use for logging messages
 func WithLogger(logger plugin.Logger) ChainSyncOptionFunc {
 	return func(c *ChainSync) {
-		c.logger = logger
+		c.SetLogger(logger)
 	}
 }
 
@@ -39,6 +39,15 @@ func WithNetwork(network string) ChainSyncOptionFunc {
 func WithNetworkMagic(networkMagic uint32) ChainSyncOptionFunc {
 	return func(c *ChainSync) {
 		c.networkMagic = networkMagic
+	}
+}
+
+// WithEraHistory specifies slot-to-epoch boundaries for a custom network.
+// It overrides history inferred from WithNetwork or WithNetworkMagic.
+func WithEraHistory(history EraHistory) ChainSyncOptionFunc {
+	return func(c *ChainSync) {
+		c.eraHistory = history
+		c.eraHistorySet = true
 	}
 }
 
@@ -122,4 +131,11 @@ func WithReconnectCallback(callback func()) ChainSyncOptionFunc {
 	return func(c *ChainSync) {
 		c.reconnectCallback = callback
 	}
+}
+
+// WithKupoUrl specifies the optional Kupo endpoint for resolving transaction inputs.
+func WithKupoUrl(
+	url string,
+) ChainSyncOptionFunc {
+	return func(c *ChainSync) { c.kupoUrl = url }
 }

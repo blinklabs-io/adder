@@ -114,7 +114,7 @@ func TestOutputEmitsStatusAndMatchedNotification(t *testing.T) {
 	}, 2*time.Second, 10*time.Millisecond)
 	require.NoError(t, o.Stop())
 
-	for _, line := range strings.Split(strings.TrimSpace(output.String()), "\n") {
+	for line := range strings.SplitSeq(strings.TrimSpace(output.String()), "\n") {
 		var record map[string]any
 		require.NoError(t, json.Unmarshal([]byte(line), &record), line)
 		require.Equal(t, float64(schemaVersion), record["schemaVersion"])
@@ -269,6 +269,34 @@ func TestOutputNormalizesNativeEventBeforeTargetMatching(t *testing.T) {
 			output.String(),
 			`"body":"Received 5 ADA at addr1watched."`,
 		)
+	}, 2*time.Second, 10*time.Millisecond)
+	require.NoError(t, o.Stop())
+}
+
+// TestOutputDuplicateStartIsNoOp verifies that the current run continues to
+// deliver until Stop.
+func TestOutputDuplicateStartIsNoOp(t *testing.T) {
+	var output lockedBuffer
+	o := New(
+		WithConfigPath(writeTestConfig(t)),
+		WithWriter(&output),
+		WithStaleAfter(time.Hour),
+	)
+	require.NoError(t, o.Start())
+
+	restarted := make(chan error, 1)
+	go func() { restarted <- o.Start() }()
+	select {
+	case err := <-restarted:
+		require.NoError(t, err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("second Start deadlocked in Init's wg.Wait")
+	}
+
+	// The original run still delivers after the duplicate Start.
+	o.InputChan() <- testTransaction()
+	require.Eventually(t, func() bool {
+		return strings.Contains(output.String(), `"kind":"notification"`)
 	}, 2*time.Second, 10*time.Millisecond)
 	require.NoError(t, o.Stop())
 }

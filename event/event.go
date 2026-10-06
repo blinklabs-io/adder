@@ -29,6 +29,12 @@ const (
 	TypeDRepRetirement   = "input.drep-retirement"
 )
 
+// Event is immutable after publication to a plugin or pipeline channel.
+// Copying Event does not copy the maps, slices, or pointers held by Context and
+// Payload. Producers relinquish mutation rights when publishing. A transformer
+// must copy any referenced data it changes; consumers must treat it as read-only.
+// Custom payload types retain their concrete Go type; no implicit JSON cloning
+// or serialization is performed by the pipeline.
 type Event struct {
 	Timestamp time.Time `json:"timestamp"`
 	Context   any       `json:"context,omitempty"`

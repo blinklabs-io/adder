@@ -56,7 +56,7 @@ func TestStatusTracker_ObserverNotified(t *testing.T) {
 	tracker.Set(StatusConnected)
 
 	// Wait for 3 async callbacks (1 from OnChange, 2 from Set)
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		select {
 		case <-done:
 		case <-time.After(time.Second):
@@ -143,13 +143,11 @@ func TestStatusTracker_ConcurrentAccess(t *testing.T) {
 	tracker := NewStatusTracker()
 
 	var wg sync.WaitGroup
-	for i := 0; i < 100; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 100 {
+		wg.Go(func() {
 			tracker.Set(StatusConnected)
 			_ = tracker.Status()
-		}()
+		})
 	}
 	wg.Wait()
 
@@ -185,7 +183,7 @@ func TestStatusTracker_OrderedDelivery(t *testing.T) {
 	}
 
 	// n from Set + 1 immediate from OnChange.
-	for i := 0; i < n+1; i++ {
+	for range n + 1 {
 		select {
 		case <-done:
 		case <-time.After(2 * time.Second):

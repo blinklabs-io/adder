@@ -14,14 +14,27 @@
 
 package log
 
-import "github.com/blinklabs-io/adder/plugin"
+import (
+	"log/slog"
+
+	"github.com/blinklabs-io/adder/plugin"
+)
 
 type LogOptionFunc func(*LogOutput)
+
+// WithLevel sets the minimum event severity. Events are INFO-level, so levels
+// above INFO consume events without writing them. The CLI also applies the
+// resolved threshold to its diagnostic logger before constructing plugins.
+func WithLevel(level slog.Level) LogOptionFunc {
+	return func(o *LogOutput) {
+		o.level = level
+	}
+}
 
 // WithLogger specifies the logger object to use for logging messages
 func WithLogger(logger plugin.Logger) LogOptionFunc {
 	return func(o *LogOutput) {
-		o.logger = logger
+		o.SetLogger(logger)
 	}
 }
 

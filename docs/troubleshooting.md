@@ -43,16 +43,16 @@ These issues occur when the `chainsync` input plugin cannot connect to or handsh
 
 ## 2. Configuration Issues
 
-Configuration in Adder is layered: **CLI flags override YAML file settings, which override Environment variables, which override Defaults**.
+Configuration in Adder is layered: **explicit CLI flags override Environment variables, which override YAML file settings, which override Defaults**.
 
 ### A. Environment Variable Not Loading
 * **Symptom**: Setting an env var has no effect on Adder.
-* **Root Cause**: Typo in the prefix or suffix, or overriding the variable via a CLI flag or YAML file key (due to the precedence rules).
-* **Resolution**: 
-  - Ensure all env vars are prefixed with `ADDER_` or specific plugin namespaces (e.g., `INPUT_CHAINSYNC_`).
-  - Print active env vars to confirm they are set in the shell:
+* **Root Cause**: Typo in the prefix or suffix, or overriding the variable via an explicit CLI flag.
+* **Resolution**:
+  - Use unprefixed core names (`INPUT`, `OUTPUT`, `API_PORT`) or plugin namespaces (e.g., `INPUT_CHAINSYNC_`). There is no general `ADDER_` prefix.
+  - List active variable names without printing credentials:
     ```bash
-    env | grep -E "ADDER_|INPUT_|OUTPUT_"
+    env | cut -d= -f1 | grep -E "^(INPUT|OUTPUT|API|DEBUG|KUPO)(_|$)"
     ```
 
 ### B. YAML File Not Found or Invalid Value
@@ -67,12 +67,13 @@ Configuration in Adder is layered: **CLI flags override YAML file settings, whic
 
 ## 3. Filter Issues
 
-Filters use **AND** logic across different filter types (e.g., type AND address) but **OR** logic within a single filter list (e.g., address1 OR address2).
+Filters use **AND** logic across pipeline stages. Within the Cardano filter, multiple address, pool, and DRep targets use **OR**; policy and asset constraints further narrow transaction matches. See [filtering](../README.md#filtering).
 
 ### A. Events Not Passing Filter
 * **Symptom**: Adder runs but does not emit any events (the pipeline appears idle).
 * **Root Cause**: Over-filtering (e.g. filtering for an asset policy ID on a block event where policy IDs do not apply) or malformed filter inputs.
 * **Resolution**:
+  - Check `--output-log-level`: `warn` and `error` suppress event records; use `info` or `debug` to see them.
   - Note that `--filter-policy` and `--filter-asset` do *not* apply to `input.block` or `input.governance` events.
   - Start with type-only filtering to verify raw event emission first:
     ```bash
@@ -98,15 +99,15 @@ Filters use **AND** logic across different filter types (e.g., type AND address)
 * **Root Cause**: The service account JSON file is missing, unreadable, or not a valid Google service account credential.
 * **Resolution**: Ensure the service account file exists and is accessible:
   ```bash
-  cat /path/to/service-account.json | grep "project_id"
+  test -r /path/to/service-account.json
   ```
 
 ### B. Delivery Failures
 * **Symptom**: "failed to send message to token..." logs appearing at ERROR.
 * **Root Cause**: The FCM token has expired, is unregistered, or Firebase services are unreachable.
-* **Resolution**: Inspect the error payload returned by FCM. If it indicates `UNREGISTERED`, remove the invalid token from your client registry via the `/fcm` REST endpoint:
+* **Resolution**: Inspect the error payload returned by FCM. If it indicates `UNREGISTERED`, remove the invalid token from your client registry via the `/v1/fcm` REST endpoint:
   ```bash
-  curl -X DELETE http://localhost:8080/fcm/your-expired-token
+  curl -X DELETE http://localhost:8080/v1/fcm/your-expired-token
   ```
 
 ---
@@ -121,11 +122,9 @@ Filters use **AND** logic across different filter types (e.g., type AND address)
     ```bash
     curl -H "Content-Type: application/json" -X POST -d '{"type":"test"}' https://your-webhook-url.com
     ```
-  - Adjust the timeout and retry configurations:
+  - Retry configuration is available to Go callers through `webhook.WithRetryConfig`; there are no CLI retry/backoff flags. Select the output and endpoint with:
     ```bash
-    ./adder --output-webhook-url="https://your-webhook-url.com" \
-            --output-webhook-max-retries=5 \
-            --output-webhook-initial-backoff=500ms
+    ./adder --output webhook --output-webhook-url="https://your-webhook-url.com"
     ```
 
 ### B. TLS Certificate Problems
@@ -141,10 +140,10 @@ Filters use **AND** logic across different filter types (e.g., type AND address)
 | :--- | :--- | :--- | :--- |
 | `failed to read credential file: open ...: no such file or directory` | `output/push` | FCM credentials path in config is incorrect. | Verify path in config matches your local filesystem. |
 | `failed to get token: oauth2: cannot fetch token` | `output/push` | Host has no internet connection, or Google IAM credentials are revoked. | Check network connectivity and service account status. |
-| `invalid intersect point format: expected '<slot>.<hash>'` | `input/chainsync` | The point passed to `--input-chainsync-intersect` is malformed. | Pass the correct format: `<slot_integer>.<block_hex_hash>`. |
+| `invalid intersect point format: expected '<slot>.<hash>'` | `input/chainsync` | The point passed to `--input-chainsync-intersect-point` is malformed. | Pass the correct format: `<slot_integer>.<block_hex_hash>`. |
 | `server returned status: 500` | `output/webhook` | The target server received the request but hit an internal server error. | Check logs on your webhook server to diagnose its crash. |
 | `failed to parse credential file` | `output/push` / `internal/config` | JSON credential file contains syntax errors or invalid JSON format. | Validate service account credentials format. |
-| `failed to process plugin config` | `internal/config` / `plugin` | Config keys contain unrecognized types or incompatible values. | Match types to option definitions in standard configs. |
+| `failed to resolve plugin config` | `internal/config` / `plugin` | Config keys contain unrecognized types or incompatible values. | Match types to option definitions in standard configs. |
 
 ---
 
@@ -152,7 +151,7 @@ Filters use **AND** logic across different filter types (e.g., type AND address)
 
 If Adder experiences a memory leak, it may be caused by orphaned goroutines stuck on unreachable primitives (like channels or mutexes).
 
-Starting with **Go 1.26**, the Go runtime provides a production-ready leak profiler that leverages the garbage collector to identify goroutines that have become completely unreachable by any other active part of your code.
+The Go 1.26 `goroutineleakprofile` experiment detects goroutines blocked on unreachable synchronization objects. It cannot detect every worker that outlives its owner.
 
 ### Enabling the Leak Profiler
 This feature **requires Go 1.26 or later**. It is disabled by default and requires compiling Adder with the `goroutineleakprofile` experiment enabled:
@@ -164,11 +163,11 @@ GOEXPERIMENT=goroutineleakprofile go build -o adder ./cmd/adder
 > `go: unknown GOEXPERIMENT goroutineleakprofile`
 
 ### Analyzing via HTTP pprof
-When the profiler is enabled, you can access the `goroutine/leak` profile via the net/http/pprof endpoint if the debug port is enabled:
+When the profiler is enabled, you can access the `goroutineleak` profile via the net/http/pprof endpoint if the debug port is enabled:
 ```bash
 go tool pprof http://localhost:6060/debug/pprof/goroutineleak
 ```
 
-### Key Differences from Traditional Profiles
-- **`goroutine` vs. `goroutine/leak`**: The traditional `goroutine` profile lists all active goroutines, requiring tedious manual filtering. The `goroutine/leak` profile isolates **only** those goroutines that are stuck on unreachable primitives, immediately identifying the leaked goroutines.
-- **Production-Safe**: Unlike the testing-only `testing/synctest` package, the Go 1.26 leak profile has ultra-low runtime overhead and is safe to use in live production environments.
+The ordinary `goroutine` profile lists all active goroutines. Use both profiles
+when investigating workers that remain after shutdown; an empty leak profile
+does not prove that every worker exited.
