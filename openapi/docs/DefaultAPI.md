@@ -30,7 +30,7 @@ import (
 	"context"
 	"fmt"
 	"os"
-	openapiclient "github.com/blinklabs-io/cardano-node-api/openapi"
+	openapiclient "github.com/blinklabs-io/adder/openapi"
 )
 
 func main() {
@@ -99,7 +99,7 @@ import (
 	"context"
 	"fmt"
 	"os"
-	openapiclient "github.com/blinklabs-io/cardano-node-api/openapi"
+	openapiclient "github.com/blinklabs-io/adder/openapi"
 )
 
 func main() {
@@ -172,7 +172,7 @@ import (
 	"context"
 	"fmt"
 	"os"
-	openapiclient "github.com/blinklabs-io/cardano-node-api/openapi"
+	openapiclient "github.com/blinklabs-io/adder/openapi"
 )
 
 func main() {
@@ -226,4 +226,3 @@ No authorization required
 [[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints)
 [[Back to Model list]](../README.md#documentation-for-models)
 [[Back to README]](../README.md)
-

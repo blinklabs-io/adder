@@ -23,7 +23,7 @@ go get golang.org/x/net/context
 Put the package under your project folder and add the following in import:
 
 ```go
-import openapi "github.com/blinklabs-io/cardano-node-api/openapi"
+import openapi "github.com/blinklabs-io/adder/openapi"
 ```
 
 To use a proxy, set the environment variable `HTTP_PROXY`:
@@ -126,4 +126,3 @@ Each of these functions takes a value of the given basic type and returns a poin
 ## Author
 
 support@blinklabs.io
-
