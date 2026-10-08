@@ -1,4 +1,4 @@
-module github.com/blinklabs-io/cardano-node-api/openapi
+module github.com/blinklabs-io/adder/openapi
 
 go 1.18
 

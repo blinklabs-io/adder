@@ -13,7 +13,7 @@ import (
 	"context"
 	"testing"
 
-	openapiclient "github.com/blinklabs-io/cardano-node-api/openapi"
+	openapiclient "github.com/blinklabs-io/adder/openapi"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
