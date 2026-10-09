@@ -14,13 +14,10 @@ jobs:
   go-test:
     uses: blinklabs-io/actions/.github/workflows/reuseable-go-test.yml@main
     with:
-      go-versions: '["1.26.x"]'
       golangci-cgo-enabled: true
-      golangci-go-version: 1.26.x
       golangci-platform: ubuntu-latest
       nilaway-cgo-enabled: true
       nilaway-exclude-pkgs: github.com/go-gl/glfw
-      nilaway-go-version: 1.26.x
       nilaway-include-pkgs: github.com/blinklabs-io/adder
       nilaway-platform: ubuntu-latest
       platforms: '["ubuntu-latest","windows-latest"]'
@@ -60,5 +57,4 @@ jobs:
       application-name: adder
       description: Adder is a tool for tailing the Cardano blockchain and emitting events
       docker-image: blinklabs/adder
-      go-version: 1.26.x
       windows-signing-name: Adder
