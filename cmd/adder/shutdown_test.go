@@ -20,12 +20,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/blinklabs-io/adder/examples/plugins"
+	"github.com/blinklabs-io/adder/internal/testplugins"
 	"github.com/blinklabs-io/adder/plugin"
 	"github.com/stretchr/testify/require"
 )
 
-type stopErrorInput struct{ *plugins.TickerInput }
+type stopErrorInput struct{ *testplugins.TickerInput }
 
 func (p *stopErrorInput) Stop() error {
 	return errors.Join(p.TickerInput.Stop(), errors.New("test stop failure"))
@@ -38,7 +38,7 @@ func TestCLIStreamShutdownProcess(t *testing.T) {
 	plugin.Register(plugin.PluginEntry{
 		Type: plugin.PluginTypeInput, Name: "shutdown-source",
 		NewFromOptionsFunc: func(plugin.Options) (plugin.ManagedPlugin, error) {
-			p, err := plugins.NewTickerInput(20 * time.Millisecond)
+			p, err := testplugins.NewTickerInput(20 * time.Millisecond)
 			if err != nil {
 				return nil, err
 			}

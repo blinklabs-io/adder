@@ -1,7 +1,7 @@
 // Copyright 2026 Blink Labs Software
 // SPDX-License-Identifier: Apache-2.0
 
-package plugins_test
+package testplugins_test
 
 import (
 	"context"
@@ -10,17 +10,17 @@ import (
 	"time"
 
 	"github.com/blinklabs-io/adder/event"
-	"github.com/blinklabs-io/adder/examples/plugins"
+	"github.com/blinklabs-io/adder/internal/testplugins"
 	"github.com/blinklabs-io/adder/pipeline"
 	"github.com/blinklabs-io/adder/plugintest"
 	"github.com/stretchr/testify/require"
 )
 
 func TestLifecycleContracts(t *testing.T) {
-	source, err := plugins.NewTickerInput(time.Hour)
+	source, err := testplugins.NewTickerInput(time.Hour)
 	require.NoError(t, err)
 	plugintest.Lifecycle(t, source)
-	sink, err := plugins.NewHandlerOutput(
+	sink, err := testplugins.NewHandlerOutput(
 		func(context.Context, event.Event) error { return nil },
 	)
 	require.NoError(t, err)
@@ -30,9 +30,9 @@ func TestLifecycleContracts(t *testing.T) {
 func TestExampleChainReportsTerminalFailure(t *testing.T) {
 	want := errors.New("handler unavailable")
 	ready := make(chan struct{})
-	source, err := plugins.NewTickerInput(time.Millisecond)
+	source, err := testplugins.NewTickerInput(time.Millisecond)
 	require.NoError(t, err)
-	sink, err := plugins.NewHandlerOutput(
+	sink, err := testplugins.NewHandlerOutput(
 		func(context.Context, event.Event) error { <-ready; return want },
 	)
 	require.NoError(t, err)

@@ -41,9 +41,9 @@ func checkDocumentedYAML(t *testing.T, data []byte) {
 }
 
 func TestActiveDocumentationExamples(t *testing.T) {
-	paths := []string{"../../README.md", "../../examples/README.md"}
+	paths := []string{"../../README.md"}
 	for _, pattern := range []string{
-		"../../docs/*.md", "../../examples/*/README.md",
+		"../../docs/*.md",
 	} {
 		matches, err := filepath.Glob(pattern)
 		require.NoError(t, err)

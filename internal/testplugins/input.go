@@ -1,8 +1,8 @@
 // Copyright 2026 Blink Labs Software
 // SPDX-License-Identifier: Apache-2.0
 
-// Package plugins contains minimal managed plugins for authors to adapt.
-package plugins
+// Package testplugins provides managed plugins for lifecycle integration tests.
+package testplugins
 
 import (
 	"context"
