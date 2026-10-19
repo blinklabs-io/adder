@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/blinklabs-io/adder/event"
-	"github.com/blinklabs-io/adder/examples/plugins"
+	"github.com/blinklabs-io/adder/internal/testplugins"
 	"github.com/blinklabs-io/adder/plugin"
 	"github.com/stretchr/testify/require"
 )
@@ -22,7 +22,7 @@ func TestCLIExitsAfterTerminalPluginFailure(t *testing.T) {
 		plugin.Register(plugin.PluginEntry{
 			Type: plugin.PluginTypeInput, Name: "test-source",
 			NewFromOptionsFunc: func(plugin.Options) (plugin.ManagedPlugin, error) {
-				p, err := plugins.NewTickerInput(50 * time.Millisecond)
+				p, err := testplugins.NewTickerInput(50 * time.Millisecond)
 				require.NoError(t, err)
 				return p, nil
 			},
@@ -30,7 +30,7 @@ func TestCLIExitsAfterTerminalPluginFailure(t *testing.T) {
 		plugin.Register(plugin.PluginEntry{
 			Type: plugin.PluginTypeOutput, Name: "test-sink",
 			NewFromOptionsFunc: func(plugin.Options) (plugin.ManagedPlugin, error) {
-				p, err := plugins.NewHandlerOutput(
+				p, err := testplugins.NewHandlerOutput(
 					func(context.Context, event.Event) error { return errors.New("test terminal failure") },
 				)
 				require.NoError(t, err)

@@ -504,14 +504,13 @@ exactly as on the command line.
 ## Using Adder as a Library
 
 Adder can be used as a Go library to build custom blockchain indexers and applications.
-The [examples](./examples/) directory contains starter code demonstrating various use cases:
+The [library examples](https://docs.blinklabs.io/guides/adder/library-examples/overview/) provide downloadable Go source and guides for:
 
-- **[adder-publisher](./examples/adder-publisher/)** - Basic event publisher that logs all blockchain events
-- **[poolid-filter](./examples/poolid-filter/)** - Filter events by stake pool ID
-- **[event-address-filter](./examples/event-address-filter/)** - Filter by addresses and native assets
+- [Publishing events](https://docs.blinklabs.io/guides/adder/library-examples/adder-publisher/) from a local Cardano node
+- [Filtering by stake pool](https://docs.blinklabs.io/guides/adder/library-examples/poolid-filter/)
+- [Filtering by address and native asset](https://docs.blinklabs.io/guides/adder/library-examples/event-address-filter/)
+- [Writing managed plugins](https://docs.blinklabs.io/guides/adder/library-examples/plugins/) with lifecycle tests
 
-Each example includes complete source code, documentation, and instructions for getting started.
-Visit the [examples directory](./examples/) for detailed tutorials and ready-to-run code.
 
 ### Pipeline startup and shutdown
 
@@ -906,7 +905,7 @@ following:
 
 See the [plugin authoring guide](docs/plugin-authoring.md) for the managed
 interfaces, cancellation and failure contracts, immutable event ownership,
-and registration steps. Start from the [compiled examples](examples/plugins)
+and registration steps. Start from the [managed plugin templates](https://docs.blinklabs.io/guides/adder/library-examples/plugins/)
 and run the [public lifecycle tests](plugintest/contract.go) in your plugin's
 test suite. The [architecture](docs/architecture.md) links each runtime contract
 to its implementation and regression tests.

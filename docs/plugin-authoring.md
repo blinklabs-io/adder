@@ -1,9 +1,7 @@
 # Writing an Adder plugin
 
-Start with the compiled [input](../examples/plugins/input.go) or
-[output](../examples/plugins/output.go) example. Their
-[tests](../examples/plugins/plugins_test.go) exercise restart and terminal
-failure. They run without external services and use the public test package.
+Start with the [managed plugin templates](https://docs.blinklabs.io/guides/adder/library-examples/plugins/) on the docs site. Their tests exercise restart and terminal
+failure without external services and use the public test package.
 
 ## Required contract
 
@@ -103,7 +101,7 @@ consumers. Producers must not reuse a published mutable buffer. Filters that
 transform data copy every map, slice, or pointer-backed structure they change;
 a shallow Event copy is insufficient. Consumers that need mutable working data
 must make their own copy. See the
-[executable transformation example](../examples/plugins/ownership_test.go).
+[event transformation example](https://docs.blinklabs.io/guides/adder/library-examples/plugins/#event-ownership).
 
 There is no generic deep-copy step or implicit JSON conversion. Concrete payload
 types survive the pipeline. Document custom event types and their payload
