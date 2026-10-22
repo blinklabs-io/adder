@@ -14,6 +14,7 @@ jobs:
   go-test:
     uses: blinklabs-io/actions/.github/workflows/reuseable-go-test.yml@main
     with:
+      go-versions: '["1.26.x","1.27.x"]'
       golangci-cgo-enabled: true
       golangci-platform: ubuntu-latest
       nilaway-cgo-enabled: true
