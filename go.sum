@@ -1,7 +1,7 @@
 cloud.google.com/go/compute/metadata v0.9.0 h1:pDUj4QMoPejqq20dK0Pg2N4yG9zIkYGdBtwLoEkH9Zs=
 cloud.google.com/go/compute/metadata v0.9.0/go.mod h1:E0bWwX5wTnLPedCKqk3pJmVgCBSM6qQI1yTBdEb3C10=
-connectrpc.com/connect v1.21.0 h1:LhqSJt7jHf5NJBo9Jq/t/9FjcYAideif0mg+qe2jCUs=
-connectrpc.com/connect v1.21.0/go.mod h1:A2ygJrukXwWy32vkCAAHNVguZrqZ+jeZ9rGRnGR4dN4=
+connectrpc.com/connect v1.21.1 h1:h2kacdlzXpZU2OQFSv98xkjYXNUSr/ptxmGVbS/+CRM=
+connectrpc.com/connect v1.21.1/go.mod h1:fhMcVJ5w6r/yTYhnkEbW6+sIF7OZ5Ay7KYgmfebh2ek=
 filippo.io/edwards25519 v1.2.0 h1:crnVqOiS4jqYleHd9vaKZ+HKtHfllngJIiOpNpoJsjo=
 filippo.io/edwards25519 v1.2.0/go.mod h1:xzAOLCNug/yB62zG1bQ8uziwrIqIuxhctzJT18Q77mc=
 fyne.io/fyne/v2 v2.8.1 h1:EztGuE2W3Qhd0cWVmU+h5rkzNezUD1To6UqsoLQYUIM=
@@ -27,10 +27,10 @@ github.com/aws/aws-sdk-go v1.55.8 h1:JRmEUbU52aJQZ2AjX4q4Wu7t4uZjOu71uyNmaWlUkJQ
 github.com/aws/aws-sdk-go v1.55.8/go.mod h1:ZkViS9AqA6otK+JBBNH2++sx1sgxrPKcSzPPvQkUtXk=
 github.com/bits-and-blooms/bitset v1.25.0 h1:0Ro0qF4abCkM6SqWPVj29sFhAbMPAZpaDD7xhJ10beM=
 github.com/bits-and-blooms/bitset v1.25.0/go.mod h1:7hO7Gc7Pp1vODcmWvKMRA9BNmbv6a/7QIWpPxHddWR8=
-github.com/blinklabs-io/gouroboros v0.209.0 h1:7YvRotN/5IzFXhTn++kTgOhVCI0cDF0jh7+Iq6z/Szc=
-github.com/blinklabs-io/gouroboros v0.209.0/go.mod h1:nw/oc+rPceFj0Uri2QFX5K/XQPcxZrmuYbGcQFxfd2E=
-github.com/blinklabs-io/ouroboros-mock v0.20.4 h1:XxgiJAiqbUYC1XSNQtBsQ4Btkaa2S2+1me8cj5ZxXJk=
-github.com/blinklabs-io/ouroboros-mock v0.20.4/go.mod h1:fJ7lMj3O9W0oCKdTD14eFyKTlIOsDwBREqSS7lRJ6II=
+github.com/blinklabs-io/gouroboros v0.209.1 h1:9r5VeW2aLutZ38/x+DFR+LMvSSkevOBhCsK//nh7UX4=
+github.com/blinklabs-io/gouroboros v0.209.1/go.mod h1:zuVj7giKCn0X9a9ulXuWGUgArsSYaFdMju6THxZRn04=
+github.com/blinklabs-io/ouroboros-mock v0.21.1 h1:eWOCYM6K6R10yZbB6y/sTA99wi8oO4LbxsAp1jcLZvI=
+github.com/blinklabs-io/ouroboros-mock v0.21.1/go.mod h1:Nej+sTwJstHPlJveUdsQohLf1haGtG1Uw9Q8Bksc5oM=
 github.com/blinklabs-io/plutigo v0.9.4 h1:F79jOl9DNSXX+SizDe6w22NkEDsOcGi2ZwCnvB2n9DA=
 github.com/blinklabs-io/plutigo v0.9.4/go.mod h1:/Srbjyh7GPIoUXNzdFOhYtGqPAuzm44ZiA0Vm1/re8M=
 github.com/btcsuite/btcd v0.20.1-beta/go.mod h1:wVuoA8VJLEcwgqHBwHmzLRazpKxTv13Px/pDuV7OomQ=
