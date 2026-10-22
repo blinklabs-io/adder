@@ -444,10 +444,10 @@ var installerLauncher = func(filePath string) error {
 	switch runtime.GOOS {
 	case "darwin":
 		// #nosec G204 -- filePath is a downloaded installer verified by checksum
-		return exec.Command("open", filePath).Start()
+		return startAndReap(exec.Command("open", filePath))
 	case "windows":
 		// #nosec G204 -- filePath is a downloaded installer verified by checksum
-		return exec.Command("msiexec.exe", "/i", filePath).Start()
+		return startAndReap(exec.Command("msiexec.exe", "/i", filePath))
 	default:
 		return fmt.Errorf("automatic installation is not supported on %s", runtime.GOOS)
 	}
