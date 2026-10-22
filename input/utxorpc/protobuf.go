@@ -563,7 +563,7 @@ func pbGovernanceCertificates(certs []*cardanopb.Certificate) (
 			drep = append(drep, event.DRepCertificateData{
 				CertificateType: "Registration",
 				DRepHash:        pbStakeCredentialHex(d.GetDrepCredential()),
-				Deposit:         safeUint64ToInt64(utxorpcBigIntToUint64(d.GetCoin())),
+				Deposit:         utxorpcBigIntToUint64(d.GetCoin()),
 				Anchor:          pbAnchor(d.GetAnchor()),
 			})
 		case *cardanopb.Certificate_UnregDrepCert:
@@ -571,7 +571,7 @@ func pbGovernanceCertificates(certs []*cardanopb.Certificate) (
 			drep = append(drep, event.DRepCertificateData{
 				CertificateType: "Deregistration",
 				DRepHash:        pbStakeCredentialHex(d.GetDrepCredential()),
-				Deposit:         safeUint64ToInt64(utxorpcBigIntToUint64(d.GetCoin())),
+				Deposit:         utxorpcBigIntToUint64(d.GetCoin()),
 			})
 		case *cardanopb.Certificate_UpdateDrepCert:
 			d := c.UpdateDrepCert
@@ -589,10 +589,10 @@ func pbGovernanceCertificates(certs []*cardanopb.Certificate) (
 			voteDel = append(voteDel, pbVoteDelegation("StakeVoteDelegation", d.GetStakeCredential(), d.GetDrep(), d.GetPoolKeyhash(), 0))
 		case *cardanopb.Certificate_VoteRegDelegCert:
 			d := c.VoteRegDelegCert
-			voteDel = append(voteDel, pbVoteDelegation("VoteRegistrationDelegation", d.GetStakeCredential(), d.GetDrep(), nil, safeUint64ToInt64(utxorpcBigIntToUint64(d.GetCoin()))))
+			voteDel = append(voteDel, pbVoteDelegation("VoteRegistrationDelegation", d.GetStakeCredential(), d.GetDrep(), nil, utxorpcBigIntToUint64(d.GetCoin())))
 		case *cardanopb.Certificate_StakeVoteRegDelegCert:
 			d := c.StakeVoteRegDelegCert
-			voteDel = append(voteDel, pbVoteDelegation("StakeVoteRegistrationDelegation", d.GetStakeCredential(), d.GetDrep(), d.GetPoolKeyhash(), safeUint64ToInt64(utxorpcBigIntToUint64(d.GetCoin()))))
+			voteDel = append(voteDel, pbVoteDelegation("StakeVoteRegistrationDelegation", d.GetStakeCredential(), d.GetDrep(), d.GetPoolKeyhash(), utxorpcBigIntToUint64(d.GetCoin())))
 
 		case *cardanopb.Certificate_AuthCommitteeHotCert:
 			d := c.AuthCommitteeHotCert
@@ -618,7 +618,7 @@ func pbVoteDelegation(
 	stakeCred *cardanopb.StakeCredential,
 	drep *cardanopb.DRep,
 	poolKeyhash []byte,
-	deposit int64,
+	deposit uint64,
 ) event.VoteDelegationCertificateData {
 	data := event.VoteDelegationCertificateData{
 		CertificateType: certType,
@@ -647,13 +647,6 @@ func pbVoteDelegation(
 		}
 	}
 	return data
-}
-
-func safeUint64ToInt64(v uint64) int64 {
-	if v > uint64(math.MaxInt64) {
-		return math.MaxInt64
-	}
-	return int64(v) //nolint:gosec // clamped above
 }
 
 func utxorpcBigIntToUint64(b *cardanopb.BigInt) uint64 {
