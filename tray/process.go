@@ -16,16 +16,11 @@ package tray
 
 import "os/exec"
 
-func startAndReap(cmd *exec.Cmd, onWait func(error)) error {
+func startAndReap(cmd *exec.Cmd) error {
 	if err := cmd.Start(); err != nil {
 		return err
 	}
 
-	go func() {
-		err := cmd.Wait()
-		if onWait != nil {
-			onWait(err)
-		}
-	}()
+	go func() { _ = cmd.Wait() }()
 	return nil
 }
