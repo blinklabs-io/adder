@@ -1226,7 +1226,7 @@ func openFolder(dir string) {
 		cmd,
 		dir,
 	) //nolint:gosec // directory path from internal config
-	if _, err := startAndReap(p); err != nil {
+	if err := startAndReap(p, nil); err != nil {
 		slog.Error("failed to open folder", "dir", dir, "error", err)
 		return
 	}
@@ -1248,7 +1248,7 @@ func openURL(url string) {
 		args = []string{url}
 	}
 	p := exec.Command(cmd, args...) //nolint:gosec // hardcoded URL
-	if _, err := startAndReap(p); err != nil {
+	if err := startAndReap(p, nil); err != nil {
 		slog.Error("failed to open URL", "url", url, "error", err)
 		return
 	}

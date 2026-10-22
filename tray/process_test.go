@@ -30,7 +30,10 @@ func TestStartAndReap(t *testing.T) {
 
 	cmd := exec.Command(os.Args[0], "-test.run=^TestStartAndReap$")
 	cmd.Env = append(os.Environ(), "ADDER_REAP_HELPER=1")
-	done, err := startAndReap(cmd)
+	done := make(chan error, 1)
+	err := startAndReap(cmd, func(err error) {
+		done <- err
+	})
 	require.NoError(t, err)
 
 	select {
@@ -43,7 +46,6 @@ func TestStartAndReap(t *testing.T) {
 
 func TestStartAndReapReturnsStartError(t *testing.T) {
 	cmd := exec.Command("/path/that/does/not/exist")
-	done, err := startAndReap(cmd)
+	err := startAndReap(cmd, nil)
 	require.Error(t, err)
-	require.Nil(t, done)
 }
