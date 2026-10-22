@@ -1652,3 +1652,117 @@ func findCheck(obj fyne.CanvasObject, text string) *widget.Check {
 	}
 	return nil
 }
+
+// An Intel Mac must never be offered the arm64 installer when a release ships
+// no darwin-amd64 package: the arm64 binaries do not run on Intel hardware.
+func TestFindAssetForPlatformNoIntelMacInstaller(t *testing.T) {
+	assets := []ReleaseAsset{
+		{Name: "adder-0.46.0-darwin-arm64.pkg"},
+		{Name: "adder-v0.46.0-windows-amd64.msi"},
+		{Name: "adder-v0.46.0-linux-amd64.tar.gz"},
+	}
+	assert.Nil(t, FindAssetForPlatform(assets, "darwin", "amd64"))
+	require.NotNil(t, FindAssetForPlatform(assets, "darwin", "arm64"))
+}
+
+func TestManualUpdateMessage(t *testing.T) {
+	tests := []struct {
+		goos, goarch string
+		want         string
+	}{
+		{
+			"darwin", "amd64",
+			"Adder v0.46.0 is now available (you have v0.45.0), but this release has no macOS installer for amd64. The release page lists the platforms it supports.",
+		},
+		{
+			"windows", "arm64",
+			"Adder v0.46.0 is now available (you have v0.45.0), but this release has no Windows installer for arm64. The release page lists the platforms it supports.",
+		},
+		{
+			"linux", "amd64",
+			"Adder v0.46.0 is now available (you have v0.45.0). Automatic installation is not supported on your platform. You can download and install the update manually.",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.goos+"/"+tc.goarch, func(t *testing.T) {
+			assert.Equal(t, tc.want, manualUpdateMessage("v0.46.0", "v0.45.0", tc.goos, tc.goarch))
+		})
+	}
+}
+
+func TestShowUpdateWindow_MissingArchInstaller(t *testing.T) {
+	origVer := version.Version
+	defer func() {
+		version.Version = origVer
+	}()
+	version.Version = "v0.45.0"
+
+	checker := &mockUpdateChecker{
+		info: &ReleaseInfo{
+			TagName: "v0.46.0",
+			Name:    "v0.46.0",
+			HTMLURL: "https://github.com/blinklabs-io/adder/releases/tag/v0.46.0",
+			Body:    "* Test release notes",
+			Assets: []ReleaseAsset{
+				{
+					Name:               "adder-0.46.0-darwin-arm64.pkg",
+					BrowserDownloadURL: "https://example.com/adder.pkg",
+					Size:               1024,
+				},
+			},
+		},
+	}
+
+	done := make(chan struct{})
+	origHook := onCheckDone
+	onCheckDone = func() {
+		close(done)
+	}
+	defer func() {
+		onCheckDone = origHook
+	}()
+
+	app := test.NewApp()
+	win := ShowUpdateWindow(
+		app,
+		checker,
+		withTargetPlatform("darwin", "amd64"),
+	)
+	require.NotNil(t, win)
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for check to complete")
+	}
+
+	want := manualUpdateMessage("v0.46.0", "v0.45.0", "darwin", "amd64")
+	var subtitle *widget.Label
+	require.Eventually(t, func() bool {
+		fyne.Do(func() {
+			subtitle = findLabel(win.Content(), want)
+		})
+		return subtitle != nil
+	}, 2*time.Second, 10*time.Millisecond)
+	fyne.Do(func() {
+		assert.NotNil(t, findButton(win.Content(), "Open Release Page"))
+		assert.Nil(t, findButton(win.Content(), "Install and Relaunch"))
+		win.Close()
+	})
+}
+
+func findLabel(obj fyne.CanvasObject, text string) *widget.Label {
+	if lbl, ok := obj.(*widget.Label); ok {
+		if lbl.Text == text {
+			return lbl
+		}
+	}
+	if c, ok := obj.(*fyne.Container); ok {
+		for _, child := range c.Objects {
+			if res := findLabel(child, text); res != nil {
+				return res
+			}
+		}
+	}
+	return nil
+}

@@ -227,6 +227,35 @@ func FindAssetForPlatform(
 	return nil
 }
 
+// manualUpdateMessage explains an available update the tray cannot install
+// itself. Linux and FreeBSD releases ship only tarballs, so the user installs
+// those by hand. macOS and Windows releases ship one installer per
+// architecture, so a missing one means the release does not support this
+// architecture at all, and suggesting a manual download would send the user to
+// a page with nothing for them.
+func manualUpdateMessage(latest, current, goos, goarch string) string {
+	var platform string
+	switch goos {
+	case "darwin":
+		platform = "macOS"
+	case "windows":
+		platform = "Windows"
+	default:
+		return fmt.Sprintf(
+			"Adder %s is now available (you have %s). Automatic installation is not supported on your platform. You can download and install the update manually.",
+			latest,
+			current,
+		)
+	}
+	return fmt.Sprintf(
+		"Adder %s is now available (you have %s), but this release has no %s installer for %s. The release page lists the platforms it supports.",
+		latest,
+		current,
+		platform,
+		goarch,
+	)
+}
+
 func containsArchToken(name, arch string) bool {
 	if arch == "" {
 		return false
@@ -778,10 +807,11 @@ func ShowUpdateWindow(
 				skipBtn.Show()
 
 				if asset == nil {
-					subtitleLabel.SetText(fmt.Sprintf(
-						"Adder %s is now available (you have %s). Automatic installation is not supported on your platform. You can download and install the update manually.",
+					subtitleLabel.SetText(manualUpdateMessage(
 						info.TagName,
 						curVer,
+						targetOS,
+						targetArch,
 					))
 					installBtn.SetText("Open Release Page")
 					installBtn.Importance = widget.HighImportance
