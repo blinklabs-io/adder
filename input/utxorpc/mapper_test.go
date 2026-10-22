@@ -3,6 +3,7 @@ package utxorpc
 import (
 	_ "embed"
 	"encoding/hex"
+	"math"
 	"strings"
 	"testing"
 
@@ -16,6 +17,28 @@ import (
 	syncpb "github.com/utxorpc/go-codegen/utxorpc/v1beta/sync"
 	watchpb "github.com/utxorpc/go-codegen/utxorpc/v1beta/watch"
 )
+
+func TestProtobufGovernanceCertificateDepositsPreserveUint64(t *testing.T) {
+	coin := &cardanopb.BigInt{BigInt: &cardanopb.BigInt_BigUInt{
+		BigUInt: []byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff},
+	}}
+	certs := []*cardanopb.Certificate{
+		{Certificate: &cardanopb.Certificate_RegDrepCert{RegDrepCert: &cardanopb.RegDRepCert{Coin: coin}}},
+		{Certificate: &cardanopb.Certificate_UnregDrepCert{UnregDrepCert: &cardanopb.UnRegDRepCert{Coin: coin}}},
+		{Certificate: &cardanopb.Certificate_VoteRegDelegCert{VoteRegDelegCert: &cardanopb.VoteRegDelegCert{Coin: coin}}},
+		{Certificate: &cardanopb.Certificate_StakeVoteRegDelegCert{StakeVoteRegDelegCert: &cardanopb.StakeVoteRegDelegCert{Coin: coin}}},
+	}
+
+	drep, voteDel, _ := pbGovernanceCertificates(certs)
+	require.Len(t, drep, 2)
+	require.Len(t, voteDel, 2)
+	for _, cert := range drep {
+		assert.Equal(t, uint64(math.MaxUint64), cert.Deposit)
+	}
+	for _, cert := range voteDel {
+		assert.Equal(t, uint64(math.MaxUint64), cert.Deposit)
+	}
+}
 
 //go:embed testdata/mainnet_nativebytes.hex
 var mainnetNativeBytesHex string

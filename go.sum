@@ -27,12 +27,12 @@ github.com/aws/aws-sdk-go v1.55.8 h1:JRmEUbU52aJQZ2AjX4q4Wu7t4uZjOu71uyNmaWlUkJQ
 github.com/aws/aws-sdk-go v1.55.8/go.mod h1:ZkViS9AqA6otK+JBBNH2++sx1sgxrPKcSzPPvQkUtXk=
 github.com/bits-and-blooms/bitset v1.25.0 h1:0Ro0qF4abCkM6SqWPVj29sFhAbMPAZpaDD7xhJ10beM=
 github.com/bits-and-blooms/bitset v1.25.0/go.mod h1:7hO7Gc7Pp1vODcmWvKMRA9BNmbv6a/7QIWpPxHddWR8=
-github.com/blinklabs-io/gouroboros v0.209.1 h1:9r5VeW2aLutZ38/x+DFR+LMvSSkevOBhCsK//nh7UX4=
-github.com/blinklabs-io/gouroboros v0.209.1/go.mod h1:zuVj7giKCn0X9a9ulXuWGUgArsSYaFdMju6THxZRn04=
+github.com/blinklabs-io/gouroboros v0.213.7 h1:WxbC2Wp+nTE+AeQU2uqGQkLLvMTE6gAsZIdTb12TBrU=
+github.com/blinklabs-io/gouroboros v0.213.7/go.mod h1:apyk815OYrk5GvJJ7i9MNVxoQD7e9jiai6nQjUQ6GNk=
 github.com/blinklabs-io/ouroboros-mock v0.21.1 h1:eWOCYM6K6R10yZbB6y/sTA99wi8oO4LbxsAp1jcLZvI=
 github.com/blinklabs-io/ouroboros-mock v0.21.1/go.mod h1:Nej+sTwJstHPlJveUdsQohLf1haGtG1Uw9Q8Bksc5oM=
-github.com/blinklabs-io/plutigo v0.9.4 h1:F79jOl9DNSXX+SizDe6w22NkEDsOcGi2ZwCnvB2n9DA=
-github.com/blinklabs-io/plutigo v0.9.4/go.mod h1:/Srbjyh7GPIoUXNzdFOhYtGqPAuzm44ZiA0Vm1/re8M=
+github.com/blinklabs-io/plutigo v0.9.7 h1:98z8NhVKFp7SCPOavPk/W/PHyUchdgGbdvZuFyFDEuo=
+github.com/blinklabs-io/plutigo v0.9.7/go.mod h1:/Srbjyh7GPIoUXNzdFOhYtGqPAuzm44ZiA0Vm1/re8M=
 github.com/btcsuite/btcd v0.20.1-beta/go.mod h1:wVuoA8VJLEcwgqHBwHmzLRazpKxTv13Px/pDuV7OomQ=
 github.com/btcsuite/btcd/btcec/v2 v2.5.0 h1:KioMXOWa76b86sTZZOmbzv/ldaQCmB8KFAyn5PbB8E8=
 github.com/btcsuite/btcd/btcec/v2 v2.5.0/go.mod h1:+K/MYXcLBtHEQjRbjHuJChuybk4LCgjdjgRwil+e+Kk=

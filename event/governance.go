@@ -241,7 +241,7 @@ type DRepCertificateData struct {
 	CertificateType string     `json:"certificateType"`
 	DRepHash        string     `json:"drepHash"`
 	DRepId          string     `json:"drepId"`
-	Deposit         int64      `json:"deposit,omitempty"`
+	Deposit         uint64     `json:"deposit,omitempty"`
 	Anchor          AnchorData `json:"anchor"`
 }
 
@@ -253,7 +253,7 @@ type VoteDelegationCertificateData struct {
 	DRepHash        string `json:"drepHash,omitempty"`
 	DRepId          string `json:"drepId,omitempty"`
 	PoolKeyHash     string `json:"poolKeyHash,omitempty"`
-	Deposit         int64  `json:"deposit,omitempty"`
+	Deposit         uint64 `json:"deposit,omitempty"`
 }
 
 // CommitteeCertificateData represents CC hot key auth or resignation
@@ -578,7 +578,7 @@ func extractVoteDelegation(
 	certType string,
 	stakeCred lcommon.Credential,
 	drep lcommon.Drep,
-	deposit int64,
+	deposit uint64,
 ) VoteDelegationCertificateData {
 	data := VoteDelegationCertificateData{
 		CertificateType: certType,
