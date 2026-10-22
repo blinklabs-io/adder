@@ -1226,11 +1226,10 @@ func openFolder(dir string) {
 		cmd,
 		dir,
 	) //nolint:gosec // directory path from internal config
-	if err := p.Start(); err != nil {
+	if _, err := startAndReap(p); err != nil {
 		slog.Error("failed to open folder", "dir", dir, "error", err)
 		return
 	}
-	_ = p.Process.Release()
 }
 
 // openURL opens the given URL in the default browser.
@@ -1249,11 +1248,10 @@ func openURL(url string) {
 		args = []string{url}
 	}
 	p := exec.Command(cmd, args...) //nolint:gosec // hardcoded URL
-	if err := p.Start(); err != nil {
+	if _, err := startAndReap(p); err != nil {
 		slog.Error("failed to open URL", "url", url, "error", err)
 		return
 	}
-	_ = p.Process.Release()
 }
 
 // suppressInitialFire decides whether to swallow an OnChange
