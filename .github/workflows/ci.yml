@@ -21,7 +21,6 @@ jobs:
       nilaway-exclude-pkgs: github.com/go-gl/glfw
       nilaway-include-pkgs: github.com/blinklabs-io/adder
       nilaway-platform: ubuntu-latest
-      nilaway-version: main
       platforms: '["ubuntu-latest","windows-latest"]'
       pre-test-command: make build
       run-golangci-lint: true
