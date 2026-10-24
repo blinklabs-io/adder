@@ -45,6 +45,9 @@ var knownEraHistory = map[string]EraHistory{
 	"preview": {
 		ShelleyEpochLength: 86400,
 	},
+	"dijkstra": {
+		ShelleyEpochLength: 86400,
+	},
 	"sanchonet": {
 		ShelleyEpochLength: 86400,
 	},

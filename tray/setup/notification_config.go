@@ -183,9 +183,9 @@ func (c NotificationConfig) ValidationIssues() []ValidationIssue {
 		add("schemaVersion", fmt.Sprintf("must be %d", NotificationConfigSchemaVersion))
 	}
 	switch c.Network.Name {
-	case "mainnet", "preprod", "preview":
+	case "mainnet", "preprod", "preview", "dijkstra":
 	default:
-		add("network.name", "must be mainnet, preprod, or preview")
+		add("network.name", "must be mainnet, preprod, preview, or dijkstra")
 	}
 	if strings.TrimSpace(c.Network.CustomAddress) == "" && c.Network.CustomPort != 0 {
 		add("network.customAddress", "must be set when customPort is set")

@@ -52,7 +52,7 @@ func init() {
 					Name:         "network",
 					Type:         plugin.PluginOptionTypeString,
 					CustomEnvVar: "UTXORPC_NETWORK",
-					Description:  "Cardano network name (mainnet, preprod, preview, sanchonet) for resolving network magic",
+					Description:  "Cardano network name (mainnet, preprod, preview, dijkstra, sanchonet) for resolving network magic",
 					DefaultValue: "",
 				},
 				{

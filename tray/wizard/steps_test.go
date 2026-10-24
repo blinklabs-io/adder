@@ -70,6 +70,9 @@ func TestNetworkStepValidateAndApply(t *testing.T) {
 	step.radio.SetSelected("Preprod")
 	step.Apply(got)
 	assert.Equal(t, "preprod", got.Network.Name)
+	step.radio.SetSelected("Dijkstra")
+	step.Apply(got)
+	assert.Equal(t, "dijkstra", got.Network.Name)
 	assert.Empty(t, got.Network.CustomAddress)
 	assert.Zero(t, got.Network.CustomPort)
 }
