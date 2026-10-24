@@ -96,7 +96,7 @@ type SetupPlan struct {
 
 // NetworkConfig defines the Cardano network settings.
 type NetworkConfig struct {
-	Name          string // mainnet, preprod, preview
+	Name          string // mainnet, preprod, preview, dijkstra
 	CustomAddress string // For custom node connections
 	CustomPort    uint
 }

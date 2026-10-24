@@ -49,6 +49,12 @@ func TestEpochFromSlotByNetwork(t *testing.T) {
 			want:    1157,
 		},
 		{
+			name:    "dijkstra by name",
+			options: []ChainSyncOptionFunc{WithNetwork("dijkstra")},
+			slot:    86400,
+			want:    1,
+		},
+		{
 			name:    "sanchonet by name",
 			options: []ChainSyncOptionFunc{WithNetwork("sanchonet")},
 			slot:    100000000,

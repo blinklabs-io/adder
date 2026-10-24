@@ -72,6 +72,7 @@ func (s *networkStep) Content() fyne.CanvasObject {
 
 	// Descriptions for networks
 	networkDescs := map[string]string{
+		"Dijkstra": "DijkstraNet for testing the Dijkstra upgrade.",
 		"Mainnet": "The main Cardano production network. Recommended " +
 			"for most users.",
 		"Preprod": "A long-lived testnet for testing production-ready " +
@@ -84,7 +85,7 @@ func (s *networkStep) Content() fyne.CanvasObject {
 	s.descLabel.Wrapping = fyne.TextWrapWord
 
 	s.radio = widget.NewRadioGroup(
-		[]string{"Mainnet", "Preprod", "Preview"},
+		[]string{"Mainnet", "Preprod", "Preview", "Dijkstra"},
 		func(selected string) {
 			s.descLabel.SetText(networkDescs[selected])
 		},
@@ -204,6 +205,8 @@ func (s *networkStep) testConnection() {
 			networkName = "preprod"
 		case "Preview":
 			networkName = "preview"
+		case "Dijkstra":
+			networkName = "dijkstra"
 		}
 		network, ok := ouroboros.NetworkByName(networkName)
 		if ok && len(network.BootstrapPeers) > 0 {
@@ -287,6 +290,8 @@ func (s *networkStep) Apply(plan *setup.SetupPlan) {
 		networkName = "preprod"
 	case "Preview":
 		networkName = "preview"
+	case "Dijkstra":
+		networkName = "dijkstra"
 	}
 	plan.Network.Name = networkName
 
