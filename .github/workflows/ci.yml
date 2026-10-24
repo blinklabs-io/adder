@@ -32,7 +32,7 @@ jobs:
   publish:
     needs: [go-test]
     if: github.event_name == 'push'
-    uses: blinklabs-io/actions/.github/workflows/reuseable-publish-desktop.yml@4bd982e304108466798c95d29e0aab260d0502c2
+    uses: blinklabs-io/actions/.github/workflows/reuseable-publish-desktop.yml@3295660d735a2696ff119c34adf96407dc1968eb
     permissions:
       attestations: write
       contents: write
@@ -56,6 +56,7 @@ jobs:
       docker-password: ${{ secrets.DOCKER_PASSWORD }}
     with:
       application-name: adder
+      binary-target-matrix: '[{"runner":"macos-15","os":"darwin","arch":"arm64","tray":true},{"runner":"ubuntu-latest","os":"freebsd","arch":"amd64","tray":false},{"runner":"ubuntu-latest","os":"freebsd","arch":"arm64","tray":false},{"runner":"ubuntu-latest","os":"linux","arch":"amd64","tray":true},{"runner":"ubuntu-24.04-arm","os":"linux","arch":"arm64","tray":true},{"runner":"windows-latest","os":"windows","arch":"amd64","tray":true},{"runner":"windows-11-arm","os":"windows","arch":"arm64","tray":true}]'
       description: Adder is a tool for tailing the Cardano blockchain and emitting events
       docker-image: blinklabs/adder
       windows-signing-name: Adder
