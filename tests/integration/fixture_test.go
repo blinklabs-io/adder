@@ -19,10 +19,12 @@ import (
 
 type fixture struct {
 	syncconnect.UnimplementedSyncServiceHandler
-	release   chan struct{}
-	fail      bool
-	failFirst int32
-	attempts  atomic.Int32
+	release          chan struct{}
+	disconnectFirst  chan struct{}
+	reconnectRelease chan struct{}
+	fail             bool
+	failFirst        int32
+	attempts         atomic.Int32
 }
 
 func (f *fixture) FollowTip(ctx context.Context, _ *connect.Request[syncpb.FollowTipRequest], stream *connect.ServerStream[syncpb.FollowTipResponse]) error {
@@ -31,8 +33,16 @@ func (f *fixture) FollowTip(ctx context.Context, _ *connect.Request[syncpb.Follo
 		return ctx.Err()
 	case <-f.release:
 	}
-	if attempt := f.attempts.Add(1); f.fail || attempt <= f.failFirst {
+	attempt := f.attempts.Add(1)
+	if f.fail || attempt <= f.failFirst {
 		return connect.NewError(connect.CodeInternal, errors.New("integration fixture failure"))
+	}
+	if attempt > 1 && f.reconnectRelease != nil {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-f.reconnectRelease:
+		}
 	}
 	block := &syncpb.AnyChainBlock{Chain: &syncpb.AnyChainBlock_Cardano{Cardano: &cardanopb.Block{
 		Header: &cardanopb.BlockHeader{Slot: 100, Height: 50, Hash: bytes.Repeat([]byte{1}, 32)},
@@ -54,6 +64,14 @@ func (f *fixture) FollowTip(ctx context.Context, _ *connect.Request[syncpb.Follo
 	} {
 		if err := stream.Send(response); err != nil {
 			return err
+		}
+	}
+	if attempt == 1 && f.disconnectFirst != nil {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-f.disconnectFirst:
+			return connect.NewError(connect.CodeUnavailable, errors.New("integration stream disconnected"))
 		}
 	}
 	// Keep the stream open so EOF cannot masquerade as a shutdown failure.

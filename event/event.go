@@ -40,6 +40,21 @@ type Event struct {
 	Context   any       `json:"context,omitempty"`
 	Payload   any       `json:"payload"`
 	Type      string    `json:"type"`
+	// A filter that constructs a replacement event must carry this value from
+	// its source if the replacement should retain the source's pipeline timing.
+	pipelineIngressTime time.Time
+}
+
+// WithPipelineIngressTime returns a copy with the pipeline entry time set.
+// Filters creating derived events can copy this time from their source event.
+func (e Event) WithPipelineIngressTime(t time.Time) Event {
+	e.pipelineIngressTime = t
+	return e
+}
+
+// PipelineIngressTime returns the pipeline entry time, or zero if unavailable.
+func (e Event) PipelineIngressTime() time.Time {
+	return e.pipelineIngressTime
 }
 
 func New(

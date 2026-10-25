@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/blinklabs-io/adder/event"
 	"github.com/blinklabs-io/adder/plugin"
@@ -48,6 +49,7 @@ type Pipeline struct {
 	stopRequests int                // guarded by runningMu
 	failure      error              // guarded by runningMu
 	failedChan   chan struct{}      // guarded by runningMu
+	metrics      *metrics
 }
 
 func New() *Pipeline {
@@ -57,6 +59,7 @@ func New() *Pipeline {
 		errorChan:  make(chan error),
 		doneChan:   make(chan bool),
 		failedChan: make(chan struct{}),
+		metrics:    newMetrics(),
 	}
 	return p
 }
@@ -126,6 +129,11 @@ func (p *Pipeline) StartContext(parent context.Context) error {
 	}
 	if err := p.validateTopology(); err != nil {
 		return err
+	}
+	for _, filter := range p.filters {
+		if observer, ok := filter.(interface{ SetDropObserver(func()) }); ok {
+			observer.SetDropObserver(p.metrics.filtered.Inc)
+		}
 	}
 	p.runningMu.Lock()
 	if p.stopRequests > 0 {
@@ -303,6 +311,10 @@ func (p *Pipeline) chanCopyLoop(
 			if !ok {
 				return
 			}
+			if output == p.filterChan {
+				evt = evt.WithPipelineIngressTime(time.Now())
+				p.metrics.received.Inc()
+			}
 			select {
 			// Pass input event to output chan
 			case output <- evt:
@@ -331,6 +343,12 @@ func (p *Pipeline) outputChanLoop(destinations []chan<- event.Event) {
 				case <-p.doneChan:
 					return
 				}
+			}
+			completed := time.Now()
+			// Output-channel acceptance does not confirm external sink delivery.
+			p.metrics.processed.Inc()
+			if ingress := evt.PipelineIngressTime(); !ingress.IsZero() {
+				p.metrics.processing.Observe(completed.Sub(ingress).Seconds())
 			}
 			// Non-blocking send to observer (if registered)
 			p.observerMu.RLock()

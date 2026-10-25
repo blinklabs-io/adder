@@ -24,7 +24,11 @@ import (
 type Event struct {
 	plugin.Base
 	filterTypes []string
+	onDrop      func()
 }
+
+// SetDropObserver records events rejected by this filter. Configure before Start.
+func (e *Event) SetDropObserver(observer func()) { e.onDrop = observer }
 
 // New returns a new Event object with the specified options applied
 func New(options ...EventOptionFunc) *Event {
@@ -71,6 +75,9 @@ func (e *Event) start(ctx context.Context) error {
 				// the event doesn't match
 				if len(e.filterTypes) > 0 &&
 					!slices.Contains(e.filterTypes, evt.Type) {
+					if e.onDrop != nil {
+						e.onDrop()
+					}
 					continue
 				}
 				if !e.Emit(evt) {
