@@ -29,7 +29,7 @@ func newMetrics() *metrics {
 		}),
 		filtered: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "adder_pipeline_filtered_events_total",
-			Help: "Filter drops reported through SetDropObserver; built-in filters report each rejected event.",
+			Help: "Filter drops reported through SetPipelineDropObserver; built-in filters report each rejected event.",
 		}),
 		processing: prometheus.NewHistogram(prometheus.HistogramOpts{
 			Name:    "adder_pipeline_processing_duration_seconds",

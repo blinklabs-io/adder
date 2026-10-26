@@ -313,7 +313,7 @@ boundary if metrics should only be available to your monitoring system.
 | --- | --- |
 | `adder_pipeline_received_events_total` | Count events when the pipeline reads them from input plugin channels; this does not count upstream events that an input has not emitted. |
 | `adder_pipeline_processed_events_total` | Count events after every configured output channel accepts a copy. A pipeline with no outputs still drains and counts events; this counter does not confirm sink or `/events` delivery. |
-| `adder_pipeline_filtered_events_total` | Count drop callbacks from the built-in event and Cardano filters. Custom filters contribute only if they call the optional `SetDropObserver(func())` callback for their drops. |
+| `adder_pipeline_filtered_events_total` | Count drop callbacks from the built-in event and Cardano filters. Custom filters contribute when they implement `SetPipelineDropObserver(func())` and call the registered callback once per rejected event. |
 | `adder_pipeline_processing_duration_seconds` | Histogram from when the pipeline reads an input event through filter processing and channel waits until all configured output channels accept it. Only completed events retaining their pipeline ingress time produce samples. It does not measure external sink delivery. |
 
 Counters reset when the process restarts. Metrics have no labels from event

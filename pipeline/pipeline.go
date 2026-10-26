@@ -131,8 +131,8 @@ func (p *Pipeline) StartContext(parent context.Context) error {
 		return err
 	}
 	for _, filter := range p.filters {
-		if observer, ok := filter.(interface{ SetDropObserver(func()) }); ok {
-			observer.SetDropObserver(p.metrics.filtered.Inc)
+		if observer, ok := filter.(interface{ SetPipelineDropObserver(func()) }); ok {
+			observer.SetPipelineDropObserver(p.metrics.filtered.Inc)
 		}
 	}
 	p.runningMu.Lock()
