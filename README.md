@@ -302,6 +302,41 @@ network, monitored wallets/DReps/pools/assets/policies, alert categories, rate
 limit, and connection-staleness threshold. An empty target set is rejected
 unless `monitor.everything` is explicitly enabled.
 
+## Prometheus metrics
+
+The HTTP API serves Prometheus text at `GET /metrics` on the configured
+`API_ADDRESS` and `API_PORT` (defaults: `0.0.0.0:8080`). The path is outside the
+versioned `/v1` route group. Restrict access to the API listener at the network
+boundary if metrics should only be available to your monitoring system.
+
+| Metric | Operator use |
+| --- | --- |
+| `adder_pipeline_received_events_total` | Count events when the pipeline reads them from input plugin channels; this does not count upstream events that an input has not emitted. |
+| `adder_pipeline_processed_events_total` | Count events after every configured output channel accepts a copy. A pipeline with no outputs still drains and counts events; this counter does not confirm sink or `/events` delivery. |
+| `adder_pipeline_filtered_events_total` | Count drop callbacks from the built-in event and Cardano filters. Custom filters contribute when they implement `SetPipelineDropObserver(func())` and call the registered callback once per rejected event. |
+| `adder_pipeline_processing_duration_seconds` | Histogram from when the pipeline reads an input event through filter processing and channel waits until all configured output channels accept it. Only completed events retaining their pipeline ingress time produce samples. It does not measure external sink delivery. |
+
+Counters reset when the process restarts. Metrics have no labels from event
+types, addresses, hashes, clients, or other user data. A received event can be
+ahead of processed and filtered totals while it is in flight; events abandoned
+during shutdown are not counted as processed or filtered. Custom filters can
+also drop without reporting or emit more than one event per input, so the three
+counters are not a conservation equation. The counters and histogram are updated
+separately and a scrape can observe them between updates. These metrics do not
+report external delivery outcomes; monitor the configured output or sink for
+those results.
+
+With regular scrapes, `increase(adder_pipeline_received_events_total[10m])`
+estimates how much the received counter advanced over ten minutes. If it stays
+zero when events are expected, investigate the input; a legitimately idle source
+also produces zero. Check Prometheus `up` separately for scrape failures.
+
+The built-in filters preserve pipeline ingress time when they forward an event.
+Custom filters that construct a derived event can carry it with
+`derived.WithPipelineIngressTime(source.PipelineIngressTime())`. Events without
+that time do not enter the processing-duration histogram; compare its `_count`
+with `adder_pipeline_processed_events_total` to detect incomplete coverage.
+
 ## Configuration
 
 Adder resolves core and plugin settings in this order: explicit command-line

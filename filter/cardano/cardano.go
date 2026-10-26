@@ -23,8 +23,17 @@ import (
 
 type Cardano struct {
 	plugin.Base
-	filterSet filterSet
+	filterSet      filterSet
+	onDrop         func()
+	pipelineOnDrop func()
 }
+
+// SetDropObserver records events rejected by this filter. Configure before Start.
+func (c *Cardano) SetDropObserver(observer func()) { c.onDrop = observer }
+
+// SetPipelineDropObserver records rejected events for the owning pipeline.
+// Configure before Start; replacing the callback keeps restarts idempotent.
+func (c *Cardano) SetPipelineDropObserver(observer func()) { c.pipelineOnDrop = observer }
 
 // New returns a new Cardano object with the specified options applied
 func New(options ...CardanoOptionFunc) *Cardano {
@@ -72,8 +81,17 @@ func (c *Cardano) processEvents(ctx context.Context) {
 			if !ok {
 				return
 			}
-			if c.filterEvent(evt) && !c.Emit(evt) {
-				return
+			if c.filterEvent(evt) {
+				if !c.Emit(evt) {
+					return
+				}
+			} else {
+				if c.onDrop != nil {
+					c.onDrop()
+				}
+				if c.pipelineOnDrop != nil {
+					c.pipelineOnDrop()
+				}
 			}
 		}
 	}

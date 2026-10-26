@@ -35,6 +35,7 @@ reason to launch another process.
 | Output threshold error | The log plugin consumes events without writing and suppresses routine diagnostics, while SSE delivery remains active |
 | Environment over YAML; CLI over both | Resolved application and plugin settings, including the output threshold, reach the running output: actual JSON file contents and stderr reflect the winning settings, and losing paths are not created |
 | Transaction/rollback filter | The CLI-wired filter applies to both log output and the API observer; BLOCK and GOVERNANCE reach neither |
+| Prometheus metrics | The real `/metrics` route reports processed and filtered event counts and processing-duration samples for fixture events |
 | Missing output directory | Output startup failure terminates the CLI without consuming input; its API port can be rebound after exit |
 | Occupied API port | A real bind failure exits nonzero before input consumption |
 | Invalid threshold without log output | `--output webhook` still validates the shared log threshold before startup, even though the output factory is not called |
@@ -62,6 +63,7 @@ Tests are split by failure area. `fixture_test.go` supplies the RPC server and
 | [`logging_test.go`](../../tests/integration/logging_test.go) | `TestLoggingIntegration` or `TestOutputLevelIntegration` |
 | [`configuration_test.go`](../../tests/integration/configuration_test.go) | `TestConfigurationIntegration` |
 | [`filtering_test.go`](../../tests/integration/filtering_test.go) | `TestFilteringIntegration` |
+| [`metrics_test.go`](../../tests/integration/metrics_test.go) | `TestMetricsIntegration` |
 | [`startup_test.go`](../../tests/integration/startup_test.go) | `TestStartupIntegration` |
 | [`failure_test.go`](../../tests/integration/failure_test.go) | `TestTerminalErrorIntegration` |
 | [`reconnect_test.go`](../../tests/integration/reconnect_test.go) | `TestReconnectIntegration` |
