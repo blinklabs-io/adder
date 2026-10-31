@@ -16,6 +16,7 @@ package tray
 
 import (
 	"errors"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -117,4 +118,21 @@ func TestReconfigurePlanReturnsLoadEngineError(t *testing.T) {
 	_, err := app.reconfigurePlan()
 	require.ErrorIs(t, err, wantErr)
 	assert.Equal(t, app.config.AdderConfig, store.loadedPath)
+}
+
+func TestReconfigurePlanLoadsLegacyLoggingForTrayDialogs(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	require.NoError(t, os.WriteFile(
+		path,
+		[]byte("logging:\n  level: warn\n"),
+		0o600,
+	))
+	app := &App{
+		config: TrayConfig{AdderConfig: path},
+		runner: &setup.SetupRunner{Store: &setup.LocalStore{}},
+	}
+
+	plan, err := app.reconfigurePlan()
+	require.NoError(t, err)
+	assert.Equal(t, "warn", plan.Output.Config["level"])
 }

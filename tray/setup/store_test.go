@@ -130,6 +130,20 @@ func TestLocalStoreLoadEngineParseError(t *testing.T) {
 	assert.ErrorContains(t, err, "loading engine config")
 }
 
+func TestLocalStoreLoadEngineMigratesLegacyLogging(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	require.NoError(t, os.WriteFile(
+		path,
+		[]byte("logging:\n  level: debug\n"),
+		0o600,
+	))
+	store := &LocalStore{}
+
+	got, err := store.LoadEngine(path)
+	require.NoError(t, err)
+	assert.Equal(t, "debug", got.Plugin["output"]["log"]["level"])
+}
+
 func TestLocalStoreSaveTrayCreateDirError(t *testing.T) {
 	parent := filepath.Join(t.TempDir(), "not-a-dir")
 	require.NoError(t, os.WriteFile(parent, []byte("x"), 0o600))
