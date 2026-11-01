@@ -374,6 +374,20 @@ func TestLoadMigratesLegacyLoggingLevel(t *testing.T) {
 	assert.Contains(t, string(rewritten), "level: warn")
 }
 
+func TestLoadMigratesMergedLegacyLoggingLevel(t *testing.T) {
+	clearConfigEnv(t)
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	require.NoError(t, os.WriteFile(
+		path,
+		[]byte("<<: {logging: {level: warn}}\n"),
+		0o600,
+	))
+
+	c := New()
+	require.NoError(t, c.Load(path))
+	assert.Equal(t, "warn", c.Plugin["output"]["log"]["level"])
+}
+
 func TestLoadModernLoggingLevelTakesPrecedenceOverLegacy(t *testing.T) {
 	clearConfigEnv(t)
 	path := filepath.Join(t.TempDir(), "config.yaml")
@@ -396,6 +410,7 @@ func TestLoadRejectsMalformedLegacyLogging(t *testing.T) {
 	tests := map[string]string{
 		"scalar":            "logging: info\n",
 		"null":              "logging: null\n",
+		"merged null":       "<<: {logging: null}\n",
 		"missing level":     "logging: {}\n",
 		"numeric level":     "logging:\n  level: 1\n",
 		"invalid level":     "logging:\n  level: verbose\n",

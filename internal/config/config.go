@@ -197,17 +197,13 @@ func (c *Config) LoadWithFlags(configFile string, fs *pflag.FlagSet) error {
 }
 
 func unmarshalConfigYAML(data []byte, cfg *Config) error {
-	var fields yaml.MapSlice
+	// A plain map, unlike yaml.MapSlice, keeps keys contributed by a
+	// "<<" merge, so an explicit or merged null logging key is still seen.
+	var fields map[any]any
 	if err := yaml.Unmarshal(data, &fields); err != nil {
 		return err
 	}
-	legacyPresent := false
-	for _, field := range fields {
-		if name, ok := field.Key.(string); ok && name == "logging" {
-			legacyPresent = true
-			break
-		}
-	}
+	_, legacyPresent := fields["logging"]
 
 	type yamlConfig Config
 	decoded := struct {
