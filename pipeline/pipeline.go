@@ -43,6 +43,7 @@ type Pipeline struct {
 	stopOnce     sync.Once
 	lifecycleMu  sync.Mutex
 	running      bool
+	startedAt    time.Time // guarded by runningMu
 	runningMu    sync.RWMutex
 	cancel       context.CancelFunc // guarded by runningMu
 	started      []startedPlugin    // guarded by lifecycleMu
@@ -251,6 +252,7 @@ func (p *Pipeline) StartContext(parent context.Context) error {
 		return rollback(err)
 	}
 	p.running = true
+	p.startedAt = time.Now()
 	p.runningMu.Unlock()
 
 	return nil

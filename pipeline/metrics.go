@@ -44,5 +44,10 @@ func (p *Pipeline) MetricsHandler() http.Handler {
 	registry := prometheus.NewRegistry()
 	registry.MustRegister(p.metrics.received, p.metrics.processed,
 		p.metrics.filtered, p.metrics.processing)
+	for _, output := range p.outputs {
+		if provider, ok := output.(interface{ MetricsCollectors() []prometheus.Collector }); ok {
+			registry.MustRegister(provider.MetricsCollectors()...)
+		}
+	}
 	return promhttp.HandlerFor(registry, promhttp.HandlerOpts{})
 }

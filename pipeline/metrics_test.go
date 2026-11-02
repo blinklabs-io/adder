@@ -6,6 +6,7 @@ package pipeline
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync/atomic"
@@ -15,6 +16,7 @@ import (
 	"github.com/blinklabs-io/adder/event"
 	cardanofilter "github.com/blinklabs-io/adder/filter/cardano"
 	eventfilter "github.com/blinklabs-io/adder/filter/event"
+	"github.com/blinklabs-io/adder/output/webhook"
 	"github.com/blinklabs-io/adder/plugin"
 	"github.com/stretchr/testify/require"
 )
@@ -25,6 +27,23 @@ func scrapeMetrics(t *testing.T, p *Pipeline) string {
 	p.MetricsHandler().ServeHTTP(recorder, httptest.NewRequest("GET", "/metrics", nil))
 	require.Equal(t, 200, recorder.Code)
 	return recorder.Body.String()
+}
+
+func TestMetricsIncludeWebhookHTTPAttempts(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(server.Close)
+	output := webhook.New(webhook.WithUrl(server.URL, false))
+	p := New()
+	p.AddOutput(output)
+	require.NoError(t, output.SendWebhook(&event.Event{
+		Type: event.TypeRollback, Payload: event.RollbackEvent{},
+	}))
+	body := scrapeMetrics(t, p)
+	require.Contains(t, body, `adder_webhook_http_attempts_total{status_class="2xx"} 1`)
+	require.Contains(t, body, "adder_webhook_http_attempt_duration_seconds_count 1")
+	require.NotContains(t, body, server.URL)
 }
 
 func TestMetricsTrackDeliveryAndFilterDrops(t *testing.T) {

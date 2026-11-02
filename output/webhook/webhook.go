@@ -18,13 +18,16 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/blinklabs-io/adder/event"
@@ -53,6 +56,7 @@ type WebhookOutput struct {
 	initialBackoff time.Duration
 	maxBackoff     time.Duration
 	backoffFactor  float64
+	metrics        *deliveryMetrics
 }
 
 func New(options ...WebhookOptionFunc) *WebhookOutput {
@@ -64,6 +68,7 @@ func New(options ...WebhookOptionFunc) *WebhookOutput {
 		initialBackoff: defaultInitialBackoff,
 		maxBackoff:     defaultMaxBackoff,
 		backoffFactor:  defaultBackoffFactor,
+		metrics:        newDeliveryMetrics(),
 	}
 	for _, option := range options {
 		option(w)
@@ -199,6 +204,7 @@ func (w *WebhookOutput) start(ctx context.Context) error {
 // reportError surfaces an error on the plugin error channel without
 // blocking. If no consumer is ready, the error is logged instead.
 func (w *WebhookOutput) reportError(logger plugin.Logger, err error) {
+	w.metrics.outcomes.WithLabelValues("terminal").Inc()
 	logger.Error(err.Error())
 	if !w.TrySendError(err) {
 		logger.Warn("could not send error to error channel (full)")
@@ -413,15 +419,25 @@ func (w *WebhookOutput) log() plugin.Logger {
 }
 
 func (w *WebhookOutput) SendWebhook(e *event.Event) error {
-	return w.sendWebhook(context.Background(), e)
+	return w.sendWebhook(context.Background(), e).err
 }
 
-func (w *WebhookOutput) sendWebhook(ctx context.Context, e *event.Event) error {
+type deliveryAttempt struct {
+	err        error
+	retryable  bool
+	retryAfter string
+}
+
+func (w *WebhookOutput) sendWebhook(ctx context.Context, e *event.Event) deliveryAttempt {
 	logger := w.log()
 	logger.Info("sending event", "type", e.Type, "url", sanitizeURL(w.url))
 	data, err := formatWebhook(e, w.format)
 	if err != nil {
-		return err
+		return deliveryAttempt{err: err}
+	}
+	parsedURL, err := url.Parse(w.url)
+	if err != nil || (parsedURL.Scheme != "http" && parsedURL.Scheme != "https") || parsedURL.Host == "" {
+		return deliveryAttempt{err: errors.New("invalid webhook URL")}
 	}
 	// Setup request
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
@@ -433,7 +449,7 @@ func (w *WebhookOutput) sendWebhook(ctx context.Context, e *event.Event) error {
 		bytes.NewReader(data),
 	)
 	if err != nil {
-		return fmt.Errorf("%w", err)
+		return deliveryAttempt{err: err}
 	}
 	req.Header.Add("Content-Type", "application/json")
 	req.Header.Add(
@@ -461,25 +477,43 @@ func (w *WebhookOutput) sendWebhook(ctx context.Context, e *event.Event) error {
 		customTransport.ExpectContinueTimeout = defaultTransport.ExpectContinueTimeout
 		customTransport.TLSHandshakeTimeout = defaultTransport.TLSHandshakeTimeout
 	}
-	client := &http.Client{Transport: customTransport}
+	client := &http.Client{
+		Transport: customTransport,
+		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+	defer customTransport.CloseIdleConnections()
 	// Send payload
 	// #nosec G704 -- Webhook URL is user-configured and intentionally allowed.
+	started := time.Now()
 	resp, err := client.Do(req)
+	statusClass := "network"
+	if resp != nil {
+		statusClass = httpStatusClass(resp.StatusCode)
+	}
+	defer func() { w.metrics.observeAttempt(statusClass, time.Since(started)) }()
 	if err != nil {
-		return fmt.Errorf("%w", err)
+		return deliveryAttempt{err: err, retryable: !permanentTransportError(err)}
 	}
 	if resp == nil {
-		return fmt.Errorf("failed to send payload to %s", sanitizeURL(w.url))
+		return deliveryAttempt{err: fmt.Errorf("failed to send payload to %s", sanitizeURL(w.url)), retryable: true}
 	}
 	defer resp.Body.Close()
 
-	respBody, err := io.ReadAll(resp.Body)
+	// Response content is diagnostic only; cap work and avoid retaining it.
+	responseSize, err := io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
-		return fmt.Errorf("%w", err)
+		return deliveryAttempt{err: err, retryable: true}
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("server returned status: %d", resp.StatusCode)
+		status := resp.StatusCode
+		return deliveryAttempt{
+			err:        fmt.Errorf("server returned status: %d", status),
+			retryable:  status == http.StatusRequestTimeout || status == http.StatusTooManyRequests || status >= 500,
+			retryAfter: resp.Header.Get("Retry-After"),
+		}
 	}
 
 	logger.Info(
@@ -488,8 +522,8 @@ func (w *WebhookOutput) sendWebhook(ctx context.Context, e *event.Event) error {
 		sanitizeURL(w.url),
 		"payload_size",
 		len(data),
-		"response_size",
-		len(respBody),
+		"response_bytes_read",
+		responseSize,
 		"status",
 		resp.StatusCode,
 	)
@@ -500,12 +534,45 @@ func (w *WebhookOutput) sendWebhook(ctx context.Context, e *event.Event) error {
 		sanitizeURL(w.url),
 		"payload_size",
 		len(data),
-		"response_size",
-		len(respBody),
+		"response_bytes_read",
+		responseSize,
 		"status",
 		resp.StatusCode,
 	)
-	return nil
+	return deliveryAttempt{}
+}
+
+func permanentTransportError(err error) bool {
+	var authority x509.UnknownAuthorityError
+	var certificate x509.CertificateInvalidError
+	var hostname x509.HostnameError
+	var roots x509.SystemRootsError
+	var recordHeader tls.RecordHeaderError
+	return errors.As(err, &authority) || errors.As(err, &certificate) ||
+		errors.As(err, &hostname) || errors.As(err, &roots) || errors.As(err, &recordHeader)
+}
+
+func retryAfterDelay(value string, now time.Time, bound time.Duration) (time.Duration, bool, bool) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return 0, false, false
+	}
+	if seconds, err := strconv.ParseInt(value, 10, 64); err == nil && seconds >= 0 {
+		if seconds > int64(bound/time.Second) {
+			return 0, true, true
+		}
+		return time.Duration(seconds) * time.Second, true, false
+	} else if errors.Is(err, strconv.ErrRange) && strings.Trim(value, "0123456789") == "" {
+		return 0, true, true
+	}
+	if date, err := http.ParseTime(value); err == nil {
+		delay := date.Sub(now)
+		if delay < 0 {
+			return 0, false, false
+		}
+		return delay, true, delay > bound
+	}
+	return 0, false, false
 }
 
 // sendWebhookWithRetry wraps SendWebhook with retry logic and exponential backoff
@@ -515,7 +582,6 @@ func (w *WebhookOutput) sendWebhookWithRetry(
 	e *event.Event,
 ) {
 	logger := w.log()
-	var lastErr error
 	backoff := w.initialBackoff
 
 	logger.Debug(
@@ -527,45 +593,12 @@ func (w *WebhookOutput) sendWebhookWithRetry(
 	)
 
 	for attempt := 0; attempt <= w.maxRetries; attempt++ {
-		if attempt > 0 {
-			logger.Warn(
-				"webhook delivery failed, retrying",
-				"attempt",
-				attempt,
-				"max_retries",
-				w.maxRetries,
-				"delay",
-				backoff,
-				"url",
-				sanitizeURL(w.url),
-				"event_type",
-				e.Type,
-				"error",
-				lastErr,
-			)
-			timer := time.NewTimer(backoff)
-			select {
-			case <-ctx.Done():
-				timer.Stop()
-				return
-			case <-doneChan:
-				timer.Stop()
-				return
-			case <-timer.C:
-			}
-
-			// Calculate next backoff with exponential increase
-			backoff = min(
-				time.Duration(float64(backoff)*w.backoffFactor),
-				w.maxBackoff,
-			)
-		}
-
-		err := w.sendWebhook(ctx, e)
+		result := w.sendWebhook(ctx, e)
 		if ctx.Err() != nil {
 			return
 		}
-		if err == nil {
+		if result.err == nil {
+			w.metrics.outcomes.WithLabelValues("success").Inc()
 			if attempt > 0 {
 				logger.Info(
 					"webhook delivery succeeded",
@@ -579,30 +612,43 @@ func (w *WebhookOutput) sendWebhookWithRetry(
 			}
 			return
 		}
-		lastErr = err
-	}
-
-	// All retries exhausted
-	logger.Error(
-		"webhook delivery failed, giving up",
-		"max_retries",
-		w.maxRetries,
-		"url",
-		sanitizeURL(w.url),
-		"event_type",
-		e.Type,
-		"error",
-		lastErr,
-	)
-
-	// Send error to error channel for monitoring (non-blocking)
-	if !w.TrySendError(fmt.Errorf(
-		"webhook delivery to %s failed after %d retries: %w",
-		sanitizeURL(w.url),
-		w.maxRetries,
-		lastErr,
-	)) {
-		logger.Warn("could not send error to error channel (full)")
+		terminal := !result.retryable || attempt == w.maxRetries
+		delay := min(backoff, w.maxBackoff)
+		if !terminal {
+			if requested, valid, exceeds := retryAfterDelay(result.retryAfter, time.Now(), w.maxBackoff); exceeds {
+				terminal = true
+			} else if valid {
+				delay = max(delay, requested)
+			}
+		}
+		if terminal {
+			outcome := "exhausted"
+			if attempt < w.maxRetries {
+				outcome = "terminal"
+			}
+			w.metrics.outcomes.WithLabelValues(outcome).Inc()
+			logger.Error("webhook delivery failed, giving up", "attempts", attempt+1,
+				"url", sanitizeURL(w.url), "event_type", e.Type, "error", result.err)
+			if !w.TrySendError(fmt.Errorf("webhook delivery to %s failed after %d attempts: %w",
+				sanitizeURL(w.url), attempt+1, result.err)) {
+				logger.Warn("could not send error to error channel (full)")
+			}
+			return
+		}
+		logger.Warn("webhook delivery failed, retrying", "attempt", attempt+1,
+			"max_retries", w.maxRetries, "delay", delay, "url", sanitizeURL(w.url),
+			"event_type", e.Type, "error", result.err)
+		timer := time.NewTimer(delay)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return
+		case <-doneChan:
+			timer.Stop()
+			return
+		case <-timer.C:
+		}
+		backoff = min(time.Duration(float64(backoff)*w.backoffFactor), w.maxBackoff)
 	}
 }
 

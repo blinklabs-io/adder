@@ -315,6 +315,9 @@ boundary if metrics should only be available to your monitoring system.
 | `adder_pipeline_processed_events_total` | Count events after every configured output channel accepts a copy. A pipeline with no outputs still drains and counts events; this counter does not confirm sink or `/events` delivery. |
 | `adder_pipeline_filtered_events_total` | Count drop callbacks from the built-in event and Cardano filters. Custom filters contribute when they implement `SetPipelineDropObserver(func())` and call the registered callback once per rejected event. |
 | `adder_pipeline_processing_duration_seconds` | Histogram from when the pipeline reads an input event through filter processing and channel waits until all configured output channels accept it. Only completed events retaining their pipeline ingress time produce samples. It does not measure external sink delivery. |
+| `adder_webhook_http_attempts_total{status_class}` | HTTP attempts when the webhook output is configured. Classes are `1xx` through `5xx`, `network`, or `other`; no URL or event labels are used. |
+| `adder_webhook_delivery_outcomes_total{outcome}` | Final webhook event outcomes: `success`, `terminal` (permanent response or error), and `exhausted` (retry limit reached). Counted even if the error channel is full. |
+| `adder_webhook_http_attempt_duration_seconds` | Time per HTTP attempt through response-body consumption or request failure. |
 
 Counters reset when the process restarts. Metrics have no labels from event
 types, addresses, hashes, clients, or other user data. A received event can be
@@ -322,9 +325,17 @@ ahead of processed and filtered totals while it is in flight; events abandoned
 during shutdown are not counted as processed or filtered. Custom filters can
 also drop without reporting or emit more than one event per input, so the three
 counters are not a conservation equation. The counters and histogram are updated
-separately and a scrape can observe them between updates. These metrics do not
-report external delivery outcomes; monitor the configured output or sink for
-those results.
+separately and a scrape can observe them between updates. Webhook delivery
+metrics report only in-process attempts and final outcomes, not restart-safe
+delivery or per-endpoint identity.
+
+Webhook delivery makes one initial attempt and at most three retries by default.
+Transient transport failures and HTTP 408, 429, and 5xx responses use bounded
+exponential backoff (1s, 2s, 4s by default). A valid `Retry-After` can extend
+a wait up to the configured maximum; a longer requested wait causes a terminal
+failure. Other non-2xx responses fail immediately. After the retry limit,
+Adder discards the event and reports a terminal error. Retries and queued
+events remain in memory and can be lost on shutdown.
 
 With regular scrapes, `increase(adder_pipeline_received_events_total[10m])`
 estimates how much the received counter advanced over ten minutes. If it stays

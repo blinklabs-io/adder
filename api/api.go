@@ -485,7 +485,7 @@ func handlePing(w http.ResponseWriter, _ *http.Request) {
 }
 
 // @Summary		Healthcheck Endpoint
-// @Description	Reports the health status of the running pipeline and registered checkers. Returns 503 if any registered checker is unhealthy.
+// @Description	Reports the health status and sanitized diagnostics of registered checkers. Returns 503 if any registered checker is unhealthy.
 // @Produce		json
 // @Success		200	{object}	map[string]any	"Healthy status response"
 // @Failure		503	{object}	map[string]any	"Service Unavailable response"
@@ -496,22 +496,27 @@ func handleHealthcheck(w http.ResponseWriter, _ *http.Request) {
 	checkers := slices.Clone(healthCheckers)
 	healthCheckersMu.RUnlock()
 
-	// If no health checkers are registered, report as healthy
-	if len(checkers) == 0 {
-		WriteJSON(w, http.StatusOK, map[string]any{"failed": false})
-		return
-	}
-
-	// Check all registered health checkers
+	response := map[string]any{"failed": false}
+	details := make([]map[string]any, 0, len(checkers))
 	for _, hc := range checkers {
-		if !hc.IsRunning() {
-			WriteJSON(w, http.StatusServiceUnavailable, map[string]any{
-				"failed": true,
-				"reason": "pipeline is not running",
-			})
-			return
+		running := hc.IsRunning()
+		entry := make(map[string]any)
+		if provider, ok := hc.(interface{ HealthDetails() map[string]any }); ok {
+			for key, value := range provider.HealthDetails() {
+				entry[key] = value
+			}
+		}
+		entry["running"] = running
+		details = append(details, entry)
+		if !running {
+			response["failed"] = true
+			response["reason"] = "pipeline is not running"
 		}
 	}
-
-	WriteJSON(w, http.StatusOK, map[string]any{"failed": false})
+	response["checks"] = details
+	status := http.StatusOK
+	if response["failed"] == true {
+		status = http.StatusServiceUnavailable
+	}
+	WriteJSON(w, status, response)
 }
