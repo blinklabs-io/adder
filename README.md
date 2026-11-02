@@ -335,10 +335,11 @@ Webhook delivery makes one initial attempt and at most three retries by default.
 Transient transport failures and HTTP 408, 429, and 5xx responses use bounded
 exponential backoff (1s, 2s, 4s by default). A valid `Retry-After` can extend
 a wait up to the configured maximum; a longer requested wait causes a terminal
-failure. The HTTP client follows up to 10 redirects as before; for 301, 302,
-and 303 it may change POST to GET, while 307 and 308 preserve POST. A redirect
-that does not reach a final response fails. Other non-2xx responses fail
-immediately. After the retry limit,
+failure. The HTTP client follows up to 10 redirects as before. For 301, 302,
+and 303 it changes POST to GET and drops the event body; a final 2xx response
+still counts as success. Use 307 or 308 to redirect a webhook POST with its
+body intact. A redirect that does not reach a final response fails. Other
+non-2xx responses fail immediately. After the retry limit,
 Adder discards the event and reports a terminal error. Retries and queued
 events remain in memory and can be lost on shutdown.
 

@@ -5,6 +5,7 @@ package webhook
 
 import (
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -102,19 +103,23 @@ func TestWebhookRedirectsPreservePreviousClientBehavior(t *testing.T) {
 	for _, tt := range []struct {
 		status     int
 		wantMethod string
+		wantBody   bool
 	}{
-		{http.StatusMovedPermanently, http.MethodGet},
-		{http.StatusFound, http.MethodGet},
-		{http.StatusTemporaryRedirect, http.MethodPost},
-		{http.StatusPermanentRedirect, http.MethodPost},
+		{http.StatusMovedPermanently, http.MethodGet, false},
+		{http.StatusFound, http.MethodGet, false},
+		{http.StatusSeeOther, http.MethodGet, false},
+		{http.StatusTemporaryRedirect, http.MethodPost, true},
+		{http.StatusPermanentRedirect, http.MethodPost, true},
 	} {
 		t.Run(http.StatusText(tt.status), func(t *testing.T) {
 			var calls atomic.Int32
 			var finalMethod string
+			var finalBody []byte
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				calls.Add(1)
 				if r.URL.Path == "/target" {
 					finalMethod = r.Method
+					finalBody, _ = io.ReadAll(r.Body)
 					w.WriteHeader(http.StatusOK)
 					return
 				}
@@ -128,6 +133,7 @@ func TestWebhookRedirectsPreservePreviousClientBehavior(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, int32(2), calls.Load())
 			require.Equal(t, tt.wantMethod, finalMethod)
+			require.Equal(t, tt.wantBody, len(finalBody) > 0)
 			attempts, outcomes := observer.counts()
 			require.Equal(t, 1, attempts["2xx"])
 			require.Equal(t, 1, outcomes["success"])
