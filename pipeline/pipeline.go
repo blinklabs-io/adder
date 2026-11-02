@@ -43,6 +43,8 @@ type Pipeline struct {
 	stopOnce     sync.Once
 	lifecycleMu  sync.Mutex
 	running      bool
+	starting     bool      // guarded by runningMu
+	startedAt    time.Time // guarded by runningMu
 	runningMu    sync.RWMutex
 	cancel       context.CancelFunc // guarded by runningMu
 	started      []startedPlugin    // guarded by lifecycleMu
@@ -77,6 +79,11 @@ func (p *Pipeline) AddFilter(filter plugin.ManagedPlugin) {
 // AddOutput appends a sink in blocking broadcast order. Call before Start.
 func (p *Pipeline) AddOutput(output plugin.ManagedPlugin) {
 	p.outputs = append(p.outputs, output)
+	if setter, ok := output.(interface {
+		SetDeliveryMetrics(plugin.DeliveryMetricsObserver)
+	}); ok {
+		setter.SetDeliveryMetrics(p.metrics)
+	}
 }
 
 // RegisterObserver sets an observer channel that receives a copy of
@@ -143,6 +150,7 @@ func (p *Pipeline) StartContext(parent context.Context) error {
 	ctx, cancel := context.WithCancel(parent)
 	p.cancel = cancel
 	p.failure = nil
+	p.starting = true
 	// Check if doneChan is already closed (pipeline was stopped)
 	// If so, recreate channels to allow restart
 	select {
@@ -161,6 +169,9 @@ func (p *Pipeline) StartContext(parent context.Context) error {
 
 	rollback := func(startErr error) error {
 		cancel()
+		p.runningMu.Lock()
+		p.starting = false
+		p.runningMu.Unlock()
 		var rollbackErrs []error
 		p.stopOnce.Do(func() {
 			p.doneOnce.Do(func() { close(p.doneChan) })
@@ -251,6 +262,8 @@ func (p *Pipeline) StartContext(parent context.Context) error {
 		return rollback(err)
 	}
 	p.running = true
+	p.starting = false
+	p.startedAt = time.Now()
 	p.runningMu.Unlock()
 
 	return nil

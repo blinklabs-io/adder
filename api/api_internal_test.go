@@ -17,6 +17,7 @@ package api
 import (
 	"bufio"
 	"encoding/json"
+	"math"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -25,6 +26,7 @@ import (
 	"time"
 
 	"github.com/blinklabs-io/adder/event"
+	"github.com/blinklabs-io/adder/plugin"
 	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -67,6 +69,23 @@ type mockHealthChecker struct {
 	running bool
 }
 
+type mockDetailedHealthChecker struct{ mockHealthChecker }
+
+type mockInvalidHealthChecker struct{ mockHealthChecker }
+
+func (m *mockInvalidHealthChecker) HealthDetails() plugin.HealthDetails {
+	return plugin.HealthDetails{UptimeSeconds: math.NaN(), Components: []plugin.ComponentHealth{
+		{Role: "url=https://secret.example", Index: 0, State: "running"},
+		{Role: "output", Index: 1, State: "password=secret"},
+	}}
+}
+
+func (m *mockDetailedHealthChecker) HealthDetails() plugin.HealthDetails {
+	return plugin.HealthDetails{UptimeSeconds: 12.5, Components: []plugin.ComponentHealth{
+		{Role: "output", Index: 0, State: "running"},
+	}}
+}
+
 func (m *mockHealthChecker) IsRunning() bool {
 	return m.running
 }
@@ -98,6 +117,43 @@ func TestHealthcheckWithUnhealthyPipeline(t *testing.T) {
 	reason, exists := response["reason"]
 	assert.True(t, exists, "Response should contain 'reason' field")
 	assert.Equal(t, "pipeline is not running", reason, "Expected reason to explain why unhealthy")
+}
+
+func TestHealthcheckIncludesSanitizedDetailsWithoutChangingProbeStatus(t *testing.T) {
+	ResetHealthCheckers()
+	t.Cleanup(ResetHealthCheckers)
+	RegisterHealthChecker(&mockDetailedHealthChecker{mockHealthChecker{running: true}})
+	recorder := httptest.NewRecorder()
+	handleHealthcheck(recorder, httptest.NewRequest(http.MethodGet, "/healthcheck", nil))
+	require.Equal(t, http.StatusOK, recorder.Code)
+	var response struct {
+		Failed bool `json:"failed"`
+		Checks []struct {
+			UptimeSeconds float64 `json:"uptimeSeconds"`
+			Components    []struct {
+				Role  string `json:"role"`
+				State string `json:"state"`
+			} `json:"components"`
+		} `json:"checks"`
+	}
+	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &response))
+	require.False(t, response.Failed)
+	require.Len(t, response.Checks, 1)
+	require.Equal(t, 12.5, response.Checks[0].UptimeSeconds)
+	require.Equal(t, "output", response.Checks[0].Components[0].Role)
+	require.Equal(t, "running", response.Checks[0].Components[0].State)
+}
+
+func TestHealthcheckRejectsUnapprovedDiagnosticValues(t *testing.T) {
+	ResetHealthCheckers()
+	t.Cleanup(ResetHealthCheckers)
+	RegisterHealthChecker(&mockInvalidHealthChecker{mockHealthChecker{running: true}})
+	recorder := httptest.NewRecorder()
+	handleHealthcheck(recorder, httptest.NewRequest(http.MethodGet, "/healthcheck", nil))
+	require.Equal(t, http.StatusOK, recorder.Code)
+	require.NotContains(t, recorder.Body.String(), "secret")
+	require.NotContains(t, recorder.Body.String(), "uptimeSeconds")
+	require.Contains(t, recorder.Body.String(), `"components":[]`)
 }
 
 func TestAPIOptions(t *testing.T) {

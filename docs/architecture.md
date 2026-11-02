@@ -273,7 +273,12 @@ and closes `Failed` independently of that channel. Pipeline failure cancels
 forwarding and marks the pipeline unhealthy; the owner must still call `Stop`.
 The CLI stops the pipeline, closes the event hub, then shuts down the API with a
 ten-second deadline. That deadline does not bound the preceding pipeline stop.
-`/healthcheck` reports pipeline running state, not event freshness or delivery.
+`/healthcheck` preserves the `failed` field and 200/503 status based on registered
+checkers' running state. Its `checks` array adds pipeline uptime in seconds,
+terminal-failure presence, and each configured component's role, index, and
+observable starting/running/stopped/failed state. It does not expose connection URLs,
+error text, event freshness, or delivery guarantees. A component without an
+observable running state is reported as `unknown`.
 
 ### ChainSync Connection and Events
 
