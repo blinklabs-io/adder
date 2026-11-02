@@ -7,7 +7,7 @@ require (
 	fyne.io/fyne/v2 v2.8.2
 	github.com/SundaeSwap-finance/kugo v1.3.2
 	github.com/SundaeSwap-finance/ogmigo/v6 v6.2.2
-	github.com/blinklabs-io/gouroboros v0.215.0
+	github.com/blinklabs-io/gouroboros v0.216.2
 	github.com/blinklabs-io/ouroboros-mock v0.21.1
 	github.com/blinklabs-io/plutigo v0.10.1
 	github.com/btcsuite/btcd/btcutil v1.2.0
@@ -91,7 +91,6 @@ require (
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/jsummers/gobmp v0.0.0-20230614200233-a9de23ed2e25 // indirect
 	github.com/klauspost/cpuid/v2 v2.4.0 // indirect
-	github.com/kylelemons/godebug v1.1.0 // indirect
 	github.com/mattn/go-runewidth v0.0.30 // indirect
 	github.com/minio/sha256-simd v1.0.1 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
