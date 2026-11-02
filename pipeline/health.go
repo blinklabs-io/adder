@@ -13,7 +13,7 @@ import (
 // configuration are deliberately excluded because they may contain secrets.
 func (p *Pipeline) HealthDetails() map[string]any {
 	p.runningMu.RLock()
-	running, failed, startedAt := p.running, p.failure != nil, p.startedAt
+	running, starting, failed, startedAt := p.running, p.starting, p.failure != nil, p.startedAt
 	p.runningMu.RUnlock()
 	uptime := float64(0)
 	if running && !startedAt.IsZero() {
@@ -33,6 +33,8 @@ func (p *Pipeline) HealthDetails() map[string]any {
 			} else if reporter, ok := component.(interface{ Running() bool }); ok {
 				if reporter.Running() {
 					state = "running"
+				} else if starting {
+					state = "starting"
 				} else {
 					state = "stopped"
 				}

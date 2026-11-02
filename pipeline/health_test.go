@@ -15,6 +15,7 @@ func TestHealthDetailsReportObservableState(t *testing.T) {
 	p := New()
 	p.AddOutput(webhook.New(webhook.WithUrl("https://user:secret@example.com/private", false)))
 	require.NoError(t, p.Start())
+	t.Cleanup(func() { _ = p.Stop() })
 	details := p.HealthDetails()
 	require.Equal(t, true, details["running"])
 	require.Equal(t, false, details["terminalFailure"])

@@ -85,7 +85,7 @@ const docTemplate = `{
         },
         "/healthcheck": {
             "get": {
-                "description": "Reports the health status of the running pipeline and registered checkers. Returns 503 if any registered checker is unhealthy.",
+                "description": "Reports the health status and sanitized diagnostics of registered checkers. Returns 503 if any registered checker is unhealthy.",
                 "produces": [
                     "application/json"
                 ],

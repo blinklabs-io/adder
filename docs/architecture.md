@@ -276,7 +276,7 @@ ten-second deadline. That deadline does not bound the preceding pipeline stop.
 `/healthcheck` preserves the `failed` field and 200/503 status based on registered
 checkers' running state. Its `checks` array adds pipeline uptime in seconds,
 terminal-failure presence, and each configured component's role, index, and
-observable running/stopped/failed state. It does not expose connection URLs,
+observable starting/running/stopped/failed state. It does not expose connection URLs,
 error text, event freshness, or delivery guarantees. A component without an
 observable running state is reported as `unknown`.
 

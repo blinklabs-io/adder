@@ -45,8 +45,3 @@ func (m *deliveryMetrics) observeAttempt(statusClass string, elapsed time.Durati
 	m.attempts.WithLabelValues(statusClass).Inc()
 	m.latency.Observe(elapsed.Seconds())
 }
-
-// MetricsCollectors lets the owning pipeline include delivery metrics in /metrics.
-func (w *WebhookOutput) MetricsCollectors() []prometheus.Collector {
-	return []prometheus.Collector{w.metrics.attempts, w.metrics.outcomes, w.metrics.latency}
-}

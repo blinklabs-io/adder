@@ -97,6 +97,46 @@ func TestCertificateFailureIsTerminal(t *testing.T) {
 	require.Equal(t, float64(1), testutil.ToFloat64(output.metrics.attempts.WithLabelValues("network")))
 }
 
+func TestPermanentResponseOnLastAttemptIsTerminal(t *testing.T) {
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if calls.Add(1) == 1 {
+			w.WriteHeader(http.StatusInternalServerError)
+		} else {
+			w.WriteHeader(http.StatusBadRequest)
+		}
+	}))
+	t.Cleanup(server.Close)
+	output := New(WithUrl(server.URL, false), WithRetryConfig(1, time.Millisecond, 10*time.Millisecond))
+	require.NoError(t, output.Start())
+	t.Cleanup(func() { require.NoError(t, output.Stop()) })
+	output.InputChan() <- event.Event{Type: event.TypeRollback, Payload: event.RollbackEvent{}}
+	require.Eventually(t, func() bool {
+		return testutil.ToFloat64(output.metrics.outcomes.WithLabelValues("terminal")) == 1
+	}, time.Second, time.Millisecond)
+	require.Equal(t, int32(2), calls.Load())
+	require.Equal(t, float64(0), testutil.ToFloat64(output.metrics.outcomes.WithLabelValues("exhausted")))
+}
+
+func TestResponseBodyReadErrorDoesNotRetrySuccessfulDelivery(t *testing.T) {
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls.Add(1)
+		w.Header().Set("Content-Length", "10")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("short"))
+	}))
+	t.Cleanup(server.Close)
+	output := New(WithUrl(server.URL, false), WithRetryConfig(2, time.Millisecond, 10*time.Millisecond))
+	require.NoError(t, output.Start())
+	t.Cleanup(func() { require.NoError(t, output.Stop()) })
+	output.InputChan() <- event.Event{Type: event.TypeRollback, Payload: event.RollbackEvent{}}
+	require.Eventually(t, func() bool {
+		return testutil.ToFloat64(output.metrics.outcomes.WithLabelValues("success")) == 1
+	}, time.Second, time.Millisecond)
+	require.Equal(t, int32(1), calls.Load())
+}
+
 func TestInvalidEventCountsTerminalFailureWhenErrorChannelIsFull(t *testing.T) {
 	output := New()
 	require.NoError(t, output.Start())

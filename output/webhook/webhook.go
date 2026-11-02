@@ -47,16 +47,17 @@ const (
 
 type WebhookOutput struct {
 	plugin.Base
-	format         string
-	url            string
-	username       string
-	password       string
-	skipVerify     bool
-	maxRetries     int
-	initialBackoff time.Duration
-	maxBackoff     time.Duration
-	backoffFactor  float64
-	metrics        *deliveryMetrics
+	format          string
+	url             string
+	username        string
+	password        string
+	skipVerify      bool
+	maxRetries      int
+	initialBackoff  time.Duration
+	maxBackoff      time.Duration
+	backoffFactor   float64
+	metrics         *deliveryMetrics
+	metricsObserver plugin.DeliveryMetricsObserver
 }
 
 func New(options ...WebhookOptionFunc) *WebhookOutput {
@@ -204,7 +205,7 @@ func (w *WebhookOutput) start(ctx context.Context) error {
 // reportError surfaces an error on the plugin error channel without
 // blocking. If no consumer is ready, the error is logged instead.
 func (w *WebhookOutput) reportError(logger plugin.Logger, err error) {
-	w.metrics.outcomes.WithLabelValues("terminal").Inc()
+	w.recordOutcome("terminal")
 	logger.Error(err.Error())
 	if !w.TrySendError(err) {
 		logger.Warn("could not send error to error channel (full)")
@@ -419,7 +420,26 @@ func (w *WebhookOutput) log() plugin.Logger {
 }
 
 func (w *WebhookOutput) SendWebhook(e *event.Event) error {
-	return w.sendWebhook(context.Background(), e).err
+	result := w.sendWebhook(context.Background(), e)
+	if result.err == nil {
+		w.recordOutcome("success")
+	} else {
+		w.recordOutcome("terminal")
+	}
+	return result.err
+}
+
+// SetDeliveryMetrics connects this output to its owning pipeline's aggregate metrics.
+// Call before Start or SendWebhook.
+func (w *WebhookOutput) SetDeliveryMetrics(observer plugin.DeliveryMetricsObserver) {
+	w.metricsObserver = observer
+}
+
+func (w *WebhookOutput) recordOutcome(outcome string) {
+	w.metrics.outcomes.WithLabelValues(outcome).Inc()
+	if w.metricsObserver != nil {
+		w.metricsObserver.RecordWebhookOutcome(outcome)
+	}
 }
 
 type deliveryAttempt struct {
@@ -492,7 +512,13 @@ func (w *WebhookOutput) sendWebhook(ctx context.Context, e *event.Event) deliver
 	if resp != nil {
 		statusClass = httpStatusClass(resp.StatusCode)
 	}
-	defer func() { w.metrics.observeAttempt(statusClass, time.Since(started)) }()
+	defer func() {
+		elapsed := time.Since(started)
+		w.metrics.observeAttempt(statusClass, elapsed)
+		if w.metricsObserver != nil {
+			w.metricsObserver.RecordWebhookAttempt(statusClass, elapsed)
+		}
+	}()
 	if err != nil {
 		return deliveryAttempt{err: err, retryable: !permanentTransportError(err)}
 	}
@@ -502,10 +528,7 @@ func (w *WebhookOutput) sendWebhook(ctx context.Context, e *event.Event) deliver
 	defer resp.Body.Close()
 
 	// Response content is diagnostic only; cap work and avoid retaining it.
-	responseSize, err := io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<20))
-	if err != nil {
-		return deliveryAttempt{err: err, retryable: true}
-	}
+	responseSize, _ := io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<20))
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		status := resp.StatusCode
@@ -598,7 +621,7 @@ func (w *WebhookOutput) sendWebhookWithRetry(
 			return
 		}
 		if result.err == nil {
-			w.metrics.outcomes.WithLabelValues("success").Inc()
+			w.recordOutcome("success")
 			if attempt > 0 {
 				logger.Info(
 					"webhook delivery succeeded",
@@ -612,21 +635,21 @@ func (w *WebhookOutput) sendWebhookWithRetry(
 			}
 			return
 		}
-		terminal := !result.retryable || attempt == w.maxRetries
+		terminalOutcome := !result.retryable
 		delay := min(backoff, w.maxBackoff)
-		if !terminal {
+		if !terminalOutcome && attempt < w.maxRetries {
 			if requested, valid, exceeds := retryAfterDelay(result.retryAfter, time.Now(), w.maxBackoff); exceeds {
-				terminal = true
+				terminalOutcome = true
 			} else if valid {
 				delay = max(delay, requested)
 			}
 		}
-		if terminal {
+		if terminalOutcome || attempt == w.maxRetries {
 			outcome := "exhausted"
-			if attempt < w.maxRetries {
+			if terminalOutcome {
 				outcome = "terminal"
 			}
-			w.metrics.outcomes.WithLabelValues(outcome).Inc()
+			w.recordOutcome(outcome)
 			logger.Error("webhook delivery failed, giving up", "attempts", attempt+1,
 				"url", sanitizeURL(w.url), "event_type", e.Type, "error", result.err)
 			if !w.TrySendError(fmt.Errorf("webhook delivery to %s failed after %d attempts: %w",

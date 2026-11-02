@@ -41,9 +41,28 @@ func TestMetricsIncludeWebhookHTTPAttempts(t *testing.T) {
 		Type: event.TypeRollback, Payload: event.RollbackEvent{},
 	}))
 	body := scrapeMetrics(t, p)
-	require.Contains(t, body, `adder_webhook_http_attempts_total{status_class="2xx"} 1`)
+	require.Contains(t, body, "adder_webhook_http_attempts_total{status_class=\"2xx\"} 1\n")
 	require.Contains(t, body, "adder_webhook_http_attempt_duration_seconds_count 1")
+	require.Contains(t, body, "adder_webhook_delivery_outcomes_total{outcome=\"success\"} 1\n")
 	require.NotContains(t, body, server.URL)
+}
+
+func TestMetricsAggregateMultipleWebhookOutputs(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(server.Close)
+	p := New()
+	first := webhook.New(webhook.WithUrl(server.URL, false))
+	second := webhook.New(webhook.WithUrl(server.URL, false))
+	p.AddOutput(first)
+	p.AddOutput(second)
+	evt := &event.Event{Type: event.TypeRollback, Payload: event.RollbackEvent{}}
+	require.NoError(t, first.SendWebhook(evt))
+	require.NoError(t, second.SendWebhook(evt))
+	body := scrapeMetrics(t, p)
+	require.Contains(t, body, "adder_webhook_http_attempts_total{status_class=\"2xx\"} 2\n")
+	require.Contains(t, body, "adder_webhook_delivery_outcomes_total{outcome=\"success\"} 2\n")
 }
 
 func TestMetricsTrackDeliveryAndFilterDrops(t *testing.T) {
