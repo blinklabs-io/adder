@@ -56,7 +56,6 @@ type WebhookOutput struct {
 	initialBackoff  time.Duration
 	maxBackoff      time.Duration
 	backoffFactor   float64
-	metrics         *deliveryMetrics
 	metricsObserver plugin.DeliveryMetricsObserver
 }
 
@@ -69,7 +68,6 @@ func New(options ...WebhookOptionFunc) *WebhookOutput {
 		initialBackoff: defaultInitialBackoff,
 		maxBackoff:     defaultMaxBackoff,
 		backoffFactor:  defaultBackoffFactor,
-		metrics:        newDeliveryMetrics(),
 	}
 	for _, option := range options {
 		option(w)
@@ -436,7 +434,6 @@ func (w *WebhookOutput) SetDeliveryMetrics(observer plugin.DeliveryMetricsObserv
 }
 
 func (w *WebhookOutput) recordOutcome(outcome string) {
-	w.metrics.outcomes.WithLabelValues(outcome).Inc()
 	if w.metricsObserver != nil {
 		w.metricsObserver.RecordWebhookOutcome(outcome)
 	}
@@ -497,12 +494,9 @@ func (w *WebhookOutput) sendWebhook(ctx context.Context, e *event.Event) deliver
 		customTransport.ExpectContinueTimeout = defaultTransport.ExpectContinueTimeout
 		customTransport.TLSHandshakeTimeout = defaultTransport.TLSHandshakeTimeout
 	}
-	client := &http.Client{
-		Transport: customTransport,
-		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
-			return http.ErrUseLastResponse
-		},
-	}
+	// Preserve the HTTP client's existing redirect behavior, including its
+	// default limit of 10 redirects and POST-to-GET conversion for 301/302/303.
+	client := &http.Client{Transport: customTransport}
 	defer customTransport.CloseIdleConnections()
 	// Send payload
 	// #nosec G704 -- Webhook URL is user-configured and intentionally allowed.
@@ -514,7 +508,6 @@ func (w *WebhookOutput) sendWebhook(ctx context.Context, e *event.Event) deliver
 	}
 	defer func() {
 		elapsed := time.Since(started)
-		w.metrics.observeAttempt(statusClass, elapsed)
 		if w.metricsObserver != nil {
 			w.metricsObserver.RecordWebhookAttempt(statusClass, elapsed)
 		}
