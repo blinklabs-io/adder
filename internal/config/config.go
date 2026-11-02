@@ -20,6 +20,7 @@ import (
 	"maps"
 	"os"
 
+	"github.com/blinklabs-io/adder/internal/logging"
 	"github.com/blinklabs-io/adder/plugin"
 	"github.com/kelseyhightower/envconfig"
 	"github.com/spf13/pflag"
@@ -70,6 +71,10 @@ type ApiEventsConfig struct {
 type DebugConfig struct {
 	ListenAddress string `yaml:"address" envconfig:"DEBUG_ADDRESS"`
 	ListenPort    uint   `yaml:"port"    envconfig:"DEBUG_PORT"`
+}
+
+type legacyLoggingConfig struct {
+	Level any `yaml:"level"`
 }
 
 // New returns independent application defaults.
@@ -128,7 +133,7 @@ func (c *Config) LoadWithFlags(configFile string, fs *pflag.FlagSet) error {
 		if err := yaml.Unmarshal(buf, &fields); err == nil {
 			byronSlotsSet = fields.Byron.Slots != nil
 		}
-		if err := yaml.UnmarshalStrict(buf, next); err != nil {
+		if err := unmarshalConfigYAML(buf, next); err != nil {
 			return fmt.Errorf("error parsing config file: %w", err)
 		}
 	}
@@ -188,6 +193,57 @@ func (c *Config) LoadWithFlags(configFile string, fs *pflag.FlagSet) error {
 		return errors.New("API and debug ports must be between 0 and 65535")
 	}
 	*c = *next
+	return nil
+}
+
+func unmarshalConfigYAML(data []byte, cfg *Config) error {
+	// A plain map, unlike yaml.MapSlice, keeps keys contributed by a
+	// "<<" merge, so an explicit or merged null logging key is still seen.
+	var fields map[any]any
+	if err := yaml.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	_, legacyPresent := fields["logging"]
+
+	type yamlConfig Config
+	decoded := struct {
+		Current yamlConfig           `yaml:",inline"`
+		Legacy  *legacyLoggingConfig `yaml:"logging"`
+	}{
+		Current: yamlConfig(*cfg),
+	}
+	if err := yaml.UnmarshalStrict(data, &decoded); err != nil {
+		return err
+	}
+	*cfg = Config(decoded.Current)
+	if !legacyPresent {
+		return nil
+	}
+	if decoded.Legacy == nil {
+		return errors.New("legacy logging must contain a level")
+	}
+	level, ok := decoded.Legacy.Level.(string)
+	if !ok {
+		return errors.New("legacy logging.level must be a string")
+	}
+	if _, err := logging.ParseLevel(level); err != nil {
+		return fmt.Errorf("legacy logging.level: %w", err)
+	}
+	if cfg.Plugin["output"]["log"] != nil {
+		if _, exists := cfg.Plugin["output"]["log"]["level"]; exists {
+			return nil
+		}
+	}
+	if cfg.Plugin == nil {
+		cfg.Plugin = make(map[string]map[string]map[string]any)
+	}
+	if cfg.Plugin["output"] == nil {
+		cfg.Plugin["output"] = make(map[string]map[string]any)
+	}
+	if cfg.Plugin["output"]["log"] == nil {
+		cfg.Plugin["output"]["log"] = make(map[string]any)
+	}
+	cfg.Plugin["output"]["log"]["level"] = level
 	return nil
 }
 

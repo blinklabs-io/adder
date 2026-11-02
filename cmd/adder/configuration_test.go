@@ -136,7 +136,7 @@ func TestCLIPluginPrecedenceAndKupoEmpty(t *testing.T) {
 	require.Nil(t, c.Plugin["input"], "resolution must not mutate caller maps")
 }
 
-func TestSingleLoggingLevelSetting(t *testing.T) {
+func TestLoggingLevelUsesOutputOptionAndMigratesLegacyYAML(t *testing.T) {
 	fs := pflag.NewFlagSet("test", pflag.ContinueOnError)
 	c := config.New()
 	require.NoError(t, c.BindFlags(fs))
@@ -145,5 +145,10 @@ func TestSingleLoggingLevelSetting(t *testing.T) {
 	require.ErrorContains(t, fs.Parse([]string{"--logging-level=debug"}), "unknown flag")
 	path := filepath.Join(t.TempDir(), "old.yaml")
 	require.NoError(t, os.WriteFile(path, []byte("logging:\n  level: debug\n"), 0600))
-	require.ErrorContains(t, c.Load(path), "field logging not found")
+	require.NoError(t, c.Load(path))
+	resolved, err := c.ResolvePlugins(fs)
+	require.NoError(t, err)
+	options, err := resolved.Options(plugin.PluginTypeOutput, "log")
+	require.NoError(t, err)
+	require.Equal(t, "debug", options.String("level"))
 }

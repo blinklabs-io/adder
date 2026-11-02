@@ -17,6 +17,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/spf13/pflag"
@@ -347,6 +348,83 @@ func TestStrictYAMLAndAtomicFailure(t *testing.T) {
 		c.Input = "preserved"
 		require.Error(t, c.Load(path))
 		require.Equal(t, "preserved", c.Input)
+	}
+}
+
+func TestLoadMigratesLegacyLoggingLevel(t *testing.T) {
+	clearConfigEnv(t)
+	dir := t.TempDir()
+	legacyPath := filepath.Join(dir, "legacy.yaml")
+	rewrittenPath := filepath.Join(dir, "rewritten.yaml")
+	require.NoError(t, os.WriteFile(
+		legacyPath,
+		[]byte("logging:\n  level: warn\n"),
+		0o600,
+	))
+
+	c := New()
+	require.NoError(t, c.Load(legacyPath))
+	require.Equal(t, "warn", c.Plugin["output"]["log"]["level"])
+
+	require.NoError(t, SaveAtomic(rewrittenPath, c))
+	rewritten, err := os.ReadFile(rewrittenPath)
+	require.NoError(t, err)
+	assert.NotContains(t, string(rewritten), "logging:")
+	assert.Contains(t, string(rewritten), "plugins:")
+	assert.Contains(t, string(rewritten), "level: warn")
+}
+
+func TestLoadMigratesMergedLegacyLoggingLevel(t *testing.T) {
+	clearConfigEnv(t)
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	require.NoError(t, os.WriteFile(
+		path,
+		[]byte("<<: {logging: {level: warn}}\n"),
+		0o600,
+	))
+
+	c := New()
+	require.NoError(t, c.Load(path))
+	assert.Equal(t, "warn", c.Plugin["output"]["log"]["level"])
+}
+
+func TestLoadModernLoggingLevelTakesPrecedenceOverLegacy(t *testing.T) {
+	clearConfigEnv(t)
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	require.NoError(t, os.WriteFile(path, []byte(strings.TrimSpace(`
+logging:
+  level: warn
+plugins:
+  output:
+    log:
+      level: error
+`)+"\n"), 0o600))
+
+	c := New()
+	require.NoError(t, c.Load(path))
+	assert.Equal(t, "error", c.Plugin["output"]["log"]["level"])
+}
+
+func TestLoadRejectsMalformedLegacyLogging(t *testing.T) {
+	clearConfigEnv(t)
+	tests := map[string]string{
+		"scalar":            "logging: info\n",
+		"null":              "logging: null\n",
+		"merged null":       "<<: {logging: null}\n",
+		"missing level":     "logging: {}\n",
+		"numeric level":     "logging:\n  level: 1\n",
+		"invalid level":     "logging:\n  level: verbose\n",
+		"unknown field":     "logging:\n  level: info\n  typo: true\n",
+		"unrelated unknown": "logging:\n  level: info\ntypo: true\n",
+		"duplicate legacy":  "logging:\n  level: info\nlogging:\n  level: warn\n",
+	}
+	for name, body := range tests {
+		t.Run(name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.yaml")
+			require.NoError(t, os.WriteFile(path, []byte(body), 0o600))
+			c := New()
+			require.ErrorContains(t, c.Load(path), "error parsing config file")
+		})
 	}
 }
 
