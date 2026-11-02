@@ -17,6 +17,7 @@ package api
 import (
 	"bufio"
 	"encoding/json"
+	"math"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -25,6 +26,7 @@ import (
 	"time"
 
 	"github.com/blinklabs-io/adder/event"
+	"github.com/blinklabs-io/adder/plugin"
 	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -69,9 +71,18 @@ type mockHealthChecker struct {
 
 type mockDetailedHealthChecker struct{ mockHealthChecker }
 
-func (m *mockDetailedHealthChecker) HealthDetails() map[string]any {
-	return map[string]any{"uptimeSeconds": 12.5, "components": []any{
-		map[string]any{"role": "output", "index": 0, "state": "running"},
+type mockInvalidHealthChecker struct{ mockHealthChecker }
+
+func (m *mockInvalidHealthChecker) HealthDetails() plugin.HealthDetails {
+	return plugin.HealthDetails{UptimeSeconds: math.NaN(), Components: []plugin.ComponentHealth{
+		{Role: "url=https://secret.example", Index: 0, State: "running"},
+		{Role: "output", Index: 1, State: "password=secret"},
+	}}
+}
+
+func (m *mockDetailedHealthChecker) HealthDetails() plugin.HealthDetails {
+	return plugin.HealthDetails{UptimeSeconds: 12.5, Components: []plugin.ComponentHealth{
+		{Role: "output", Index: 0, State: "running"},
 	}}
 }
 
@@ -131,6 +142,18 @@ func TestHealthcheckIncludesSanitizedDetailsWithoutChangingProbeStatus(t *testin
 	require.Equal(t, 12.5, response.Checks[0].UptimeSeconds)
 	require.Equal(t, "output", response.Checks[0].Components[0].Role)
 	require.Equal(t, "running", response.Checks[0].Components[0].State)
+}
+
+func TestHealthcheckRejectsUnapprovedDiagnosticValues(t *testing.T) {
+	ResetHealthCheckers()
+	t.Cleanup(ResetHealthCheckers)
+	RegisterHealthChecker(&mockInvalidHealthChecker{mockHealthChecker{running: true}})
+	recorder := httptest.NewRecorder()
+	handleHealthcheck(recorder, httptest.NewRequest(http.MethodGet, "/healthcheck", nil))
+	require.Equal(t, http.StatusOK, recorder.Code)
+	require.NotContains(t, recorder.Body.String(), "secret")
+	require.NotContains(t, recorder.Body.String(), "uptimeSeconds")
+	require.Contains(t, recorder.Body.String(), `"components":[]`)
 }
 
 func TestAPIOptions(t *testing.T) {

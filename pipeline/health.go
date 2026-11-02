@@ -11,7 +11,7 @@ import (
 
 // HealthDetails reports observable state only. Error strings and plugin
 // configuration are deliberately excluded because they may contain secrets.
-func (p *Pipeline) HealthDetails() map[string]any {
+func (p *Pipeline) HealthDetails() plugin.HealthDetails {
 	p.runningMu.RLock()
 	running, starting, failed, startedAt := p.running, p.starting, p.failure != nil, p.startedAt
 	p.runningMu.RUnlock()
@@ -19,7 +19,7 @@ func (p *Pipeline) HealthDetails() map[string]any {
 	if running && !startedAt.IsZero() {
 		uptime = time.Since(startedAt).Seconds()
 	}
-	components := make([]map[string]any, 0, len(p.inputs)+len(p.filters)+len(p.outputs))
+	components := make([]plugin.ComponentHealth, 0, len(p.inputs)+len(p.filters)+len(p.outputs))
 	for _, group := range []struct {
 		role    string
 		plugins []plugin.ManagedPlugin
@@ -39,13 +39,12 @@ func (p *Pipeline) HealthDetails() map[string]any {
 					state = "stopped"
 				}
 			}
-			components = append(components, map[string]any{
-				"role": group.role, "index": index, "state": state,
+			components = append(components, plugin.ComponentHealth{
+				Role: group.role, Index: index, State: state,
 			})
 		}
 	}
-	return map[string]any{
-		"running": running, "terminalFailure": failed,
-		"uptimeSeconds": uptime, "components": components,
+	return plugin.HealthDetails{
+		UptimeSeconds: uptime, TerminalFailure: failed, Components: components,
 	}
 }

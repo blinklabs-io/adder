@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"log"
 	"log/slog"
+	"math"
 	"net"
 	"net/http"
 	"slices"
@@ -31,6 +32,7 @@ import (
 
 	_ "github.com/blinklabs-io/adder/docs"
 	"github.com/blinklabs-io/adder/internal/logging"
+	"github.com/blinklabs-io/adder/plugin"
 	httpSwagger "github.com/swaggo/http-swagger/v2"
 )
 
@@ -500,13 +502,27 @@ func handleHealthcheck(w http.ResponseWriter, _ *http.Request) {
 	details := make([]map[string]any, 0, len(checkers))
 	for _, hc := range checkers {
 		running := hc.IsRunning()
-		entry := make(map[string]any)
-		if provider, ok := hc.(interface{ HealthDetails() map[string]any }); ok {
-			for key, value := range provider.HealthDetails() {
-				entry[key] = value
+		entry := map[string]any{"running": running}
+		if provider, ok := hc.(interface{ HealthDetails() plugin.HealthDetails }); ok {
+			health := provider.HealthDetails()
+			if !math.IsNaN(health.UptimeSeconds) && !math.IsInf(health.UptimeSeconds, 0) && health.UptimeSeconds >= 0 {
+				entry["uptimeSeconds"] = health.UptimeSeconds
 			}
+			entry["terminalFailure"] = health.TerminalFailure
+			components := make([]map[string]any, 0, min(len(health.Components), 128))
+			for _, component := range health.Components[:min(len(health.Components), 128)] {
+				if component.Index < 0 ||
+					(component.Role != "input" && component.Role != "filter" && component.Role != "output") ||
+					(component.State != "unknown" && component.State != "starting" &&
+						component.State != "running" && component.State != "stopped" && component.State != "failed") {
+					continue
+				}
+				components = append(components, map[string]any{
+					"role": component.Role, "index": component.Index, "state": component.State,
+				})
+			}
+			entry["components"] = components
 		}
-		entry["running"] = running
 		details = append(details, entry)
 		if !running {
 			response["failed"] = true
