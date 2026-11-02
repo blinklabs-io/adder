@@ -23,7 +23,7 @@ require (
 	github.com/swaggo/http-swagger/v2 v2.0.2
 	github.com/swaggo/swag v1.16.6
 	github.com/utxorpc/go-codegen v0.19.2
-	github.com/utxorpc/go-sdk v0.1.0
+	github.com/utxorpc/go-sdk v0.2.0
 	go.uber.org/automaxprocs v1.6.0
 	golang.org/x/image v0.47.0
 	golang.org/x/mod v0.42.0
