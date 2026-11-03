@@ -57,6 +57,7 @@ func (m *mockStore) LoadTray() (TrayConfig, error) {
 	}
 	return m.tray, nil
 }
+
 func (m *mockStore) SaveTrayAtomic(cfg TrayConfig) error {
 	if m.saveTrayErr != nil {
 		return m.saveTrayErr
