@@ -17,21 +17,29 @@ import (
 
 func TestREADMETextExamples(t *testing.T) {
 	events := []event.Event{
-		{Type: event.TypeBlock,
+		{
+			Type:    event.TypeBlock,
 			Context: event.BlockContext{SlotNumber: 2000, BlockNumber: 100, Era: "Babbage"},
-			Payload: event.BlockEvent{BlockHash: "abc123hash", TransactionCount: 5, BlockBodySize: 1024}},
-		{Type: event.TypeTransaction,
+			Payload: event.BlockEvent{BlockHash: "abc123hash", TransactionCount: 5, BlockBodySize: 1024},
+		},
+		{
+			Type:    event.TypeTransaction,
 			Context: event.TransactionContext{SlotNumber: 2000, BlockNumber: 100, TransactionHash: "deadbeef12345678"},
-			Payload: event.TransactionEvent{Fee: 180000, Inputs: make([]ledger.TransactionInput, 2), Outputs: make([]ledger.TransactionOutput, 3)}},
-		{Type: event.TypeRollback,
-			Payload: event.RollbackEvent{SlotNumber: 2000, BlockHash: "aabbccdd11223344"}},
-		{Type: event.TypeGovernance,
+			Payload: event.TransactionEvent{Fee: 180000, Inputs: make([]ledger.TransactionInput, 2), Outputs: make([]ledger.TransactionOutput, 3)},
+		},
+		{
+			Type:    event.TypeRollback,
+			Payload: event.RollbackEvent{SlotNumber: 2000, BlockHash: "aabbccdd11223344"},
+		},
+		{
+			Type:    event.TypeGovernance,
 			Context: event.GovernanceContext{SlotNumber: 2000, BlockNumber: 100, TransactionHash: "govtx12345678abc"},
 			Payload: event.GovernanceEvent{
 				ProposalProcedures: []event.ProposalProcedureData{{ActionType: "Info"}},
 				VotingProcedures:   []event.VotingProcedureData{{Vote: "Yes"}, {Vote: "No"}},
 				DRepCertificates:   []event.DRepCertificateData{{CertificateType: "Registration"}},
-			}},
+			},
+		},
 	}
 	const expected = "2026-05-24 12:00:00 BLOCK        slot=2000       block=100      hash=abc123hash era=Babbage txs=5 size=1024\n" +
 		"2026-05-24 12:00:01 TX           slot=2000       block=100      tx=deadbeef12345678 fee=180000 inputs=2 outputs=3\n" +

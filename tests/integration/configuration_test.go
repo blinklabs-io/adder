@@ -25,11 +25,13 @@ func TestConfigurationIntegration(t *testing.T) {
 			yaml: "output: webhook\nplugins:\n  output:\n    log:\n      format: text\n      level: warn\n      path: yaml.jsonl\n",
 			env:  []string{"OUTPUT=log", "OUTPUT_LOG_FORMAT=json", "OUTPUT_LOG_LEVEL=info", "OUTPUT_LOG_PATH=env.jsonl"},
 		}, path: "env.jsonl"},
-		{name: "cli-over-environment-and-yaml", config: settings{
-			yaml: "output: webhook\nplugins:\n  output:\n    log:\n      format: text\n      level: warn\n      path: yaml.jsonl\n",
-			env:  []string{"OUTPUT=webhook", "OUTPUT_LOG_FORMAT=text", "OUTPUT_LOG_LEVEL=error", "OUTPUT_LOG_PATH=env.jsonl"},
-		}, flags: []string{"--output", "log", "--output-log-format", "json", "--output-log-level", "debug", "--output-log-path", "cli.jsonl"},
-			path: "cli.jsonl"},
+		{
+			name: "cli-over-environment-and-yaml", config: settings{
+				yaml: "output: webhook\nplugins:\n  output:\n    log:\n      format: text\n      level: warn\n      path: yaml.jsonl\n",
+				env:  []string{"OUTPUT=webhook", "OUTPUT_LOG_FORMAT=text", "OUTPUT_LOG_LEVEL=error", "OUTPUT_LOG_PATH=env.jsonl"},
+			}, flags: []string{"--output", "log", "--output-log-format", "json", "--output-log-level", "debug", "--output-log-path", "cli.jsonl"},
+			path: "cli.jsonl",
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := &fixture{release: make(chan struct{})}

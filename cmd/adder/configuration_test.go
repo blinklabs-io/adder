@@ -144,7 +144,7 @@ func TestLoggingLevelUsesOutputOptionAndMigratesLegacyYAML(t *testing.T) {
 	require.Nil(t, fs.Lookup("logging-level"))
 	require.ErrorContains(t, fs.Parse([]string{"--logging-level=debug"}), "unknown flag")
 	path := filepath.Join(t.TempDir(), "old.yaml")
-	require.NoError(t, os.WriteFile(path, []byte("logging:\n  level: debug\n"), 0600))
+	require.NoError(t, os.WriteFile(path, []byte("logging:\n  level: debug\n"), 0o600))
 	require.NoError(t, c.Load(path))
 	resolved, err := c.ResolvePlugins(fs)
 	require.NoError(t, err)

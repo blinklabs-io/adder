@@ -74,7 +74,7 @@ func launchAdder(t *testing.T, f *fixture, config settings, flags ...string) *pr
 	args = append(args, flags...)
 	if config.yaml != "" {
 		configPath := filepath.Join(dir, "config.yaml")
-		require.NoError(t, os.WriteFile(configPath, []byte(config.yaml), 0600))
+		require.NoError(t, os.WriteFile(configPath, []byte(config.yaml), 0o600))
 		args = append(args, "--config", configPath)
 	}
 	p := &process{cmd: exec.Command(binary, args...), done: make(chan struct{}), dir: dir, apiURL: "http://" + address}
@@ -92,7 +92,7 @@ func launchAdder(t *testing.T, f *fixture, config settings, flags ...string) *pr
 		Env  []string `json:"env"`
 	}{args, config.env}, "", "  ")
 	require.NoError(t, err)
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "invocation.json"), invocation, 0600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "invocation.json"), invocation, 0o600))
 	stdout, err := os.Create(filepath.Join(dir, "stdout.log"))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = stdout.Close() })

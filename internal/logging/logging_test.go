@@ -31,7 +31,6 @@ import (
 // TestConfigureWithWriter_DefaultLevel verifies the logger's default logging behavior
 // when configured with the "info" logging level.
 func TestConfigureWithWriter_DefaultLevel(t *testing.T) {
-
 	var buf bytes.Buffer
 	logging.ConfigureWithWriter(&buf, slog.LevelInfo)
 	logger := logging.GetLogger()
@@ -59,7 +58,6 @@ func TestConfigureWithWriter_DefaultLevel(t *testing.T) {
 // TestConfigureWithWriter_DebugLevel verifies that when set to "debug",
 // debug logs are written to the configured output.
 func TestConfigureWithWriter_DebugLevel(t *testing.T) {
-
 	var buf bytes.Buffer
 	logging.ConfigureWithWriter(&buf, slog.LevelDebug)
 	logger := logging.GetLogger()
@@ -77,7 +75,6 @@ func TestConfigureWithWriter_DebugLevel(t *testing.T) {
 // TestConfigureWithWriter_WarnErrorLevels verifies that when set to "error",
 // lower levels such as warning are ignored while error logs are captured.
 func TestConfigureWithWriter_WarnErrorLevels(t *testing.T) {
-
 	var buf bytes.Buffer
 	logging.ConfigureWithWriter(&buf, slog.LevelError)
 	logger := logging.GetLogger()
@@ -194,7 +191,6 @@ func TestLogLevelConfiguration(t *testing.T) {
 
 	for _, tc := range levels {
 		t.Run(tc.configLevel, func(t *testing.T) {
-
 			var buf bytes.Buffer
 			level, err := logging.ParseLevel(tc.configLevel)
 			require.NoError(t, err)

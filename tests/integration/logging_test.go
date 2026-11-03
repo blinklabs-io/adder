@@ -24,8 +24,10 @@ func TestLoggingIntegration(t *testing.T) {
 		output, level := tc.output, tc.level
 		t.Run(output+"/"+level, func(t *testing.T) {
 			f := &fixture{release: make(chan struct{})}
-			flags := []string{"--output", "log", "--output-log-format", "json", "--output-log-level", level,
-				"--input-utxorpc-intersect-point", "100." + strings.Repeat("01", 32)}
+			flags := []string{
+				"--output", "log", "--output-log-format", "json", "--output-log-level", level,
+				"--input-utxorpc-intersect-point", "100." + strings.Repeat("01", 32),
+			}
 			if output == "text" {
 				flags = append(flags, "--output-log-format", "text")
 			} else if output == "file" {

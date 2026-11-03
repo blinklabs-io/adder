@@ -6,8 +6,10 @@ import (
 	"time"
 )
 
-var benchmarkEventBytes []byte
-var benchmarkDecodedEvent Event
+var (
+	benchmarkEventBytes   []byte
+	benchmarkDecodedEvent Event
+)
 
 func BenchmarkEventJSON(b *testing.B) {
 	evt := Event{
