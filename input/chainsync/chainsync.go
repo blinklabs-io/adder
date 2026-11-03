@@ -33,6 +33,7 @@ import (
 	"github.com/blinklabs-io/adder/internal/logging"
 	"github.com/blinklabs-io/adder/internal/nodeconn"
 	"github.com/blinklabs-io/adder/plugin"
+	"github.com/blinklabs-io/adder/state"
 	ouroboros "github.com/blinklabs-io/gouroboros"
 	"github.com/blinklabs-io/gouroboros/ledger"
 	blockfetch "github.com/blinklabs-io/gouroboros/protocol/blockfetch"
@@ -58,6 +59,15 @@ const (
 
 	maxAutoReconnectDelay = 60 * time.Second
 	defaultKupoTimeout    = 30 * time.Second
+
+	// defaultStateKey is the key used to persist the chainsync cursor in
+	// a configured state.Store, unless overridden with WithStateKey.
+	defaultStateKey = "chainsync-cursor"
+
+	// cursorPersistInterval bounds how often the persisted cursor is
+	// flushed to the state store. Flushing on every block would add a
+	// disk write per block, which is wasteful during catch-up sync.
+	cursorPersistInterval = 5 * time.Second
 )
 
 type ChainSync struct {
@@ -92,6 +102,14 @@ type ChainSync struct {
 	reconnectCallback  func()
 	eraHistory         EraHistory
 	eraHistorySet      bool
+	// stateStore, when set, persists the chainsync cursor so a restart
+	// resumes from the last confirmed block instead of the configured
+	// intersect point. stateMu guards pendingCursor, which updateStatus
+	// writes on every block and persistCursorLoop periodically flushes.
+	stateStore    state.Store
+	stateKey      string
+	stateMu       sync.Mutex
+	pendingCursor *ocommon.Point
 }
 
 // chainSyncBaseConfig is the Base configuration for this plugin. It is a
@@ -121,6 +139,7 @@ func New(options ...ChainSyncOptionFunc) *ChainSync {
 	c := &ChainSync{
 		intersectPoints: []ocommon.Point{},
 		status:          &ChainSyncStatus{},
+		stateKey:        defaultStateKey,
 	}
 	for _, option := range options {
 		option(c)
@@ -150,11 +169,15 @@ func (c *ChainSync) StartContext(ctx context.Context) error {
 }
 
 func (c *ChainSync) start(ctx context.Context) error {
+	c.loadCursor()
 	connErrChan, err := c.connect(ctx)
 	if err != nil {
 		return err
 	}
 	c.Go(func() { c.superviseConnection(ctx, connErrChan) })
+	if c.stateStore != nil {
+		c.Go(func() { c.persistCursorLoop(ctx) })
+	}
 	return nil
 }
 
@@ -184,7 +207,17 @@ func (c *ChainSync) shutdownHooks() plugin.ShutdownHooks {
 			return c.closeConn()
 		},
 		AfterWait: func() error {
-			return c.closeConn()
+			err := c.closeConn()
+			// persistCursorLoop has exited by now (it is a tracked worker
+			// waited on above), so flushing here cannot race its own
+			// periodic flush.
+			c.flushCursor()
+			if c.stateStore != nil {
+				if closeErr := c.stateStore.Close(); closeErr != nil {
+					err = errors.Join(err, closeErr)
+				}
+			}
+			return err
 		},
 	}
 }
@@ -797,12 +830,15 @@ func (c *ChainSync) updateStatus(
 ) {
 	// Update cursor cache
 	blockHashBytes, _ := hex.DecodeString(blockHash)
-	c.cursorCache = append(
-		c.cursorCache,
-		ocommon.Point{Slot: slotNumber, Hash: blockHashBytes},
-	)
+	point := ocommon.Point{Slot: slotNumber, Hash: blockHashBytes}
+	c.cursorCache = append(c.cursorCache, point)
 	if len(c.cursorCache) > cursorCacheSize {
 		c.cursorCache = c.cursorCache[len(c.cursorCache)-cursorCacheSize:]
+	}
+	if c.stateStore != nil {
+		c.stateMu.Lock()
+		c.pendingCursor = &point
+		c.stateMu.Unlock()
 	}
 	// Determine if we've reached the chain tip
 	if !c.status.TipReached {

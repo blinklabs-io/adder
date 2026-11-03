@@ -5,9 +5,11 @@ package chainsync
 
 import (
 	"context"
+	"path/filepath"
 	"testing"
 
 	"github.com/blinklabs-io/adder/plugin"
+	"github.com/blinklabs-io/adder/state"
 	"github.com/stretchr/testify/require"
 )
 
@@ -34,4 +36,31 @@ func TestNetworkMagicOverrideSurvivesNetworkLookup(t *testing.T) {
 	cancel()
 	require.Error(t, c.setupConnection(ctx))
 	require.Equal(t, uint32(4294967295), c.networkMagic)
+}
+
+func TestStatePathConfiguresSqliteStore(t *testing.T) {
+	statePath := filepath.Join(t.TempDir(), "cursor.sqlite")
+	p := mustConfiguredPlugin(
+		t,
+		map[string]any{
+			"network":    "mainnet",
+			"state-path": statePath,
+		},
+	)
+	c := p.(*ChainSync)
+	require.NotNil(t, c.stateStore)
+	_, ok := c.stateStore.(*state.SqliteStore)
+	require.True(t, ok)
+	require.NoError(t, c.stateStore.Close())
+}
+
+func TestStatePathUnsetLeavesStoreNil(t *testing.T) {
+	p := mustConfiguredPlugin(
+		t,
+		map[string]any{
+			"network": "mainnet",
+		},
+	)
+	c := p.(*ChainSync)
+	require.Nil(t, c.stateStore)
 }

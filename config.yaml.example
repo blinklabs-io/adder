@@ -70,6 +70,9 @@ plugins:
       # Alternatively, specify socket path and network magic:
       #socket-path: /path/to/node.socket
       #network-magic: 764824073  # mainnet magic
+      # Persist the sync cursor to a SQLite file so a restart resumes
+      # from the last confirmed block instead of intersect-tip/-point
+      #state-path: /path/to/chainsync-state.sqlite
 
   # Output plugin options
   output:
