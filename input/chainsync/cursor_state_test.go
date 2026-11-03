@@ -15,9 +15,12 @@
 package chainsync
 
 import (
+	"context"
+	"errors"
 	"sync"
 	"testing"
 
+	"github.com/blinklabs-io/adder/state"
 	ocommon "github.com/blinklabs-io/gouroboros/protocol/common"
 	"github.com/stretchr/testify/require"
 )
@@ -26,9 +29,12 @@ import (
 // persistence without touching disk. setCalls counts Set invocations so
 // tests can assert flushCursor coalesces or skips redundant writes.
 type fakeStore struct {
-	mu       sync.Mutex
-	values   map[string][]byte
-	setCalls int
+	mu         sync.Mutex
+	values     map[string][]byte
+	setCalls   int
+	getErr     error
+	setErr     error
+	closeCalls int
 }
 
 func newFakeStore() *fakeStore {
@@ -38,6 +44,9 @@ func newFakeStore() *fakeStore {
 func (f *fakeStore) Get(key string) ([]byte, bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.getErr != nil {
+		return nil, false, f.getErr
+	}
 	v, ok := f.values[key]
 	return v, ok, nil
 }
@@ -45,12 +54,20 @@ func (f *fakeStore) Get(key string) ([]byte, bool, error) {
 func (f *fakeStore) Set(key string, value []byte) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.setErr != nil {
+		return f.setErr
+	}
 	f.values[key] = value
 	f.setCalls++
 	return nil
 }
 
-func (f *fakeStore) Close() error { return nil }
+func (f *fakeStore) Close() error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.closeCalls++
+	return nil
+}
 
 func TestLoadCursorWithoutStoreIsNoop(t *testing.T) {
 	c := New()
@@ -71,13 +88,35 @@ func TestLoadCursorWithNoSavedCursorKeepsConfiguredIntersect(t *testing.T) {
 func TestLoadCursorWithSavedCursorOverridesIntersectTip(t *testing.T) {
 	store := newFakeStore()
 	c := New(WithStateStore(store), WithIntersectTip(true))
-	point := ocommon.Point{Slot: 12345, Hash: []byte{0xde, 0xad, 0xbe, 0xef}}
+	point := ocommon.Point{Slot: 12345, Hash: make([]byte, 32)}
+	point.Hash[0] = 0xde
+	point.Hash[1] = 0xad
 	c.saveCursor(point)
 
 	c.loadCursor()
 
 	require.False(t, c.intersectTip)
 	require.Equal(t, []ocommon.Point{point}, c.intersectPoints)
+}
+
+func TestLoadCursorRejectsInvalidSavedHash(t *testing.T) {
+	store := newFakeStore()
+	c := New(WithStateStore(store), WithIntersectTip(true))
+	store.values[defaultStateKey] = []byte(`{"slot":12345,"hash":"deadbeef"}`)
+
+	err := c.loadCursor()
+
+	require.Error(t, err)
+	require.True(t, c.intersectTip)
+	require.Empty(t, c.intersectPoints)
+}
+
+func TestLoadCursorReturnsStoreReadError(t *testing.T) {
+	store := newFakeStore()
+	store.getErr = errors.New("temporary read failure")
+	c := New(WithStateStore(store))
+
+	require.Error(t, c.loadCursor())
 }
 
 func TestFlushCursorPersistsOnlyWhenPending(t *testing.T) {
@@ -101,7 +140,26 @@ func TestFlushCursorPersistsOnlyWhenPending(t *testing.T) {
 	require.Equal(t, 1, store.setCalls)
 }
 
-func TestUpdateStatusRecordsPendingCursor(t *testing.T) {
+func TestFlushCursorRetainsPendingCursorAfterWriteFailure(t *testing.T) {
+	store := newFakeStore()
+	store.setErr = errors.New("temporary write failure")
+	c := New(WithStateStore(store))
+	point := ocommon.Point{Slot: 42, Hash: make([]byte, 32)}
+	c.setPendingCursor(point)
+
+	require.Error(t, c.flushCursor())
+	c.stateMu.Lock()
+	require.NotNil(t, c.pendingCursor)
+	c.stateMu.Unlock()
+
+	store.setErr = nil
+	require.NoError(t, c.flushCursor())
+	c.stateMu.Lock()
+	require.Nil(t, c.pendingCursor)
+	c.stateMu.Unlock()
+}
+
+func TestUpdateStatusDoesNotRecordUnemittedCursor(t *testing.T) {
 	store := newFakeStore()
 	c := New(WithStateStore(store))
 
@@ -110,8 +168,7 @@ func TestUpdateStatusRecordsPendingCursor(t *testing.T) {
 	c.stateMu.Lock()
 	pending := c.pendingCursor
 	c.stateMu.Unlock()
-	require.NotNil(t, pending)
-	require.Equal(t, uint64(100), pending.Slot)
+	require.Nil(t, pending)
 }
 
 func TestWithStateKeyOverridesDefault(t *testing.T) {
@@ -127,4 +184,35 @@ func TestWithStateKeyOverridesDefault(t *testing.T) {
 	_, ok, err = store.Get(defaultStateKey)
 	require.NoError(t, err)
 	require.False(t, ok)
+}
+
+func TestOwnedStateStoreReopensAfterStop(t *testing.T) {
+	initial := newFakeStore()
+	opened := newFakeStore()
+	openCalls := 0
+	c := New(withOwnedStateStore(initial, func() (state.Store, error) {
+		openCalls++
+		return opened, nil
+	}))
+
+	setup := func(context.Context) error { return c.ensureStateStore() }
+	require.NoError(t, c.StartRun(context.Background(), chainSyncBaseConfig(), setup, c.shutdownHooks()))
+	require.NoError(t, c.Stop())
+	require.Equal(t, 1, initial.closeCalls)
+
+	require.NoError(t, c.StartRun(context.Background(), chainSyncBaseConfig(), setup, c.shutdownHooks()))
+	require.Equal(t, opened, c.stateStore)
+	require.Equal(t, 1, openCalls)
+	require.NoError(t, c.Stop())
+	require.Equal(t, 1, opened.closeCalls)
+}
+
+func TestCallerStateStoreRemainsOpenAfterStop(t *testing.T) {
+	store := newFakeStore()
+	c := New(WithStateStore(store))
+	setup := func(context.Context) error { return c.ensureStateStore() }
+
+	require.NoError(t, c.StartRun(context.Background(), chainSyncBaseConfig(), setup, c.shutdownHooks()))
+	require.NoError(t, c.Stop())
+	require.Equal(t, 0, store.closeCalls)
 }

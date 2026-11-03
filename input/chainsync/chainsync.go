@@ -106,10 +106,12 @@ type ChainSync struct {
 	// resumes from the last confirmed block instead of the configured
 	// intersect point. stateMu guards pendingCursor, which updateStatus
 	// writes on every block and persistCursorLoop periodically flushes.
-	stateStore    state.Store
-	stateKey      string
-	stateMu       sync.Mutex
-	pendingCursor *ocommon.Point
+	stateStore      state.Store
+	stateKey        string
+	stateMu         sync.Mutex
+	pendingCursor   *ocommon.Point
+	stateStoreOwned bool
+	openStateStore  func() (state.Store, error)
 }
 
 // chainSyncBaseConfig is the Base configuration for this plugin. It is a
@@ -169,7 +171,12 @@ func (c *ChainSync) StartContext(ctx context.Context) error {
 }
 
 func (c *ChainSync) start(ctx context.Context) error {
-	c.loadCursor()
+	if err := c.ensureStateStore(); err != nil {
+		return err
+	}
+	if err := c.loadCursor(); err != nil {
+		return err
+	}
 	connErrChan, err := c.connect(ctx)
 	if err != nil {
 		return err
@@ -211,11 +218,14 @@ func (c *ChainSync) shutdownHooks() plugin.ShutdownHooks {
 			// persistCursorLoop has exited by now (it is a tracked worker
 			// waited on above), so flushing here cannot race its own
 			// periodic flush.
-			c.flushCursor()
-			if c.stateStore != nil {
+			if flushErr := c.flushCursor(); flushErr != nil {
+				err = errors.Join(err, flushErr)
+			}
+			if c.stateStoreOwned && c.stateStore != nil {
 				if closeErr := c.stateStore.Close(); closeErr != nil {
 					err = errors.Join(err, closeErr)
 				}
+				c.stateStore = nil
 			}
 			return err
 		},
@@ -539,6 +549,7 @@ func (c *ChainSync) handleRollBackward(
 		}
 	}
 	_ = c.Emit(evt)
+	c.setPendingCursor(point)
 
 	// updating status after roll backward
 	c.updateStatus(
@@ -686,6 +697,7 @@ func (c *ChainSync) handleRollForward(
 		for _, evt := range tmpEvents {
 			_ = c.Emit(evt)
 		}
+		c.setPendingCursor(updateTip.Point)
 	} else {
 		// Add events to delay buffer
 		c.delayBuffer = append(c.delayBuffer, tmpEvents)
@@ -706,6 +718,7 @@ func (c *ChainSync) handleRollForward(
 				_ = c.Emit(evt)
 			}
 			c.delayBuffer = slices.Delete(c.delayBuffer, 0, 1)
+			c.setPendingCursor(updateTip.Point)
 		}
 	}
 	c.updateStatus(
@@ -811,6 +824,10 @@ func (c *ChainSync) handleBlockFetchBlock(
 		c.lastTip.Point.Slot,
 		hex.EncodeToString(c.lastTip.Point.Hash),
 	)
+	c.setPendingCursor(ocommon.Point{
+		Slot: block.SlotNumber(),
+		Hash: block.Hash().Bytes(),
+	})
 	return nil
 }
 
@@ -834,11 +851,6 @@ func (c *ChainSync) updateStatus(
 	c.cursorCache = append(c.cursorCache, point)
 	if len(c.cursorCache) > cursorCacheSize {
 		c.cursorCache = c.cursorCache[len(c.cursorCache)-cursorCacheSize:]
-	}
-	if c.stateStore != nil {
-		c.stateMu.Lock()
-		c.pendingCursor = &point
-		c.stateMu.Unlock()
 	}
 	// Determine if we've reached the chain tip
 	if !c.status.TipReached {

@@ -149,6 +149,19 @@ func WithKupoUrl(
 func WithStateStore(store state.Store) ChainSyncOptionFunc {
 	return func(c *ChainSync) {
 		c.stateStore = store
+		c.stateStoreOwned = false
+		c.openStateStore = nil
+	}
+}
+
+func withOwnedStateStore(
+	store state.Store,
+	open func() (state.Store, error),
+) ChainSyncOptionFunc {
+	return func(c *ChainSync) {
+		c.stateStore = store
+		c.stateStoreOwned = true
+		c.openStateStore = open
 	}
 }
 

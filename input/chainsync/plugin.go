@@ -203,7 +203,9 @@ func newFromOptions(values plugin.Options) (plugin.ManagedPlugin, error) {
 		if err != nil {
 			return nil, fmt.Errorf("state-path: %w", err)
 		}
-		opts = append(opts, WithStateStore(store))
+		opts = append(opts, withOwnedStateStore(store, func() (state.Store, error) {
+			return state.NewSqliteStore(statePath)
+		}))
 	}
 	p := New(opts...)
 	return p, nil

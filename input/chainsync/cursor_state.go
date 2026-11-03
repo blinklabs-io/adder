@@ -15,9 +15,11 @@
 package chainsync
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"time"
 
 	ocommon "github.com/blinklabs-io/gouroboros/protocol/common"
@@ -32,89 +34,109 @@ type cursorRecord struct {
 	Hash string `json:"hash"`
 }
 
+func (c *ChainSync) ensureStateStore() error {
+	if c.stateStore != nil || c.openStateStore == nil {
+		return nil
+	}
+	store, err := c.openStateStore()
+	if err != nil {
+		return fmt.Errorf("open chainsync state store: %w", err)
+	}
+	c.stateStore = store
+	return nil
+}
+
 // loadCursor replaces the configured intersect point(s) with the cursor
 // persisted in stateStore, if one exists. It must run before the first
-// connect, so a restart resumes from the last confirmed block instead of
+// connect, so a restart resumes from the last emitted block instead of
 // the configured intersect-tip/intersect-point setting.
-func (c *ChainSync) loadCursor() {
+func (c *ChainSync) loadCursor() error {
 	if c.stateStore == nil {
-		return
+		return nil
 	}
-	logger := c.Logger()
 	data, ok, err := c.stateStore.Get(c.stateKey)
 	if err != nil {
-		if logger != nil {
-			logger.Warn("failed to load persisted chainsync cursor", "error", err)
-		}
-		return
+		return fmt.Errorf("read persisted chainsync cursor: %w", err)
 	}
 	if !ok {
-		return
+		return nil
 	}
 	var rec cursorRecord
 	if err := json.Unmarshal(data, &rec); err != nil {
-		if logger != nil {
-			logger.Warn("failed to parse persisted chainsync cursor", "error", err)
-		}
-		return
+		return fmt.Errorf("parse persisted chainsync cursor: %w", err)
 	}
 	hashBytes, err := hex.DecodeString(rec.Hash)
 	if err != nil {
-		if logger != nil {
-			logger.Warn(
-				"failed to decode persisted chainsync cursor hash",
-				"error",
-				err,
-			)
-		}
-		return
+		return fmt.Errorf("decode persisted chainsync cursor hash: %w", err)
+	}
+	if len(hashBytes) != 32 && (rec.Slot != 0 || len(hashBytes) != 0) {
+		return fmt.Errorf(
+			"invalid persisted chainsync cursor hash length: got %d, want 32",
+			len(hashBytes),
+		)
 	}
 	c.intersectPoints = []ocommon.Point{{Slot: rec.Slot, Hash: hashBytes}}
 	c.intersectTip = false
-	if logger != nil {
+	if logger := c.Logger(); logger != nil {
 		logger.Info(
 			"resuming chainsync from persisted cursor",
 			"slot", rec.Slot,
 			"hash", rec.Hash,
 		)
 	}
+	return nil
 }
 
 // saveCursor persists point to stateStore under stateKey.
-func (c *ChainSync) saveCursor(point ocommon.Point) {
+func (c *ChainSync) saveCursor(point ocommon.Point) error {
 	rec := cursorRecord{Slot: point.Slot, Hash: hex.EncodeToString(point.Hash)}
 	data, err := json.Marshal(rec)
 	if err != nil {
-		if logger := c.Logger(); logger != nil {
-			logger.Warn("failed to encode chainsync cursor", "error", err)
-		}
-		return
+		return fmt.Errorf("encode chainsync cursor: %w", err)
 	}
 	if err := c.stateStore.Set(c.stateKey, data); err != nil {
-		if logger := c.Logger(); logger != nil {
-			logger.Warn("failed to persist chainsync cursor", "error", err)
-		}
+		return fmt.Errorf("persist chainsync cursor: %w", err)
 	}
+	return nil
+}
+
+func (c *ChainSync) setPendingCursor(point ocommon.Point) {
+	if c.stateStore == nil {
+		return
+	}
+	c.stateMu.Lock()
+	c.pendingCursor = &point
+	c.stateMu.Unlock()
 }
 
 // flushCursor persists the most recent cursor recorded since the last
 // flush, if any. It is safe to call even when no cursor is pending or no
 // state store is configured.
-func (c *ChainSync) flushCursor() {
+func (c *ChainSync) flushCursor() error {
 	if c.stateStore == nil {
-		return
+		return nil
 	}
 	c.stateMu.Lock()
 	point := c.pendingCursor
-	c.pendingCursor = nil
 	c.stateMu.Unlock()
-	if point != nil {
-		c.saveCursor(*point)
+	if point == nil {
+		return nil
 	}
+	if err := c.saveCursor(*point); err != nil {
+		return err
+	}
+	c.stateMu.Lock()
+	if c.pendingCursor != nil &&
+		c.pendingCursor.Slot == point.Slot &&
+		bytes.Equal(c.pendingCursor.Hash, point.Hash) {
+		c.pendingCursor = nil
+	}
+	c.stateMu.Unlock()
+	return nil
 }
 
-// persistCursorLoop periodically flushes the cursor recorded by
-// updateStatus to stateStore, rather than writing on every block, which
+// persistCursorLoop periodically flushes the cursor recorded for the
+// last emitted block to stateStore, rather than writing on every block, which
 // would add a disk write per block during catch-up sync. It runs for the
 // life of the connection and performs a final flush on exit so the last
 // confirmed block is never lost on a clean shutdown.
@@ -125,13 +147,13 @@ func (c *ChainSync) persistCursorLoop(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			c.flushCursor()
+			_ = c.flushCursor()
 			return
 		case <-done:
-			c.flushCursor()
+			_ = c.flushCursor()
 			return
 		case <-ticker.C:
-			c.flushCursor()
+			_ = c.flushCursor()
 		}
 	}
 }
