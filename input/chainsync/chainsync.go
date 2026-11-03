@@ -103,13 +103,14 @@ type ChainSync struct {
 	eraHistory         EraHistory
 	eraHistorySet      bool
 	// stateStore, when set, persists the chainsync cursor so a restart
-	// resumes from the last confirmed block instead of the configured
-	// intersect point. stateMu guards pendingCursor, which updateStatus
-	// writes on every block and persistCursorLoop periodically flushes.
+	// resumes from the last emitted block instead of the configured
+	// intersect point. stateMu guards pendingCursor and emittedCursors,
+	// which persistCursorLoop periodically flushes.
 	stateStore      state.Store
 	stateKey        string
 	stateMu         sync.Mutex
 	pendingCursor   *ocommon.Point
+	emittedCursors  []ocommon.Point
 	stateStoreOwned bool
 	openStateStore  func() (state.Store, error)
 }
@@ -549,7 +550,7 @@ func (c *ChainSync) handleRollBackward(
 		}
 	}
 	_ = c.Emit(evt)
-	c.setPendingCursor(point)
+	c.rewindPendingCursor(point)
 
 	// updating status after roll backward
 	c.updateStatus(

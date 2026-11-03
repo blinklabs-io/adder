@@ -105,8 +105,34 @@ func (c *ChainSync) setPendingCursor(point ocommon.Point) {
 		return
 	}
 	c.stateMu.Lock()
+	c.emittedCursors = append(c.emittedCursors, point)
+	if len(c.emittedCursors) > cursorCacheSize {
+		c.emittedCursors = c.emittedCursors[len(c.emittedCursors)-cursorCacheSize:]
+	}
 	c.pendingCursor = &point
 	c.stateMu.Unlock()
+}
+
+func (c *ChainSync) rewindPendingCursor(rollback ocommon.Point) {
+	if c.stateStore == nil {
+		return
+	}
+	c.stateMu.Lock()
+	defer c.stateMu.Unlock()
+	for len(c.emittedCursors) > 0 {
+		last := c.emittedCursors[len(c.emittedCursors)-1]
+		if last.Slot < rollback.Slot ||
+			(last.Slot == rollback.Slot && bytes.Equal(last.Hash, rollback.Hash)) {
+			point := last
+			c.pendingCursor = &point
+			return
+		}
+		c.emittedCursors = c.emittedCursors[:len(c.emittedCursors)-1]
+	}
+	// No emitted block survives the rollback. Persist the genesis point so
+	// a previously saved cursor cannot make the next run skip buffered data.
+	point := ocommon.Point{}
+	c.pendingCursor = &point
 }
 
 // flushCursor persists the most recent cursor recorded since the last

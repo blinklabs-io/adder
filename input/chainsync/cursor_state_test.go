@@ -19,8 +19,11 @@ import (
 	"errors"
 	"sync"
 	"testing"
+	"time"
 
+	"github.com/blinklabs-io/adder/event"
 	"github.com/blinklabs-io/adder/state"
+	protocolchainsync "github.com/blinklabs-io/gouroboros/protocol/chainsync"
 	ocommon "github.com/blinklabs-io/gouroboros/protocol/common"
 	"github.com/stretchr/testify/require"
 )
@@ -169,6 +172,34 @@ func TestUpdateStatusDoesNotRecordUnemittedCursor(t *testing.T) {
 	pending := c.pendingCursor
 	c.stateMu.Unlock()
 	require.Nil(t, pending)
+}
+
+func TestRollbackWithDelayedEventsKeepsLastEmittedCursor(t *testing.T) {
+	store := newFakeStore()
+	c := New(WithStateStore(store), WithDelayConfirmations(2))
+	emitted := ocommon.Point{Slot: 100, Hash: make([]byte, 32)}
+	c.setPendingCursor(emitted)
+	c.delayBuffer = [][]event.Event{{
+		event.New(
+			event.TypeBlock,
+			time.Now(),
+			event.BlockContext{SlotNumber: 200},
+			nil,
+		),
+	}}
+
+	rollback := ocommon.Point{Slot: 150, Hash: make([]byte, 32)}
+	require.NoError(t, c.handleRollBackward(
+		protocolchainsync.CallbackContext{},
+		rollback,
+		protocolchainsync.Tip{},
+	))
+
+	c.stateMu.Lock()
+	pending := c.pendingCursor
+	c.stateMu.Unlock()
+	require.NotNil(t, pending)
+	require.Equal(t, emitted, *pending)
 }
 
 func TestWithStateKeyOverridesDefault(t *testing.T) {
