@@ -139,7 +139,11 @@ func (c *GitHubUpdateChecker) CheckLatestRelease(
 		bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
 		bodyStr := strings.TrimSpace(string(bodyBytes))
 		if bodyStr != "" {
-			return nil, fmt.Errorf("release check failed: HTTP %d: %s", resp.StatusCode, bodyStr)
+			return nil, fmt.Errorf(
+				"release check failed: HTTP %d: %s",
+				resp.StatusCode,
+				bodyStr,
+			)
 		}
 		return nil, fmt.Errorf("release check failed: HTTP %d", resp.StatusCode)
 	}
@@ -176,14 +180,17 @@ func normalizeVersion(v string) string {
 // IsUpdateAvailable compares the current version string against the latest
 // release tag. It returns whether an update is available and whether the
 // running binary is an unversioned/development build.
-func IsUpdateAvailable(currentVer, latestTag string) (available bool, isDev bool) {
+func IsUpdateAvailable(
+	currentVer, latestTag string,
+) (available bool, isDev bool) {
 	normLatest := normalizeVersion(latestTag)
 	if !semver.IsValid(normLatest) {
 		return false, false
 	}
 
 	trimmed := strings.TrimSpace(currentVer)
-	if trimmed == "" || trimmed == "devel" || strings.HasPrefix(trimmed, "dev") {
+	if trimmed == "" || trimmed == "devel" ||
+		strings.HasPrefix(trimmed, "dev") {
 		return true, true
 	}
 
@@ -277,7 +284,8 @@ func containsArchToken(name, arch string) bool {
 }
 
 func isAlphaNum(b byte) bool {
-	return (b >= '0' && b <= '9') || (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z')
+	return (b >= '0' && b <= '9') || (b >= 'a' && b <= 'z') ||
+		(b >= 'A' && b <= 'Z')
 }
 
 func normalizeDigest(digest string) string {
@@ -340,7 +348,11 @@ func DownloadAsset(
 		bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
 		bodyStr := strings.TrimSpace(string(bodyBytes))
 		if bodyStr != "" {
-			return fmt.Errorf("download failed: HTTP %d: %s", resp.StatusCode, bodyStr)
+			return fmt.Errorf(
+				"download failed: HTTP %d: %s",
+				resp.StatusCode,
+				bodyStr,
+			)
 		}
 		return fmt.Errorf("download failed: HTTP %d", resp.StatusCode)
 	}
@@ -478,7 +490,10 @@ var installerLauncher = func(filePath string) error {
 		// #nosec G204 -- filePath is a downloaded installer verified by checksum
 		return startAndReap(exec.Command("msiexec.exe", "/i", filePath))
 	default:
-		return fmt.Errorf("automatic installation is not supported on %s", runtime.GOOS)
+		return fmt.Errorf(
+			"automatic installation is not supported on %s",
+			runtime.GOOS,
+		)
 	}
 }
 
@@ -585,7 +600,9 @@ func ShowUpdateWindow(
 	scrollNotes := container.NewScroll(notesRichText)
 	scrollNotes.SetMinSize(fyne.NewSize(520, 140))
 
-	defaultURL, _ := url.Parse("https://github.com/" + defaultReleaseRepo + "/releases")
+	defaultURL, _ := url.Parse(
+		"https://github.com/" + defaultReleaseRepo + "/releases",
+	)
 	detailsLink := widget.NewHyperlink("Details", defaultURL)
 	detailsLink.Alignment = fyne.TextAlignLeading
 	historyLink := widget.NewHyperlink("Recent version history", defaultURL)
@@ -751,7 +768,9 @@ func ShowUpdateWindow(
 			for i, line := range lines {
 				trimmed := strings.TrimSpace(line)
 				if strings.HasPrefix(trimmed, "•") {
-					lines[i] = "* " + strings.TrimSpace(strings.TrimPrefix(trimmed, "•"))
+					lines[i] = "* " + strings.TrimSpace(
+						strings.TrimPrefix(trimmed, "•"),
+					)
 				}
 			}
 			notesText = strings.Join(lines, "\n")
@@ -775,7 +794,9 @@ func ShowUpdateWindow(
 				if parsedURL, uerr := url.Parse(info.HTMLURL); uerr == nil {
 					detailsLink.SetURL(parsedURL)
 				}
-				histURL, _ := url.Parse("https://github.com/" + defaultReleaseRepo + "/releases")
+				histURL, _ := url.Parse(
+					"https://github.com/" + defaultReleaseRepo + "/releases",
+				)
 				historyLink.SetURL(histURL)
 
 				if isDev {
@@ -834,10 +855,18 @@ func ShowUpdateWindow(
 				var startDownload func()
 				startDownload = func() {
 					if !isValidSHA256Digest(asset.Digest) {
-						slog.Error("missing or unsupported checksum digest for update asset", "asset", asset.Name, "digest", asset.Digest)
+						slog.Error(
+							"missing or unsupported checksum digest for update asset",
+							"asset",
+							asset.Name,
+							"digest",
+							asset.Digest,
+						)
 						fyne.Do(func() {
 							titleLabel.SetText("Update Verification Failed")
-							subtitleLabel.SetText("The release asset does not have a valid SHA-256 digest.")
+							subtitleLabel.SetText(
+								"The release asset does not have a valid SHA-256 digest.",
+							)
 							checkWeekly.Hide()
 							closeBtn.SetText("Close")
 							closeBtn.Importance = widget.MediumImportance
@@ -853,19 +882,31 @@ func ShowUpdateWindow(
 					if assetName == "." || assetName == ".." ||
 						assetName != asset.Name ||
 						strings.ContainsAny(asset.Name, `/\`) {
-						slog.Error("rejecting unsafe asset name", "name", asset.Name)
+						slog.Error(
+							"rejecting unsafe asset name",
+							"name",
+							asset.Name,
+						)
 						fyne.Do(func() {
 							titleLabel.SetText("Download Failed")
-							subtitleLabel.SetText("The release asset name is invalid.")
+							subtitleLabel.SetText(
+								"The release asset name is invalid.",
+							)
 						})
 						return
 					}
 					downloadDir, mkErr := os.MkdirTemp("", "adder-update-")
 					if mkErr != nil {
-						slog.Error("creating download directory", "error", mkErr)
+						slog.Error(
+							"creating download directory",
+							"error",
+							mkErr,
+						)
 						fyne.Do(func() {
 							titleLabel.SetText("Download Failed")
-							subtitleLabel.SetText("Could not create secure temporary directory.")
+							subtitleLabel.SetText(
+								"Could not create secure temporary directory.",
+							)
 						})
 						return
 					}
@@ -873,8 +914,12 @@ func ShowUpdateWindow(
 
 					dlCtx, dlCancel := context.WithCancel(ctx)
 					fyne.Do(func() {
-						titleLabel.SetText(fmt.Sprintf("Downloading Adder %s…", info.TagName))
-						subtitleLabel.SetText("Please wait while the update is downloaded…")
+						titleLabel.SetText(
+							fmt.Sprintf("Downloading Adder %s…", info.TagName),
+						)
+						subtitleLabel.SetText(
+							"Please wait while the update is downloaded…",
+						)
 						framedBox.Hide()
 						progressBox.Show()
 						checkWeekly.Hide()
@@ -903,7 +948,11 @@ func ShowUpdateWindow(
 							func(downloaded, total int64) {
 								fyne.Do(func() {
 									if total > 0 {
-										ratio := float64(downloaded) / float64(total)
+										ratio := float64(
+											downloaded,
+										) / float64(
+											total,
+										)
 										progressBar.SetValue(ratio)
 										progressLabel.SetText(fmt.Sprintf(
 											"%.1f MB / %.1f MB (%.0f%%)",
@@ -924,7 +973,11 @@ func ShowUpdateWindow(
 							if errors.Is(dlErr, context.Canceled) {
 								return
 							}
-							slog.Error("failed to download update", "error", dlErr)
+							slog.Error(
+								"failed to download update",
+								"error",
+								dlErr,
+							)
 							fyne.Do(func() {
 								titleLabel.SetText("Download Failed")
 								subtitleLabel.SetText(dlErr.Error())
@@ -951,7 +1004,9 @@ func ShowUpdateWindow(
 							if dlCtx.Err() != nil || ctx.Err() != nil {
 								return
 							}
-							titleLabel.SetText("A new version of Adder is ready to install!")
+							titleLabel.SetText(
+								"A new version of Adder is ready to install!",
+							)
 							subtitleLabel.SetText(fmt.Sprintf(
 								"Adder %s has been downloaded and the installer was launched. Adder will now quit to complete installation.",
 								info.TagName,
@@ -975,7 +1030,11 @@ func ShowUpdateWindow(
 								return
 							}
 							if lerr := installerLauncher(targetFile); lerr != nil {
-								slog.Error("failed to launch installer", "error", lerr)
+								slog.Error(
+									"failed to launch installer",
+									"error",
+									lerr,
+								)
 								titleLabel.SetText("Failed to launch installer")
 								subtitleLabel.SetText(fmt.Sprintf(
 									"Downloaded to: %s\nError: %s",

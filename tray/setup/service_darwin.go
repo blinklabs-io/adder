@@ -148,7 +148,8 @@ func bootstrapService(target, plistPath string) error {
 	for attempt := range 5 {
 		out, err = exec.Command( //nolint:gosec // paths are generated internally
 			"launchctl", "bootstrap", target, plistPath,
-		).CombinedOutput()
+		).
+			CombinedOutput()
 		if err == nil ||
 			strings.Contains(string(out), "service already bootstrapped") {
 			return nil
@@ -215,7 +216,10 @@ func startService() error {
 	plistPath := serviceUnitPath()
 	if st, err := os.Stat(plistPath); err != nil {
 		if os.IsNotExist(err) {
-			return fmt.Errorf("service not registered: %s does not exist", plistPath)
+			return fmt.Errorf(
+				"service not registered: %s does not exist",
+				plistPath,
+			)
 		}
 		return fmt.Errorf("checking service plist: %w", err)
 	} else if st.IsDir() {
@@ -256,7 +260,10 @@ func startService() error {
 		return fmt.Errorf("verifying service status: %w", err)
 	}
 	if status != ServiceRunning {
-		return fmt.Errorf("service failed to start (status: %s)", status.String())
+		return fmt.Errorf(
+			"service failed to start (status: %s)",
+			status.String(),
+		)
 	}
 
 	return nil

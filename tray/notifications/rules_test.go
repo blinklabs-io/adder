@@ -221,8 +221,11 @@ func TestRulesFromPlan_MonitorEverything(t *testing.T) {
 	require.False(t, anyRuleMatches(rules, govEvent()),
 		"votes-cast disabled: governance must not match")
 	// Connection rule present and enabled.
-	require.True(t, anyRuleMatches(rules, ConnectionEvent("Adder Connection", "x")),
-		"connection rule should match a connection event")
+	require.True(
+		t,
+		anyRuleMatches(rules, ConnectionEvent("Adder Connection", "x")),
+		"connection rule should match a connection event",
+	)
 }
 
 func TestRulesFromPlan_WatchWallet(t *testing.T) {
@@ -434,8 +437,11 @@ func TestRulesFromPlan_MonitorPool(t *testing.T) {
 	require.True(t, anyRuleMatches(rules, poolBlockEvent("h", poolHex)),
 		"pool block rule should match a block event from the selected pool")
 	// Negative: a block from a different pool must NOT match.
-	require.False(t, anyRuleMatches(rules, poolBlockEvent("h", "ffffffffffffffffffff")),
-		"pool block rule must not match a block event from another pool")
+	require.False(
+		t,
+		anyRuleMatches(rules, poolBlockEvent("h", "ffffffffffffffffffff")),
+		"pool block rule must not match a block event from another pool",
+	)
 	// Negative: governance must NOT match a pool plan.
 	require.False(t, anyRuleMatches(rules, govEvent()),
 		"pool plan must not match governance events")
@@ -473,7 +479,10 @@ func TestRulesFromPlan_AllDisabled(t *testing.T) {
 	require.False(t, anyRuleMatches(rules, blockEvent("h")))
 	require.False(t, anyRuleMatches(rules, txEvent("h", 1)))
 	require.False(t, anyRuleMatches(rules, govEvent()))
-	require.False(t, anyRuleMatches(rules, ConnectionEvent("Adder Connection", "x")))
+	require.False(
+		t,
+		anyRuleMatches(rules, ConnectionEvent("Adder Connection", "x")),
+	)
 }
 
 // TestRulesFromPlan_RollbackRuleIsAlwaysEmitted guards the regression
@@ -513,9 +522,11 @@ func TestRulesFromPlan_RollbackRuleIsAlwaysEmitted(t *testing.T) {
 		Filter: setup.FilterConfig{MonitorEverything: true},
 		Notify: setup.NotificationPrefs{}, // completely empty, missing ChainRollbacks key
 	}
-	assert.True(t,
+	assert.True(
+		t,
 		anyRuleMatches(RulesFromPlan(missingPrefPlan), rollback),
-		"rollback rule must default to true (enabled) if the preference is missing from the plan")
+		"rollback rule must default to true (enabled) if the preference is missing from the plan",
+	)
 }
 
 // TestRulesFromPlan_MonitorEverythingORsRelevantPrefs guards the
@@ -594,8 +605,11 @@ func TestRulesFromPlan_EmptyTargetListsEmitNoRules(t *testing.T) {
 		"no pools configured → no block rule")
 	// The always-on connection rule is independent of the per-target
 	// lists and must still be present.
-	assert.True(t, anyRuleMatches(rules, ConnectionEvent("Adder Connection", "x")),
-		"connection rule is independent of per-target lists")
+	assert.True(
+		t,
+		anyRuleMatches(rules, ConnectionEvent("Adder Connection", "x")),
+		"connection rule is independent of per-target lists",
+	)
 }
 
 // TestRulesFromPlan_ParamsPreservedAndNotMultiplied verifies the
@@ -908,7 +922,9 @@ func TestRulesFromPlan_StakeTargetDoesNotBlockAssetActivity(t *testing.T) {
 		"stake credentials are not present in transaction payment addresses")
 }
 
-func TestRulesFromPlan_StakeTargetDoesNotMatchEveryWalletTransaction(t *testing.T) {
+func TestRulesFromPlan_StakeTargetDoesNotMatchEveryWalletTransaction(
+	t *testing.T,
+) {
 	plan := setup.SetupPlan{
 		Filter: setup.FilterConfig{Wallets: []string{"stake1uwatched"}},
 		Notify: setup.NotificationPrefs{
@@ -916,9 +932,11 @@ func TestRulesFromPlan_StakeTargetDoesNotMatchEveryWalletTransaction(t *testing.
 		},
 	}
 
-	require.False(t,
+	require.False(
+		t,
 		anyRuleMatches(RulesFromPlan(plan), txEventTo("addr1unrelated")),
-		"an unsupported stake target must not turn wallet rules into catch-all rules")
+		"an unsupported stake target must not turn wallet rules into catch-all rules",
+	)
 }
 
 // TestAllNotifyPrefsHaveEngineRule pins setup.AllNotifyPrefs to the

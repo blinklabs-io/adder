@@ -75,7 +75,10 @@ func NewKugoCustomLoggerWithLogger(logger *slog.Logger) *KugoCustomLogger {
 	return &KugoCustomLogger{logger: logger, logLevel: LevelDebug}
 }
 
-func NewKugoCustomLoggerWithWriter(level LogLevel, w io.Writer) *KugoCustomLogger {
+func NewKugoCustomLoggerWithWriter(
+	level LogLevel,
+	w io.Writer,
+) *KugoCustomLogger {
 	if w == nil {
 		w = io.Discard
 	}

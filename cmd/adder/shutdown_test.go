@@ -82,7 +82,10 @@ func TestCLIShutdownWithOpenSSE(t *testing.T) {
 			logFile, err := os.Create(logPath)
 			require.NoError(t, err)
 			defer logFile.Close()
-			command := exec.Command(os.Args[0], "-test.run=^TestCLIStreamShutdownProcess$")
+			command := exec.Command(
+				os.Args[0],
+				"-test.run=^TestCLIStreamShutdownProcess$",
+			)
 			command.Env = []string{
 				"ADDER_TEST_STREAM_SHUTDOWN=1", "ADDER_TEST_API_PORT=" + port,
 				"ADDER_TEST_STOP_ERROR=" + strconv.FormatBool(tc.stopError),
@@ -100,12 +103,24 @@ func TestCLIShutdownWithOpenSSE(t *testing.T) {
 			t.Cleanup(func() { _ = command.Process.Kill(); <-done })
 			require.Eventually(t, func() bool {
 				data, readErr := os.ReadFile(logPath)
-				return readErr == nil && strings.Contains(string(data), "Adder started, waiting for shutdown signal")
+				return readErr == nil &&
+					strings.Contains(
+						string(data),
+						"Adder started, waiting for shutdown signal",
+					)
 			}, 5*time.Second, 10*time.Millisecond)
 
-			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			ctx, cancel := context.WithTimeout(
+				context.Background(),
+				15*time.Second,
+			)
 			defer cancel()
-			request, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+address+"/events?replay=false", nil)
+			request, err := http.NewRequestWithContext(
+				ctx,
+				http.MethodGet,
+				"http://"+address+"/events?replay=false",
+				nil,
+			)
 			require.NoError(t, err)
 			response, err := http.DefaultClient.Do(request)
 			require.NoError(t, err)

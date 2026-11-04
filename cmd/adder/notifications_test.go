@@ -27,7 +27,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func writeNotificationConfig(t *testing.T, cfg setup.NotificationConfig) string {
+func writeNotificationConfig(
+	t *testing.T,
+	cfg setup.NotificationConfig,
+) string {
 	t.Helper()
 	data, err := json.Marshal(cfg)
 	require.NoError(t, err)
@@ -127,12 +130,29 @@ func TestValidateNotificationInput(t *testing.T) {
 			cfg.Network.CustomPort = test.customPort
 			cfg.Monitor.Everything = true
 
-			resolved, err := plugin.ResolveConfig(map[string]map[string]map[string]any{
-				"input":  {"chainsync": {"network": test.inputNetwork, "address": test.inputAddress}},
-				"output": {"notify-json": {"config": writeNotificationConfig(t, cfg)}},
-			}, nil, func(string) (string, bool) { return "", false })
+			resolved, err := plugin.ResolveConfig(
+				map[string]map[string]map[string]any{
+					"input": {
+						"chainsync": {
+							"network": test.inputNetwork,
+							"address": test.inputAddress,
+						},
+					},
+					"output": {
+						"notify-json": {
+							"config": writeNotificationConfig(t, cfg),
+						},
+					},
+				},
+				nil,
+				func(string) (string, bool) { return "", false },
+			)
 			require.NoError(t, err)
-			err = validateNotificationInput(resolved, "chainsync", "notify-json")
+			err = validateNotificationInput(
+				resolved,
+				"chainsync",
+				"notify-json",
+			)
 			if test.expectedError == "" {
 				require.NoError(t, err)
 			} else {
@@ -192,7 +212,12 @@ func TestNotificationValidationUsesResolvedSources(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			data := map[string]map[string]map[string]any{
-				"input":  {"chainsync": {"network": "preview", "address": "node.example:3001"}},
+				"input": {
+					"chainsync": {
+						"network": "preview",
+						"address": "node.example:3001",
+					},
+				},
 				"output": {"notify-json": {"config": path}},
 			}
 			if test.yamlStale {
@@ -203,12 +228,20 @@ func TestNotificationValidationUsesResolvedSources(t *testing.T) {
 			fs := pflag.NewFlagSet(test.name, pflag.ContinueOnError)
 			require.NoError(t, plugin.PopulateCmdlineOptions(fs))
 			require.NoError(t, fs.Parse(test.flags))
-			resolved, err := plugin.ResolveConfig(data, fs, func(key string) (string, bool) {
-				value, ok := test.env[key]
-				return value, ok
-			})
+			resolved, err := plugin.ResolveConfig(
+				data,
+				fs,
+				func(key string) (string, bool) {
+					value, ok := test.env[key]
+					return value, ok
+				},
+			)
 			require.NoError(t, err)
-			err = validateNotificationInput(resolved, "chainsync", "notify-json")
+			err = validateNotificationInput(
+				resolved,
+				"chainsync",
+				"notify-json",
+			)
 			if test.wantError != "" {
 				require.ErrorContains(t, err, test.wantError)
 				return

@@ -30,7 +30,10 @@ func newRecordingDeliveryMetrics() *recordingDeliveryMetrics {
 	}
 }
 
-func (m *recordingDeliveryMetrics) RecordWebhookAttempt(statusClass string, _ time.Duration) {
+func (m *recordingDeliveryMetrics) RecordWebhookAttempt(
+	statusClass string,
+	_ time.Duration,
+) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.attempts[statusClass]++
@@ -66,22 +69,52 @@ func TestDeliveryPolicyAndMetrics(t *testing.T) {
 		wantOutcome string
 	}{
 		{"permanent response", http.StatusBadRequest, "", 3, 1, "terminal"},
-		{"retry exhausted", http.StatusInternalServerError, "", 2, 3, "exhausted"},
-		{"server wait exceeds bound", http.StatusTooManyRequests, "120", 3, 1, "terminal"},
-		{"invalid server wait uses backoff", http.StatusTooManyRequests, "invalid", 1, 2, "exhausted"},
+		{
+			"retry exhausted",
+			http.StatusInternalServerError,
+			"",
+			2,
+			3,
+			"exhausted",
+		},
+		{
+			"server wait exceeds bound",
+			http.StatusTooManyRequests,
+			"120",
+			3,
+			1,
+			"terminal",
+		},
+		{
+			"invalid server wait uses backoff",
+			http.StatusTooManyRequests,
+			"invalid",
+			1,
+			2,
+			"exhausted",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var calls atomic.Int32
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-				calls.Add(1)
-				if tt.retryAfter != "" {
-					w.Header().Set("Retry-After", tt.retryAfter)
-				}
-				w.WriteHeader(tt.status)
-			}))
+			server := httptest.NewServer(
+				http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+					calls.Add(1)
+					if tt.retryAfter != "" {
+						w.Header().Set("Retry-After", tt.retryAfter)
+					}
+					w.WriteHeader(tt.status)
+				}),
+			)
 			t.Cleanup(server.Close)
-			output := New(WithUrl(server.URL, false), WithRetryConfig(tt.retries, time.Millisecond, 10*time.Millisecond))
+			output := New(
+				WithUrl(server.URL, false),
+				WithRetryConfig(
+					tt.retries,
+					time.Millisecond,
+					10*time.Millisecond,
+				),
+			)
 			observer := newRecordingDeliveryMetrics()
 			output.SetDeliveryMetrics(observer)
 			require.NoError(t, output.Start())
@@ -92,9 +125,18 @@ func TestDeliveryPolicyAndMetrics(t *testing.T) {
 				return outcomes["success"]+outcomes["terminal"]+outcomes["exhausted"] == 1
 			}, time.Second, time.Millisecond)
 			attempts, outcomes := observer.counts()
-			require.Equal(t, 1, outcomes[tt.wantOutcome], "unexpected final delivery outcome")
+			require.Equal(
+				t,
+				1,
+				outcomes[tt.wantOutcome],
+				"unexpected final delivery outcome",
+			)
 			require.Equal(t, tt.wantCalls, calls.Load())
-			require.Equal(t, int(tt.wantCalls), attempts[httpStatusClass(tt.status)])
+			require.Equal(
+				t,
+				int(tt.wantCalls),
+				attempts[httpStatusClass(tt.status)],
+			)
 		})
 	}
 }
@@ -115,21 +157,28 @@ func TestWebhookRedirectsPreservePreviousClientBehavior(t *testing.T) {
 			var calls atomic.Int32
 			var finalMethod string
 			var finalBody []byte
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				calls.Add(1)
-				if r.URL.Path == "/target" {
-					finalMethod = r.Method
-					finalBody, _ = io.ReadAll(r.Body)
-					w.WriteHeader(http.StatusOK)
-					return
-				}
-				http.Redirect(w, r, "/target", tt.status)
-			}))
+			server := httptest.NewServer(
+				http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					calls.Add(1)
+					if r.URL.Path == "/target" {
+						finalMethod = r.Method
+						finalBody, _ = io.ReadAll(r.Body)
+						w.WriteHeader(http.StatusOK)
+						return
+					}
+					http.Redirect(w, r, "/target", tt.status)
+				}),
+			)
 			t.Cleanup(server.Close)
 			output := New(WithUrl(server.URL, false))
 			observer := newRecordingDeliveryMetrics()
 			output.SetDeliveryMetrics(observer)
-			err := output.SendWebhook(&event.Event{Type: event.TypeRollback, Payload: event.RollbackEvent{}})
+			err := output.SendWebhook(
+				&event.Event{
+					Type:    event.TypeRollback,
+					Payload: event.RollbackEvent{},
+				},
+			)
 			require.NoError(t, err)
 			require.Equal(t, int32(2), calls.Load())
 			require.Equal(t, tt.wantMethod, finalMethod)
@@ -160,11 +209,16 @@ func TestRetryAfterDelay(t *testing.T) {
 }
 
 func TestCertificateFailureIsTerminal(t *testing.T) {
-	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	}))
+	server := httptest.NewTLSServer(
+		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		}),
+	)
 	t.Cleanup(server.Close)
-	output := New(WithUrl(server.URL, false), WithRetryConfig(3, time.Millisecond, 10*time.Millisecond))
+	output := New(
+		WithUrl(server.URL, false),
+		WithRetryConfig(3, time.Millisecond, 10*time.Millisecond),
+	)
 	observer := newRecordingDeliveryMetrics()
 	output.SetDeliveryMetrics(observer)
 	require.NoError(t, output.Start())
@@ -180,15 +234,20 @@ func TestCertificateFailureIsTerminal(t *testing.T) {
 
 func TestPermanentResponseOnLastAttemptIsTerminal(t *testing.T) {
 	var calls atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		if calls.Add(1) == 1 {
-			w.WriteHeader(http.StatusInternalServerError)
-		} else {
-			w.WriteHeader(http.StatusBadRequest)
-		}
-	}))
+	server := httptest.NewServer(
+		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			if calls.Add(1) == 1 {
+				w.WriteHeader(http.StatusInternalServerError)
+			} else {
+				w.WriteHeader(http.StatusBadRequest)
+			}
+		}),
+	)
 	t.Cleanup(server.Close)
-	output := New(WithUrl(server.URL, false), WithRetryConfig(1, time.Millisecond, 10*time.Millisecond))
+	output := New(
+		WithUrl(server.URL, false),
+		WithRetryConfig(1, time.Millisecond, 10*time.Millisecond),
+	)
 	observer := newRecordingDeliveryMetrics()
 	output.SetDeliveryMetrics(observer)
 	require.NoError(t, output.Start())
@@ -205,14 +264,19 @@ func TestPermanentResponseOnLastAttemptIsTerminal(t *testing.T) {
 
 func TestResponseBodyReadErrorDoesNotRetrySuccessfulDelivery(t *testing.T) {
 	var calls atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		calls.Add(1)
-		w.Header().Set("Content-Length", "10")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("short"))
-	}))
+	server := httptest.NewServer(
+		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			calls.Add(1)
+			w.Header().Set("Content-Length", "10")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("short"))
+		}),
+	)
 	t.Cleanup(server.Close)
-	output := New(WithUrl(server.URL, false), WithRetryConfig(2, time.Millisecond, 10*time.Millisecond))
+	output := New(
+		WithUrl(server.URL, false),
+		WithRetryConfig(2, time.Millisecond, 10*time.Millisecond),
+	)
 	observer := newRecordingDeliveryMetrics()
 	output.SetDeliveryMetrics(observer)
 	require.NoError(t, output.Start())

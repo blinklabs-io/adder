@@ -15,7 +15,14 @@ import (
 func TestFilteringIntegration(t *testing.T) {
 	want := []string{"input.transaction", "input.rollback"}
 	f := &fixture{release: make(chan struct{})}
-	p := startAdder(t, f, "--output-log-format", "json", "--filter-type", "input.transaction,input.rollback")
+	p := startAdder(
+		t,
+		f,
+		"--output-log-format",
+		"json",
+		"--filter-type",
+		"input.transaction,input.rollback",
+	)
 	close(f.release)
 	// Rollback is the last fixture event; receiving it proves the
 	// preceding rejected events traversed the filter already.

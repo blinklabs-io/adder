@@ -74,16 +74,22 @@ type mockDetailedHealthChecker struct{ mockHealthChecker }
 type mockInvalidHealthChecker struct{ mockHealthChecker }
 
 func (m *mockInvalidHealthChecker) HealthDetails() plugin.HealthDetails {
-	return plugin.HealthDetails{UptimeSeconds: math.NaN(), Components: []plugin.ComponentHealth{
-		{Role: "url=https://secret.example", Index: 0, State: "running"},
-		{Role: "output", Index: 1, State: "password=secret"},
-	}}
+	return plugin.HealthDetails{
+		UptimeSeconds: math.NaN(),
+		Components: []plugin.ComponentHealth{
+			{Role: "url=https://secret.example", Index: 0, State: "running"},
+			{Role: "output", Index: 1, State: "password=secret"},
+		},
+	}
 }
 
 func (m *mockDetailedHealthChecker) HealthDetails() plugin.HealthDetails {
-	return plugin.HealthDetails{UptimeSeconds: 12.5, Components: []plugin.ComponentHealth{
-		{Role: "output", Index: 0, State: "running"},
-	}}
+	return plugin.HealthDetails{
+		UptimeSeconds: 12.5,
+		Components: []plugin.ComponentHealth{
+			{Role: "output", Index: 0, State: "running"},
+		},
+	}
 }
 
 func (m *mockHealthChecker) IsRunning() bool {
@@ -104,7 +110,12 @@ func TestHealthcheckWithUnhealthyPipeline(t *testing.T) {
 	rr := httptest.NewRecorder()
 	apiInstance.Engine().ServeHTTP(rr, req)
 
-	assert.Equal(t, http.StatusServiceUnavailable, rr.Code, "Expected status Service Unavailable")
+	assert.Equal(
+		t,
+		http.StatusServiceUnavailable,
+		rr.Code,
+		"Expected status Service Unavailable",
+	)
 
 	var response map[string]any
 	err = json.Unmarshal(rr.Body.Bytes(), &response)
@@ -116,15 +127,27 @@ func TestHealthcheckWithUnhealthyPipeline(t *testing.T) {
 
 	reason, exists := response["reason"]
 	assert.True(t, exists, "Response should contain 'reason' field")
-	assert.Equal(t, "pipeline is not running", reason, "Expected reason to explain why unhealthy")
+	assert.Equal(
+		t,
+		"pipeline is not running",
+		reason,
+		"Expected reason to explain why unhealthy",
+	)
 }
 
-func TestHealthcheckIncludesSanitizedDetailsWithoutChangingProbeStatus(t *testing.T) {
+func TestHealthcheckIncludesSanitizedDetailsWithoutChangingProbeStatus(
+	t *testing.T,
+) {
 	ResetHealthCheckers()
 	t.Cleanup(ResetHealthCheckers)
-	RegisterHealthChecker(&mockDetailedHealthChecker{mockHealthChecker{running: true}})
+	RegisterHealthChecker(
+		&mockDetailedHealthChecker{mockHealthChecker{running: true}},
+	)
 	recorder := httptest.NewRecorder()
-	handleHealthcheck(recorder, httptest.NewRequest(http.MethodGet, "/healthcheck", nil))
+	handleHealthcheck(
+		recorder,
+		httptest.NewRequest(http.MethodGet, "/healthcheck", nil),
+	)
 	require.Equal(t, http.StatusOK, recorder.Code)
 	var response struct {
 		Failed bool `json:"failed"`
@@ -147,9 +170,14 @@ func TestHealthcheckIncludesSanitizedDetailsWithoutChangingProbeStatus(t *testin
 func TestHealthcheckRejectsUnapprovedDiagnosticValues(t *testing.T) {
 	ResetHealthCheckers()
 	t.Cleanup(ResetHealthCheckers)
-	RegisterHealthChecker(&mockInvalidHealthChecker{mockHealthChecker{running: true}})
+	RegisterHealthChecker(
+		&mockInvalidHealthChecker{mockHealthChecker{running: true}},
+	)
 	recorder := httptest.NewRecorder()
-	handleHealthcheck(recorder, httptest.NewRequest(http.MethodGet, "/healthcheck", nil))
+	handleHealthcheck(
+		recorder,
+		httptest.NewRequest(http.MethodGet, "/healthcheck", nil),
+	)
 	require.Equal(t, http.StatusOK, recorder.Code)
 	require.NotContains(t, recorder.Body.String(), "secret")
 	require.NotContains(t, recorder.Body.String(), "uptimeSeconds")
@@ -311,7 +339,11 @@ func TestResponseRecorder_HijackerOnly(t *testing.T) {
 
 func TestAddRoute_UnsupportedMethod(t *testing.T) {
 	a := New(true)
-	a.AddRoute("INVALID", "/unsupported", func(w http.ResponseWriter, r *http.Request) {})
+	a.AddRoute(
+		"INVALID",
+		"/unsupported",
+		func(w http.ResponseWriter, r *http.Request) {},
+	)
 
 	req, err := http.NewRequest(http.MethodGet, "/unsupported", nil)
 	require.NoError(t, err)

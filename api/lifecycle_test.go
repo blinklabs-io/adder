@@ -124,10 +124,12 @@ func TestAPIShutdownClosesListenerAfterContextCancellation(t *testing.T) {
 	served, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	entered, release := make(chan struct{}), make(chan struct{})
-	server := &http.Server{Handler: http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
-		close(entered)
-		<-release
-	})}
+	server := &http.Server{
+		Handler: http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+			close(entered)
+			<-release
+		}),
+	}
 	go func() { _ = server.Serve(served) }()
 	requestDone := make(chan struct{})
 	go func() {
@@ -151,7 +153,11 @@ func TestAPIShutdownClosesListenerAfterContextCancellation(t *testing.T) {
 
 	require.ErrorIs(t, api.Shutdown(ctx), context.Canceled)
 	require.Same(t, server, api.server, "failed shutdown must remain retryable")
-	conn, err := net.DialTimeout("tcp", fallback.Addr().String(), 100*time.Millisecond)
+	conn, err := net.DialTimeout(
+		"tcp",
+		fallback.Addr().String(),
+		100*time.Millisecond,
+	)
 	if err == nil {
 		conn.Close()
 		t.Fatal("listener remained open after canceled shutdown")
@@ -162,7 +168,10 @@ func TestAPIShutdownClosesListenerAfterContextCancellation(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("request did not finish")
 	}
-	retryCtx, retryCancel := context.WithTimeout(context.Background(), time.Second)
+	retryCtx, retryCancel := context.WithTimeout(
+		context.Background(),
+		time.Second,
+	)
 	defer retryCancel()
 	require.NoError(t, api.Shutdown(retryCtx))
 	require.Nil(t, api.server)

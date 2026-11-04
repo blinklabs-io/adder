@@ -89,7 +89,10 @@ func NewMempoolTransactionContext(
 
 // NewTransactionEventFromTx builds a TransactionEvent from a transaction only (no block).
 // Used for mempool transactions; BlockHash is left empty.
-func NewTransactionEventFromTx(tx ledger.Transaction, includeCbor bool) TransactionEvent {
+func NewTransactionEventFromTx(
+	tx ledger.Transaction,
+	includeCbor bool,
+) TransactionEvent {
 	evt := TransactionEvent{
 		Transaction: tx,
 		Inputs:      tx.Inputs(),

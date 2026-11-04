@@ -34,7 +34,9 @@ func TestSimulateStartAction(t *testing.T) {
 		t.Skip("skipping simulation in short mode")
 	}
 	if os.Getenv("ADDER_TRAY_INTEGRATION") != "1" {
-		t.Skip("skipping integration simulation; set ADDER_TRAY_INTEGRATION=1 to run")
+		t.Skip(
+			"skipping integration simulation; set ADDER_TRAY_INTEGRATION=1 to run",
+		)
 	}
 
 	tmpDir := t.TempDir()
@@ -48,7 +50,10 @@ func TestSimulateStartAction(t *testing.T) {
 	if status == setup.ServiceNotRegistered {
 		bin, err := finder.Find()
 		if err != nil {
-			t.Skipf("skipping simulation: service not registered and binary not found: %v", err)
+			t.Skipf(
+				"skipping simulation: service not registered and binary not found: %v",
+				err,
+			)
 		}
 		// Register temporary service for test
 		err = setup.RegisterService(setup.ServiceConfig{

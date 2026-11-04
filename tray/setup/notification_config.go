@@ -116,7 +116,10 @@ func DefaultNotificationConfig() NotificationConfig {
 func ReadNotificationConfig(path string) (NotificationConfig, error) {
 	f, err := os.Open(path)
 	if err != nil {
-		return NotificationConfig{}, fmt.Errorf("reading notification config: %w", err)
+		return NotificationConfig{}, fmt.Errorf(
+			"reading notification config: %w",
+			err,
+		)
 	}
 	defer f.Close()
 	return DecodeNotificationConfig(f)
@@ -145,10 +148,18 @@ func DecodeNotificationConfig(r io.Reader) (NotificationConfig, error) {
 func normalizeNotificationConfig(c *NotificationConfig) {
 	c.Network.Name = strings.TrimSpace(c.Network.Name)
 	c.Network.CustomAddress = strings.TrimSpace(c.Network.CustomAddress)
-	c.Monitor.DRepMatch = AdvancedMatchMode(strings.TrimSpace(string(c.Monitor.DRepMatch)))
-	c.Monitor.PoolMatch = AdvancedMatchMode(strings.TrimSpace(string(c.Monitor.PoolMatch)))
-	c.Monitor.AssetMatch = AdvancedMatchMode(strings.TrimSpace(string(c.Monitor.AssetMatch)))
-	c.Monitor.PolicyMatch = AdvancedMatchMode(strings.TrimSpace(string(c.Monitor.PolicyMatch)))
+	c.Monitor.DRepMatch = AdvancedMatchMode(
+		strings.TrimSpace(string(c.Monitor.DRepMatch)),
+	)
+	c.Monitor.PoolMatch = AdvancedMatchMode(
+		strings.TrimSpace(string(c.Monitor.PoolMatch)),
+	)
+	c.Monitor.AssetMatch = AdvancedMatchMode(
+		strings.TrimSpace(string(c.Monitor.AssetMatch)),
+	)
+	c.Monitor.PolicyMatch = AdvancedMatchMode(
+		strings.TrimSpace(string(c.Monitor.PolicyMatch)),
+	)
 	trimAll := func(values []string) {
 		for i := range values {
 			values[i] = strings.TrimSpace(values[i])
@@ -180,19 +191,26 @@ func (c NotificationConfig) ValidationIssues() []ValidationIssue {
 	}
 
 	if c.SchemaVersion != NotificationConfigSchemaVersion {
-		add("schemaVersion", fmt.Sprintf("must be %d", NotificationConfigSchemaVersion))
+		add(
+			"schemaVersion",
+			fmt.Sprintf("must be %d", NotificationConfigSchemaVersion),
+		)
 	}
 	switch c.Network.Name {
 	case "mainnet", "preprod", "preview", "dijkstra":
 	default:
 		add("network.name", "must be mainnet, preprod, preview, or dijkstra")
 	}
-	if strings.TrimSpace(c.Network.CustomAddress) == "" && c.Network.CustomPort != 0 {
+	if strings.TrimSpace(c.Network.CustomAddress) == "" &&
+		c.Network.CustomPort != 0 {
 		add("network.customAddress", "must be set when customPort is set")
 	}
 	if strings.TrimSpace(c.Network.CustomAddress) != "" &&
 		(c.Network.CustomPort == 0 || c.Network.CustomPort > 65535) {
-		add("network.customPort", "must be between 1 and 65535 when using a custom node")
+		add(
+			"network.customPort",
+			"must be between 1 and 65535 when using a custom node",
+		)
 	}
 
 	validateTargets := func(field string, values []string, validate func(string) error) {
@@ -217,7 +235,9 @@ func (c NotificationConfig) ValidationIssues() []ValidationIssue {
 	validateTargets("policies", c.Monitor.Policies, ValidatePolicyID)
 
 	if !c.Monitor.Everything && len(c.Monitor.Wallets)+len(c.Monitor.DReps)+
-		len(c.Monitor.Pools)+len(c.Monitor.Assets)+len(c.Monitor.Policies) == 0 {
+		len(
+			c.Monitor.Pools,
+		)+len(c.Monitor.Assets)+len(c.Monitor.Policies) == 0 {
 		add("monitor", "configure at least one target or enable everything")
 	}
 	validateMatch := func(field string, mode AdvancedMatchMode) {
@@ -294,8 +314,10 @@ func (c NotificationConfig) SetupPlan() SetupPlan {
 		},
 		Notify: prefs,
 		App: AppConfig{
-			NotifyRateLimit:  c.RateLimit.Max,
-			NotifyRateWindow: time.Duration(c.RateLimit.WindowSeconds) * time.Second,
+			NotifyRateLimit: c.RateLimit.Max,
+			NotifyRateWindow: time.Duration(
+				c.RateLimit.WindowSeconds,
+			) * time.Second,
 		},
 	}
 }

@@ -70,7 +70,11 @@ func TestDispatch_EmptyTitleFallsBackToAdder(t *testing.T) {
 	reqs <- Request{Body: "body"}
 	close(reqs)
 	Dispatch(reqs, n, nil, nil)
-	require.Equal(t, &recordedNotification{Title: "Adder", Content: "body"}, n.lastSent())
+	require.Equal(
+		t,
+		&recordedNotification{Title: "Adder", Content: "body"},
+		n.lastSent(),
+	)
 }
 
 func TestDispatch_StopsWhenChannelClosed(t *testing.T) {

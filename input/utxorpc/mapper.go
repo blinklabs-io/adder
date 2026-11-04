@@ -34,7 +34,11 @@ import (
 // mapFollowTipResponse maps a single FollowTipResponse into zero or more adder
 // events, fanning out Apply actions into block + per-transaction events and
 // emitting rollback events for Undo/Reset.
-func mapFollowTipResponse(resp *syncpb.FollowTipResponse, includeCbor bool, networkMagic uint32) ([]event.Event, error) {
+func mapFollowTipResponse(
+	resp *syncpb.FollowTipResponse,
+	includeCbor bool,
+	networkMagic uint32,
+) ([]event.Event, error) {
 	if resp == nil {
 		return nil, errors.New("response is nil")
 	}
@@ -48,7 +52,9 @@ func mapFollowTipResponse(resp *syncpb.FollowTipResponse, includeCbor bool, netw
 		if cb := apply.GetCardano(); cb != nil {
 			return followTipApplyProtobuf(cb, networkMagic)
 		}
-		return nil, errors.New("utxorpc Apply: neither NativeBytes nor Cardano block present")
+		return nil, errors.New(
+			"utxorpc Apply: neither NativeBytes nor Cardano block present",
+		)
 	}
 
 	if undo := resp.GetUndo(); undo != nil {
@@ -59,14 +65,18 @@ func mapFollowTipResponse(resp *syncpb.FollowTipResponse, includeCbor bool, netw
 			}
 		}
 		if header == nil {
-			return nil, errors.New("utxorpc Undo: neither NativeBytes nor Cardano block header present")
+			return nil, errors.New(
+				"utxorpc Undo: neither NativeBytes nor Cardano block header present",
+			)
 		}
 		return []event.Event{
 			event.New(
 				event.TypeRollback,
 				time.Now(),
 				nil,
-				event.NewRollbackEvent(common.NewPoint(header.GetSlot(), header.GetHash())),
+				event.NewRollbackEvent(
+					common.NewPoint(header.GetSlot(), header.GetHash()),
+				),
 			),
 		}, nil
 	}
@@ -77,7 +87,9 @@ func mapFollowTipResponse(resp *syncpb.FollowTipResponse, includeCbor bool, netw
 				event.TypeRollback,
 				time.Now(),
 				nil,
-				event.NewRollbackEvent(common.NewPoint(reset.GetSlot(), reset.GetHash())),
+				event.NewRollbackEvent(
+					common.NewPoint(reset.GetSlot(), reset.GetHash()),
+				),
 			),
 		}, nil
 	}
@@ -87,7 +99,11 @@ func mapFollowTipResponse(resp *syncpb.FollowTipResponse, includeCbor bool, netw
 
 // followTipApplyCBOR decodes a block from NativeBytes (NtC wrapped CBOR) and
 // fans out into block + per-transaction + governance + DRep events.
-func followTipApplyCBOR(nativeBytes []byte, includeCbor bool, networkMagic uint32) ([]event.Event, error) {
+func followTipApplyCBOR(
+	nativeBytes []byte,
+	includeCbor bool,
+	networkMagic uint32,
+) ([]event.Event, error) {
 	var wb blockfetch.WrappedBlock
 	if _, err := cbor.Decode(nativeBytes, &wb); err != nil {
 		return nil, fmt.Errorf("decode wrapped block: %w", err)
@@ -121,12 +137,24 @@ func followTipApplyCBOR(nativeBytes []byte, includeCbor bool, networkMagic uint3
 			out = append(out, event.New(
 				event.TypeGovernance,
 				time.Now(),
-				event.NewGovernanceContext(block, transaction, idx, networkMagic),
+				event.NewGovernanceContext(
+					block,
+					transaction,
+					idx,
+					networkMagic,
+				),
 				event.NewGovernanceEvent(block, transaction, includeCbor),
 			))
 		}
-		if drepCerts := event.ExtractDRepCertificates(transaction); len(drepCerts) > 0 {
-			drepCtx := event.NewGovernanceContext(block, transaction, idx, networkMagic)
+		if drepCerts := event.ExtractDRepCertificates(transaction); len(
+			drepCerts,
+		) > 0 {
+			drepCtx := event.NewGovernanceContext(
+				block,
+				transaction,
+				idx,
+				networkMagic,
+			)
 			for _, cert := range drepCerts {
 				if evtType, ok := event.DRepEventType(cert.CertificateType); ok {
 					out = append(out, event.New(evtType, time.Now(), drepCtx,
@@ -140,7 +168,10 @@ func followTipApplyCBOR(nativeBytes []byte, includeCbor bool, networkMagic uint3
 
 // followTipApplyProtobuf constructs events from a parsed cardano.Block when
 // NativeBytes is not available.
-func followTipApplyProtobuf(cb *cardanopb.Block, networkMagic uint32) ([]event.Event, error) {
+func followTipApplyProtobuf(
+	cb *cardanopb.Block,
+	networkMagic uint32,
+) ([]event.Event, error) {
 	header := cb.GetHeader()
 	if header == nil {
 		return nil, errors.New("utxorpc Apply protobuf: block header is nil")
@@ -210,7 +241,10 @@ func followTipApplyProtobuf(cb *cardanopb.Block, networkMagic uint32) ([]event.E
 // events. Apply events use the transaction from GetCardano() directly and
 // extract block context from the accompanying block data. Undo emits a
 // rollback event. Idle is handled at the call site.
-func mapWatchTxResponse(resp *watchpb.WatchTxResponse, networkMagic uint32) ([]event.Event, error) {
+func mapWatchTxResponse(
+	resp *watchpb.WatchTxResponse,
+	networkMagic uint32,
+) ([]event.Event, error) {
 	if resp == nil {
 		return nil, nil
 	}
@@ -218,7 +252,9 @@ func mapWatchTxResponse(resp *watchpb.WatchTxResponse, networkMagic uint32) ([]e
 	if apply := resp.GetApply(); apply != nil {
 		cardanoTx := apply.GetCardano()
 		if cardanoTx == nil || cardanoTx.GetHash() == nil {
-			return nil, errors.New("utxorpc WatchTx Apply: cardano tx or hash is nil")
+			return nil, errors.New(
+				"utxorpc WatchTx Apply: cardano tx or hash is nil",
+			)
 		}
 
 		header := watchTxBlockHeader(apply.GetBlock())
@@ -228,7 +264,9 @@ func mapWatchTxResponse(resp *watchpb.WatchTxResponse, networkMagic uint32) ([]e
 	if undo := resp.GetUndo(); undo != nil {
 		header := watchTxBlockHeader(undo.GetBlock())
 		if header == nil {
-			return nil, errors.New("utxorpc WatchTx Undo: neither NativeBytes nor Cardano block header present")
+			return nil, errors.New(
+				"utxorpc WatchTx Undo: neither NativeBytes nor Cardano block header present",
+			)
 		}
 		return []event.Event{
 			event.New(

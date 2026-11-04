@@ -38,17 +38,31 @@ func TestConfigurationIntegration(t *testing.T) {
 			p := launchAdder(t, f, tc.config, tc.flags...)
 			p.healthy(t)
 			close(f.release)
-			want := []string{"input.block", "input.transaction", "input.governance", "input.rollback"}
+			want := []string{
+				"input.block",
+				"input.transaction",
+				"input.governance",
+				"input.rollback",
+			}
 			require.Equal(t, want, p.events(t, len(want)))
 			p.waitOutput(t, tc.path, len(want))
 			p.stop(t, syscall.SIGTERM)
 			checkJSON(t, p.read(t, tc.path), want)
 			require.Empty(t, p.read(t, "stdout.log"))
-			require.Contains(t, p.read(t, "stderr.log"), "started utxorpc input")
+			require.Contains(
+				t,
+				p.read(t, "stderr.log"),
+				"started utxorpc input",
+			)
 			for _, other := range []string{"yaml.jsonl", "env.jsonl", "cli.jsonl"} {
 				if other != tc.path {
 					_, err := os.Stat(filepath.Join(p.dir, other))
-					require.True(t, os.IsNotExist(err), "unexpected output file %s", other)
+					require.True(
+						t,
+						os.IsNotExist(err),
+						"unexpected output file %s",
+						other,
+					)
 				}
 			}
 		})

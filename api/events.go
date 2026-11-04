@@ -58,7 +58,9 @@ func NewEventHub(ringSize uint) *EventHub {
 	if ringSize == 0 {
 		ringSize = defaultRingSize
 	}
-	size := int(ringSize) //nolint:gosec // size bounds are a caller precondition
+	size := int(
+		ringSize,
+	) //nolint:gosec // size bounds are a caller precondition
 	return &EventHub{
 		clients:  make(map[*eventClient]struct{}),
 		ring:     make([]event.Event, size),

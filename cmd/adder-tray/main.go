@@ -71,7 +71,8 @@ func main() {
 	}
 	logging.ConfigureWithWriter(logOut, level)
 	if err != nil {
-		logging.GetLogger().Warn("failed to resolve output log level; using info", "error", err)
+		logging.GetLogger().
+			Warn("failed to resolve output log level; using info", "error", err)
 	}
 	slog.SetDefault(logging.GetLogger())
 	// Route the standard library logger to the same sink so Fyne/GLFW

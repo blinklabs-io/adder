@@ -131,7 +131,12 @@ func TestApplyDoesNotTouchHostServicesWithFakeManager(t *testing.T) {
 	svc := &mockService{}
 	conn := &mockConnector{}
 	finder := &mockFinder{path: "/tmp/adder"}
-	runner := &SetupRunner{Store: store, Service: svc, Conn: conn, Finder: finder}
+	runner := &SetupRunner{
+		Store:   store,
+		Service: svc,
+		Conn:    conn,
+		Finder:  finder,
+	}
 
 	plan := SetupPlan{
 		Network: NetworkConfig{Name: "mainnet"},
@@ -230,7 +235,12 @@ func TestApplySurfacesRegisterErrorAndSkipsRestart(t *testing.T) {
 	assert.True(t, store.saved)
 	require.Error(t, result.ServiceRestartErr)
 	assert.ErrorIs(t, result.ServiceRestartErr, svc.ensureRegisteredErr)
-	assert.Equal(t, 0, svc.restarts, "restart must be skipped when register fails")
+	assert.Equal(
+		t,
+		0,
+		svc.restarts,
+		"restart must be skipped when register fails",
+	)
 }
 
 func TestApplyReturnsStoreErrorsBeforeServiceWork(t *testing.T) {
@@ -263,7 +273,11 @@ func TestApplyReturnsStoreErrorsBeforeServiceWork(t *testing.T) {
 			assert.ErrorIs(t, err, wantErr)
 			assert.False(t, svc.running)
 			if tc.name == "load tray" {
-				assert.False(t, tc.store.saved, "engine config must not be saved if loading tray config fails")
+				assert.False(
+					t,
+					tc.store.saved,
+					"engine config must not be saved if loading tray config fails",
+				)
 			}
 		})
 	}
