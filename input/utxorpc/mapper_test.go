@@ -23,10 +23,28 @@ func TestProtobufGovernanceCertificateDepositsPreserveUint64(t *testing.T) {
 		BigUInt: []byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff},
 	}}
 	certs := []*cardanopb.Certificate{
-		{Certificate: &cardanopb.Certificate_RegDrepCert{RegDrepCert: &cardanopb.RegDRepCert{Coin: coin}}},
-		{Certificate: &cardanopb.Certificate_UnregDrepCert{UnregDrepCert: &cardanopb.UnRegDRepCert{Coin: coin}}},
-		{Certificate: &cardanopb.Certificate_VoteRegDelegCert{VoteRegDelegCert: &cardanopb.VoteRegDelegCert{Coin: coin}}},
-		{Certificate: &cardanopb.Certificate_StakeVoteRegDelegCert{StakeVoteRegDelegCert: &cardanopb.StakeVoteRegDelegCert{Coin: coin}}},
+		{
+			Certificate: &cardanopb.Certificate_RegDrepCert{
+				RegDrepCert: &cardanopb.RegDRepCert{Coin: coin},
+			},
+		},
+		{
+			Certificate: &cardanopb.Certificate_UnregDrepCert{
+				UnregDrepCert: &cardanopb.UnRegDRepCert{Coin: coin},
+			},
+		},
+		{
+			Certificate: &cardanopb.Certificate_VoteRegDelegCert{
+				VoteRegDelegCert: &cardanopb.VoteRegDelegCert{Coin: coin},
+			},
+		},
+		{
+			Certificate: &cardanopb.Certificate_StakeVoteRegDelegCert{
+				StakeVoteRegDelegCert: &cardanopb.StakeVoteRegDelegCert{
+					Coin: coin,
+				},
+			},
+		},
 	}
 
 	drep, voteDel, _ := pbGovernanceCertificates(certs)
@@ -84,7 +102,12 @@ func TestFollowTipApplyCBORRealProviderBlock(t *testing.T) {
 
 	evts, err := mapFollowTipResponse(resp, false, 764824073)
 	require.NoError(t, err)
-	require.Greater(t, len(evts), 1, "should produce at least block + transaction events")
+	require.Greater(
+		t,
+		len(evts),
+		1,
+		"should produce at least block + transaction events",
+	)
 
 	assert.Equal(t, event.TypeBlock, evts[0].Type)
 
@@ -97,8 +120,15 @@ func TestFollowTipApplyCBORRealProviderBlock(t *testing.T) {
 	assert.Equal(t, uint64(25), blockEvt.TransactionCount)
 
 	for _, e := range evts[1:] {
-		assert.Contains(t,
-			[]string{event.TypeTransaction, event.TypeGovernance, event.TypeDRepRegistration, event.TypeDRepUpdate, event.TypeDRepRetirement},
+		assert.Contains(
+			t,
+			[]string{
+				event.TypeTransaction,
+				event.TypeGovernance,
+				event.TypeDRepRegistration,
+				event.TypeDRepUpdate,
+				event.TypeDRepRetirement,
+			},
 			e.Type,
 		)
 	}
@@ -117,11 +147,23 @@ func TestFollowTipApplyCBORFansOut(t *testing.T) {
 
 	evts, err := mapFollowTipResponse(resp, false, 764824073)
 	require.NoError(t, err)
-	require.Greater(t, len(evts), 1, "should produce at least block + transaction events")
+	require.Greater(
+		t,
+		len(evts),
+		1,
+		"should produce at least block + transaction events",
+	)
 	assert.Equal(t, event.TypeBlock, evts[0].Type)
 	for _, e := range evts[1:] {
-		assert.Contains(t,
-			[]string{event.TypeTransaction, event.TypeGovernance, event.TypeDRepRegistration, event.TypeDRepUpdate, event.TypeDRepRetirement},
+		assert.Contains(
+			t,
+			[]string{
+				event.TypeTransaction,
+				event.TypeGovernance,
+				event.TypeDRepRegistration,
+				event.TypeDRepUpdate,
+				event.TypeDRepRetirement,
+			},
 			e.Type,
 		)
 	}
@@ -143,20 +185,66 @@ func TestFollowTipApplyProtobufPopulatesFilterFields(t *testing.T) {
 			Apply: &syncpb.AnyChainBlock{
 				Chain: &syncpb.AnyChainBlock_Cardano{
 					Cardano: &cardanopb.Block{
-						Header: &cardanopb.BlockHeader{Slot: 1, Hash: []byte{0x01}, Height: 1},
+						Header: &cardanopb.BlockHeader{
+							Slot:   1,
+							Hash:   []byte{0x01},
+							Height: 1,
+						},
 						Body: &cardanopb.BlockBody{
 							Tx: []*cardanopb.Tx{
 								{
 									Hash: []byte{0xff},
-									Fee:  &cardanopb.BigInt{BigInt: &cardanopb.BigInt_Int{Int: 170000}},
+									Fee: &cardanopb.BigInt{
+										BigInt: &cardanopb.BigInt_Int{
+											Int: 170000,
+										},
+									},
 									Outputs: []*cardanopb.TxOutput{{
-										Address: []byte{0x61, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
-										Coin:    &cardanopb.BigInt{BigInt: &cardanopb.BigInt_Int{Int: 2000000}},
+										Address: []byte{
+											0x61,
+											0x00,
+											0x00,
+											0x00,
+											0x00,
+											0x00,
+											0x00,
+											0x00,
+											0x00,
+											0x00,
+											0x00,
+											0x00,
+											0x00,
+											0x00,
+											0x00,
+											0x00,
+											0x00,
+											0x00,
+											0x00,
+											0x00,
+											0x00,
+											0x00,
+											0x00,
+											0x00,
+											0x00,
+											0x00,
+											0x00,
+											0x00,
+											0x00,
+										},
+										Coin: &cardanopb.BigInt{
+											BigInt: &cardanopb.BigInt_Int{
+												Int: 2000000,
+											},
+										},
 										Assets: []*cardanopb.Multiasset{{
 											PolicyId: policyId,
 											Assets: []*cardanopb.Asset{{
-												Name:     []byte("tokenA"),
-												Quantity: &cardanopb.BigInt{BigInt: &cardanopb.BigInt_Int{Int: 10}},
+												Name: []byte("tokenA"),
+												Quantity: &cardanopb.BigInt{
+													BigInt: &cardanopb.BigInt_Int{
+														Int: 10,
+													},
+												},
 											}},
 										}},
 									}},
@@ -190,7 +278,11 @@ func TestFollowTipApplyProtobufPopulatesFilterFields(t *testing.T) {
 
 	// output.Assets() must return non-nil for matchPolicyFilter/matchAssetFilter.
 	require.Len(t, txEvt.Outputs, 1)
-	assert.NotNil(t, txEvt.Outputs[0].Assets(), "output.Assets() must be non-nil")
+	assert.NotNil(
+		t,
+		txEvt.Outputs[0].Assets(),
+		"output.Assets() must be non-nil",
+	)
 }
 
 func TestFollowTipApplyProtobufFansOut(t *testing.T) {
@@ -208,12 +300,52 @@ func TestFollowTipApplyProtobufFansOut(t *testing.T) {
 						Body: &cardanopb.BlockBody{
 							Tx: []*cardanopb.Tx{
 								{
-									Hash:   txHash,
-									Fee:    &cardanopb.BigInt{BigInt: &cardanopb.BigInt_Int{Int: 200000}},
-									Inputs: []*cardanopb.TxInput{{TxHash: []byte{0xaa}, OutputIndex: 0}},
+									Hash: txHash,
+									Fee: &cardanopb.BigInt{
+										BigInt: &cardanopb.BigInt_Int{
+											Int: 200000,
+										},
+									},
+									Inputs: []*cardanopb.TxInput{
+										{TxHash: []byte{0xaa}, OutputIndex: 0},
+									},
 									Outputs: []*cardanopb.TxOutput{{
-										Address: []byte{0x61, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
-										Coin:    &cardanopb.BigInt{BigInt: &cardanopb.BigInt_Int{Int: 5000000}},
+										Address: []byte{
+											0x61,
+											0x00,
+											0x00,
+											0x00,
+											0x00,
+											0x00,
+											0x00,
+											0x00,
+											0x00,
+											0x00,
+											0x00,
+											0x00,
+											0x00,
+											0x00,
+											0x00,
+											0x00,
+											0x00,
+											0x00,
+											0x00,
+											0x00,
+											0x00,
+											0x00,
+											0x00,
+											0x00,
+											0x00,
+											0x00,
+											0x00,
+											0x00,
+											0x00,
+										},
+										Coin: &cardanopb.BigInt{
+											BigInt: &cardanopb.BigInt_Int{
+												Int: 5000000,
+											},
+										},
 									}},
 								},
 							},
@@ -249,23 +381,63 @@ func TestFollowTipApplyProtobufFansOut(t *testing.T) {
 }
 
 func TestFollowTipApplyProtobufGovernance(t *testing.T) {
-	rewardAcct := []byte{0x61, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}
+	rewardAcct := []byte{
+		0x61,
+		0x00,
+		0x00,
+		0x00,
+		0x00,
+		0x00,
+		0x00,
+		0x00,
+		0x00,
+		0x00,
+		0x00,
+		0x00,
+		0x00,
+		0x00,
+		0x00,
+		0x00,
+		0x00,
+		0x00,
+		0x00,
+		0x00,
+		0x00,
+		0x00,
+		0x00,
+		0x00,
+		0x00,
+		0x00,
+		0x00,
+		0x00,
+		0x00,
+	}
 	resp := &syncpb.FollowTipResponse{
 		Action: &syncpb.FollowTipResponse_Apply{
 			Apply: &syncpb.AnyChainBlock{
 				Chain: &syncpb.AnyChainBlock_Cardano{
 					Cardano: &cardanopb.Block{
-						Header: &cardanopb.BlockHeader{Slot: 10, Hash: []byte{0x01}, Height: 5},
+						Header: &cardanopb.BlockHeader{
+							Slot:   10,
+							Hash:   []byte{0x01},
+							Height: 5,
+						},
 						Body: &cardanopb.BlockBody{
 							Tx: []*cardanopb.Tx{
 								{
 									Hash: []byte{0xcc},
 									Proposals: []*cardanopb.GovernanceActionProposal{
 										{
-											Deposit:       &cardanopb.BigInt{BigInt: &cardanopb.BigInt_Int{Int: 500000000}},
+											Deposit: &cardanopb.BigInt{
+												BigInt: &cardanopb.BigInt_Int{
+													Int: 500000000,
+												},
+											},
 											RewardAccount: rewardAcct,
 											GovAction: &cardanopb.GovernanceAction{
-												GovernanceAction: &cardanopb.GovernanceAction_InfoAction{InfoAction: &cardanopb.InfoAction{}},
+												GovernanceAction: &cardanopb.GovernanceAction_InfoAction{
+													InfoAction: &cardanopb.InfoAction{},
+												},
 											},
 											Anchor: &cardanopb.Anchor{
 												Url:         "https://example.com/proposal.json",
@@ -321,7 +493,11 @@ func TestFollowTipUndoNeitherPathErrors(t *testing.T) {
 	}
 	_, err := mapFollowTipResponse(resp, false, 0)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "neither NativeBytes nor Cardano block header")
+	assert.Contains(
+		t,
+		err.Error(),
+		"neither NativeBytes nor Cardano block header",
+	)
 }
 
 func TestFollowTipUndoProducesRollback(t *testing.T) {
@@ -331,7 +507,11 @@ func TestFollowTipUndoProducesRollback(t *testing.T) {
 			Undo: &syncpb.AnyChainBlock{
 				Chain: &syncpb.AnyChainBlock_Cardano{
 					Cardano: &cardanopb.Block{
-						Header: &cardanopb.BlockHeader{Slot: 20, Hash: hashBytes, Height: 7},
+						Header: &cardanopb.BlockHeader{
+							Slot:   20,
+							Hash:   hashBytes,
+							Height: 7,
+						},
 					},
 				},
 			},
@@ -386,9 +566,13 @@ func TestWatchTxApplyNativeBytesExtractsHeader(t *testing.T) {
 			Apply: &watchpb.AnyChainTx{
 				Chain: &watchpb.AnyChainTx_Cardano{
 					Cardano: &cardanopb.Tx{
-						Hash:   firstTx.Hash().Bytes(),
-						Fee:    &cardanopb.BigInt{BigInt: &cardanopb.BigInt_Int{Int: 200000}},
-						Inputs: []*cardanopb.TxInput{{TxHash: []byte{0xaa}, OutputIndex: 0}},
+						Hash: firstTx.Hash().Bytes(),
+						Fee: &cardanopb.BigInt{
+							BigInt: &cardanopb.BigInt_Int{Int: 200000},
+						},
+						Inputs: []*cardanopb.TxInput{
+							{TxHash: []byte{0xaa}, OutputIndex: 0},
+						},
 					},
 				},
 				Block: &watchpb.AnyChainBlock{NativeBytes: nativeBytes},
@@ -415,15 +599,23 @@ func TestWatchTxApplyProtobufWithHeader(t *testing.T) {
 			Apply: &watchpb.AnyChainTx{
 				Chain: &watchpb.AnyChainTx_Cardano{
 					Cardano: &cardanopb.Tx{
-						Hash:   txHash,
-						Fee:    &cardanopb.BigInt{BigInt: &cardanopb.BigInt_Int{Int: 300000}},
-						Inputs: []*cardanopb.TxInput{{TxHash: []byte{0x01}, OutputIndex: 1}},
+						Hash: txHash,
+						Fee: &cardanopb.BigInt{
+							BigInt: &cardanopb.BigInt_Int{Int: 300000},
+						},
+						Inputs: []*cardanopb.TxInput{
+							{TxHash: []byte{0x01}, OutputIndex: 1},
+						},
 					},
 				},
 				Block: &watchpb.AnyChainBlock{
 					Chain: &watchpb.AnyChainBlock_Cardano{
 						Cardano: &cardanopb.Block{
-							Header: &cardanopb.BlockHeader{Slot: 200, Hash: []byte{0x02}, Height: 100},
+							Header: &cardanopb.BlockHeader{
+								Slot:   200,
+								Hash:   []byte{0x02},
+								Height: 100,
+							},
 						},
 					},
 				},
@@ -453,7 +645,9 @@ func TestWatchTxApplyProtobufNoBlock(t *testing.T) {
 				Chain: &watchpb.AnyChainTx_Cardano{
 					Cardano: &cardanopb.Tx{
 						Hash: []byte{0xcc},
-						Fee:  &cardanopb.BigInt{BigInt: &cardanopb.BigInt_Int{Int: 180000}},
+						Fee: &cardanopb.BigInt{
+							BigInt: &cardanopb.BigInt_Int{Int: 180000},
+						},
 					},
 				},
 			},
@@ -479,7 +673,9 @@ func TestWatchTxApplyProtobufGovernance(t *testing.T) {
 						Hash: []byte{0xdd},
 						Proposals: []*cardanopb.GovernanceActionProposal{
 							{GovAction: &cardanopb.GovernanceAction{
-								GovernanceAction: &cardanopb.GovernanceAction_InfoAction{InfoAction: &cardanopb.InfoAction{}},
+								GovernanceAction: &cardanopb.GovernanceAction_InfoAction{
+									InfoAction: &cardanopb.InfoAction{},
+								},
 							}},
 						},
 						Certificates: []*cardanopb.Certificate{
@@ -487,7 +683,9 @@ func TestWatchTxApplyProtobufGovernance(t *testing.T) {
 								Certificate: &cardanopb.Certificate_RegDrepCert{
 									RegDrepCert: &cardanopb.RegDRepCert{
 										DrepCredential: &cardanopb.StakeCredential{
-											StakeCredential: &cardanopb.StakeCredential_AddrKeyHash{AddrKeyHash: drepKeyHash},
+											StakeCredential: &cardanopb.StakeCredential_AddrKeyHash{
+												AddrKeyHash: drepKeyHash,
+											},
 										},
 									},
 								},
@@ -496,7 +694,9 @@ func TestWatchTxApplyProtobufGovernance(t *testing.T) {
 								Certificate: &cardanopb.Certificate_UpdateDrepCert{
 									UpdateDrepCert: &cardanopb.UpdateDRepCert{
 										DrepCredential: &cardanopb.StakeCredential{
-											StakeCredential: &cardanopb.StakeCredential_AddrKeyHash{AddrKeyHash: drepKeyHash},
+											StakeCredential: &cardanopb.StakeCredential_AddrKeyHash{
+												AddrKeyHash: drepKeyHash,
+											},
 										},
 									},
 								},
@@ -505,7 +705,9 @@ func TestWatchTxApplyProtobufGovernance(t *testing.T) {
 								Certificate: &cardanopb.Certificate_UnregDrepCert{
 									UnregDrepCert: &cardanopb.UnRegDRepCert{
 										DrepCredential: &cardanopb.StakeCredential{
-											StakeCredential: &cardanopb.StakeCredential_AddrKeyHash{AddrKeyHash: drepKeyHash},
+											StakeCredential: &cardanopb.StakeCredential_AddrKeyHash{
+												AddrKeyHash: drepKeyHash,
+											},
 										},
 									},
 								},
@@ -540,7 +742,10 @@ func TestWatchTxUndoEmitsRollback(t *testing.T) {
 				Block: &watchpb.AnyChainBlock{
 					Chain: &watchpb.AnyChainBlock_Cardano{
 						Cardano: &cardanopb.Block{
-							Header: &cardanopb.BlockHeader{Slot: 42, Hash: hashBytes},
+							Header: &cardanopb.BlockHeader{
+								Slot: 42,
+								Hash: hashBytes,
+							},
 						},
 					},
 				},
@@ -568,7 +773,11 @@ func TestWatchTxUndoNeitherPathErrors(t *testing.T) {
 
 	_, err := mapWatchTxResponse(resp, 0)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "neither NativeBytes nor Cardano block header")
+	assert.Contains(
+		t,
+		err.Error(),
+		"neither NativeBytes nor Cardano block header",
+	)
 }
 
 func TestWatchTxUndoNativeBytesEmitsRollback(t *testing.T) {

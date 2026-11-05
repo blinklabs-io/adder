@@ -15,7 +15,9 @@ func TestFactoryConstructionResult(t *testing.T) {
 		t.Run(token, func(t *testing.T) {
 			cfg, err := plugin.ResolveConfig(
 				map[string]map[string]map[string]any{
-					"output": {"telegram": {"chat-id": "123", "bot-token": token}},
+					"output": {
+						"telegram": {"chat-id": "123", "bot-token": token},
+					},
 				}, nil, func(string) (string, bool) { return "", false },
 			)
 			require.NoError(t, err)
@@ -24,7 +26,11 @@ func TestFactoryConstructionResult(t *testing.T) {
 			p, err := newFromOptions(options)
 			if token == "" {
 				require.ErrorContains(t, err, "telegram bot token is required")
-				require.True(t, p == nil, "failed factory returned a non-nil interface")
+				require.True(
+					t,
+					p == nil,
+					"failed factory returned a non-nil interface",
+				)
 			} else {
 				require.NoError(t, err)
 				require.IsType(t, &TelegramOutput{}, p)

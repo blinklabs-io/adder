@@ -42,7 +42,11 @@ func TestStartupIntegration(t *testing.T) {
 			require.NotContains(t, p.read(t, "stderr.log"), "DATA RACE")
 			require.NotContains(t, p.read(t, "stderr.log"), "panic:")
 			require.Empty(t, p.read(t, "stdout.log"))
-			require.Zero(t, f.attempts.Load(), "invalid startup must not consume input")
+			require.Zero(
+				t,
+				f.attempts.Load(),
+				"invalid startup must not consume input",
+			)
 			if tc.name == "output-file-open-failure" {
 				// The API starts before plugins; a failed output startup must
 				// release its listener as well as terminating the process.

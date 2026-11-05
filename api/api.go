@@ -505,11 +505,17 @@ func handleHealthcheck(w http.ResponseWriter, _ *http.Request) {
 		entry := map[string]any{"running": running}
 		if provider, ok := hc.(interface{ HealthDetails() plugin.HealthDetails }); ok {
 			health := provider.HealthDetails()
-			if !math.IsNaN(health.UptimeSeconds) && !math.IsInf(health.UptimeSeconds, 0) && health.UptimeSeconds >= 0 {
+			if !math.IsNaN(health.UptimeSeconds) &&
+				!math.IsInf(health.UptimeSeconds, 0) &&
+				health.UptimeSeconds >= 0 {
 				entry["uptimeSeconds"] = health.UptimeSeconds
 			}
 			entry["terminalFailure"] = health.TerminalFailure
-			components := make([]map[string]any, 0, min(len(health.Components), 128))
+			components := make(
+				[]map[string]any,
+				0,
+				min(len(health.Components), 128),
+			)
 			for _, component := range health.Components[:min(len(health.Components), 128)] {
 				if component.Index < 0 ||
 					(component.Role != "input" && component.Role != "filter" && component.Role != "output") ||

@@ -38,36 +38,50 @@ func TestExtractGovActionData(t *testing.T) {
 		assert.Nil(t, result.TreasuryWithdrawal)
 	})
 
-	t.Run("extracts NoConfidenceActionData with prev action", func(t *testing.T) {
-		txId := [32]byte{}
-		copy(txId[:], []byte("prevtxhash12345678901234567890"))
-		action := &common.NoConfidenceGovAction{
-			Type: 3,
-			ActionId: &common.GovActionId{
-				TransactionId: txId,
-				GovActionIdx:  5,
-			},
-		}
+	t.Run(
+		"extracts NoConfidenceActionData with prev action",
+		func(t *testing.T) {
+			txId := [32]byte{}
+			copy(txId[:], []byte("prevtxhash12345678901234567890"))
+			action := &common.NoConfidenceGovAction{
+				Type: 3,
+				ActionId: &common.GovActionId{
+					TransactionId: txId,
+					GovActionIdx:  5,
+				},
+			}
 
-		result := extractGovActionData(action)
+			result := extractGovActionData(action)
 
-		assert.NotNil(t, result.NoConfidence)
-		assert.NotNil(t, result.NoConfidence.PrevActionId)
-		assert.Equal(t, hex.EncodeToString(txId[:]), result.NoConfidence.PrevActionId.TransactionId)
-		assert.Equal(t, uint32(5), result.NoConfidence.PrevActionId.GovActionIdx)
-	})
+			assert.NotNil(t, result.NoConfidence)
+			assert.NotNil(t, result.NoConfidence.PrevActionId)
+			assert.Equal(
+				t,
+				hex.EncodeToString(txId[:]),
+				result.NoConfidence.PrevActionId.TransactionId,
+			)
+			assert.Equal(
+				t,
+				uint32(5),
+				result.NoConfidence.PrevActionId.GovActionIdx,
+			)
+		},
+	)
 
-	t.Run("extracts NoConfidenceActionData without prev action", func(t *testing.T) {
-		action := &common.NoConfidenceGovAction{
-			Type:     3,
-			ActionId: nil,
-		}
+	t.Run(
+		"extracts NoConfidenceActionData without prev action",
+		func(t *testing.T) {
+			action := &common.NoConfidenceGovAction{
+				Type:     3,
+				ActionId: nil,
+			}
 
-		result := extractGovActionData(action)
+			result := extractGovActionData(action)
 
-		assert.NotNil(t, result.NoConfidence)
-		assert.Nil(t, result.NoConfidence.PrevActionId)
-	})
+			assert.NotNil(t, result.NoConfidence)
+			assert.Nil(t, result.NoConfidence.PrevActionId)
+		},
+	)
 
 	t.Run("extracts HardForkInitiationActionData", func(t *testing.T) {
 		action := &common.HardForkInitiationGovAction{
@@ -83,8 +97,16 @@ func TestExtractGovActionData(t *testing.T) {
 		result := extractGovActionData(action)
 
 		assert.NotNil(t, result.HardForkInitiation)
-		assert.Equal(t, uint(10), result.HardForkInitiation.ProtocolVersion.Major)
-		assert.Equal(t, uint(0), result.HardForkInitiation.ProtocolVersion.Minor)
+		assert.Equal(
+			t,
+			uint(10),
+			result.HardForkInitiation.ProtocolVersion.Major,
+		)
+		assert.Equal(
+			t,
+			uint(0),
+			result.HardForkInitiation.ProtocolVersion.Minor,
+		)
 	})
 }
 
@@ -111,32 +133,35 @@ func TestExtractGovActionId(t *testing.T) {
 }
 
 func TestExtractTreasuryWithdrawalAction(t *testing.T) {
-	t.Run("extracts withdrawals with multiple destinations", func(t *testing.T) {
-		addr1 := common.Address{}
-		addr2 := common.Address{}
+	t.Run(
+		"extracts withdrawals with multiple destinations",
+		func(t *testing.T) {
+			addr1 := common.Address{}
+			addr2 := common.Address{}
 
-		action := &common.TreasuryWithdrawalGovAction{
-			Type: 2,
-			Withdrawals: map[*common.Address]uint64{
-				&addr1: 1000000,
-				&addr2: 2000000,
-			},
-			PolicyHash: []byte{0xab, 0xcd, 0xef},
-		}
+			action := &common.TreasuryWithdrawalGovAction{
+				Type: 2,
+				Withdrawals: map[*common.Address]uint64{
+					&addr1: 1000000,
+					&addr2: 2000000,
+				},
+				PolicyHash: []byte{0xab, 0xcd, 0xef},
+			}
 
-		result := extractGovActionData(action)
+			result := extractGovActionData(action)
 
-		assert.NotNil(t, result.TreasuryWithdrawal)
-		assert.Len(t, result.TreasuryWithdrawal.Withdrawals, 2)
-		assert.Equal(t, "abcdef", result.TreasuryWithdrawal.PolicyHash)
+			assert.NotNil(t, result.TreasuryWithdrawal)
+			assert.Len(t, result.TreasuryWithdrawal.Withdrawals, 2)
+			assert.Equal(t, "abcdef", result.TreasuryWithdrawal.PolicyHash)
 
-		// Verify total amount matches (order may vary due to map iteration)
-		var total uint64
-		for _, w := range result.TreasuryWithdrawal.Withdrawals {
-			total += w.Amount
-		}
-		assert.Equal(t, uint64(3000000), total)
-	})
+			// Verify total amount matches (order may vary due to map iteration)
+			var total uint64
+			for _, w := range result.TreasuryWithdrawal.Withdrawals {
+				total += w.Amount
+			}
+			assert.Equal(t, uint64(3000000), total)
+		},
+	)
 
 	t.Run("extracts withdrawals without policy hash", func(t *testing.T) {
 		addr := common.Address{}
@@ -215,8 +240,16 @@ func TestExtractUpdateCommitteeAction(t *testing.T) {
 
 		assert.NotNil(t, result.UpdateCommittee)
 		assert.NotNil(t, result.UpdateCommittee.PrevActionId)
-		assert.Equal(t, hex.EncodeToString(txId[:]), result.UpdateCommittee.PrevActionId.TransactionId)
-		assert.Equal(t, uint32(3), result.UpdateCommittee.PrevActionId.GovActionIdx)
+		assert.Equal(
+			t,
+			hex.EncodeToString(txId[:]),
+			result.UpdateCommittee.PrevActionId.TransactionId,
+		)
+		assert.Equal(
+			t,
+			uint32(3),
+			result.UpdateCommittee.PrevActionId.GovActionIdx,
+		)
 	})
 }
 
@@ -242,8 +275,16 @@ func TestExtractNewConstitutionAction(t *testing.T) {
 		result := extractGovActionData(action)
 
 		assert.NotNil(t, result.NewConstitution)
-		assert.Equal(t, "https://example.com/constitution.json", result.NewConstitution.Anchor.Url)
-		assert.Equal(t, hex.EncodeToString(dataHash[:]), result.NewConstitution.Anchor.DataHash)
+		assert.Equal(
+			t,
+			"https://example.com/constitution.json",
+			result.NewConstitution.Anchor.Url,
+		)
+		assert.Equal(
+			t,
+			hex.EncodeToString(dataHash[:]),
+			result.NewConstitution.Anchor.DataHash,
+		)
 		assert.Equal(t, "", result.NewConstitution.ScriptHash)
 	})
 
@@ -299,7 +340,11 @@ func TestExtractNewConstitutionAction(t *testing.T) {
 
 		assert.NotNil(t, result.NewConstitution)
 		assert.NotNil(t, result.NewConstitution.PrevActionId)
-		assert.Equal(t, uint32(7), result.NewConstitution.PrevActionId.GovActionIdx)
+		assert.Equal(
+			t,
+			uint32(7),
+			result.NewConstitution.PrevActionId.GovActionIdx,
+		)
 	})
 }
 
@@ -327,34 +372,53 @@ func TestExtractParameterChangeAction(t *testing.T) {
 		assert.NotNil(t, result.ParameterChange.ParamUpdate.MinFeeA)
 		assert.Equal(t, uint(44), *result.ParameterChange.ParamUpdate.MinFeeA)
 		assert.NotNil(t, result.ParameterChange.ParamUpdate.MinFeeB)
-		assert.Equal(t, uint(155381), *result.ParameterChange.ParamUpdate.MinFeeB)
+		assert.Equal(
+			t,
+			uint(155381),
+			*result.ParameterChange.ParamUpdate.MinFeeB,
+		)
 		assert.NotNil(t, result.ParameterChange.ParamUpdate.MaxTxSize)
-		assert.Equal(t, uint(16384), *result.ParameterChange.ParamUpdate.MaxTxSize)
+		assert.Equal(
+			t,
+			uint(16384),
+			*result.ParameterChange.ParamUpdate.MaxTxSize,
+		)
 	})
 
-	t.Run("extracts parameter change with previous action ID", func(t *testing.T) {
-		txId := [32]byte{}
-		copy(txId[:], []byte("paramchangeactiontxhash12345"))
-		minFeeA := uint(50)
+	t.Run(
+		"extracts parameter change with previous action ID",
+		func(t *testing.T) {
+			txId := [32]byte{}
+			copy(txId[:], []byte("paramchangeactiontxhash12345"))
+			minFeeA := uint(50)
 
-		action := &conway.ConwayParameterChangeGovAction{
-			Type: 0,
-			ActionId: &common.GovActionId{
-				TransactionId: txId,
-				GovActionIdx:  2,
-			},
-			ParamUpdate: conway.ConwayProtocolParameterUpdate{
-				MinFeeA: &minFeeA,
-			},
-		}
+			action := &conway.ConwayParameterChangeGovAction{
+				Type: 0,
+				ActionId: &common.GovActionId{
+					TransactionId: txId,
+					GovActionIdx:  2,
+				},
+				ParamUpdate: conway.ConwayProtocolParameterUpdate{
+					MinFeeA: &minFeeA,
+				},
+			}
 
-		result := extractGovActionData(action)
+			result := extractGovActionData(action)
 
-		assert.NotNil(t, result.ParameterChange)
-		assert.NotNil(t, result.ParameterChange.PrevActionId)
-		assert.Equal(t, hex.EncodeToString(txId[:]), result.ParameterChange.PrevActionId.TransactionId)
-		assert.Equal(t, uint32(2), result.ParameterChange.PrevActionId.GovActionIdx)
-	})
+			assert.NotNil(t, result.ParameterChange)
+			assert.NotNil(t, result.ParameterChange.PrevActionId)
+			assert.Equal(
+				t,
+				hex.EncodeToString(txId[:]),
+				result.ParameterChange.PrevActionId.TransactionId,
+			)
+			assert.Equal(
+				t,
+				uint32(2),
+				result.ParameterChange.PrevActionId.GovActionIdx,
+			)
+		},
+	)
 
 	t.Run("extracts parameter change with execution units", func(t *testing.T) {
 		action := &conway.ConwayParameterChangeGovAction{
@@ -376,11 +440,27 @@ func TestExtractParameterChangeAction(t *testing.T) {
 		assert.NotNil(t, result.ParameterChange)
 		assert.NotNil(t, result.ParameterChange.ParamUpdate)
 		assert.NotNil(t, result.ParameterChange.ParamUpdate.MaxTxExUnits)
-		assert.Equal(t, int64(10000000), result.ParameterChange.ParamUpdate.MaxTxExUnits.Mem)
-		assert.Equal(t, int64(10000000000), result.ParameterChange.ParamUpdate.MaxTxExUnits.Steps)
+		assert.Equal(
+			t,
+			int64(10000000),
+			result.ParameterChange.ParamUpdate.MaxTxExUnits.Mem,
+		)
+		assert.Equal(
+			t,
+			int64(10000000000),
+			result.ParameterChange.ParamUpdate.MaxTxExUnits.Steps,
+		)
 		assert.NotNil(t, result.ParameterChange.ParamUpdate.MaxBlockExUnits)
-		assert.Equal(t, int64(50000000), result.ParameterChange.ParamUpdate.MaxBlockExUnits.Mem)
-		assert.Equal(t, int64(40000000000), result.ParameterChange.ParamUpdate.MaxBlockExUnits.Steps)
+		assert.Equal(
+			t,
+			int64(50000000),
+			result.ParameterChange.ParamUpdate.MaxBlockExUnits.Mem,
+		)
+		assert.Equal(
+			t,
+			int64(40000000000),
+			result.ParameterChange.ParamUpdate.MaxBlockExUnits.Steps,
+		)
 	})
 
 	t.Run("extracts parameter change with rational values", func(t *testing.T) {
@@ -400,40 +480,73 @@ func TestExtractParameterChangeAction(t *testing.T) {
 		assert.NotNil(t, result.ParameterChange.ParamUpdate.A0)
 		assert.InDelta(t, 0.1, *result.ParameterChange.ParamUpdate.A0, 0.0001)
 		assert.NotNil(t, result.ParameterChange.ParamUpdate.Rho)
-		assert.InDelta(t, 0.003, *result.ParameterChange.ParamUpdate.Rho, 0.0001)
+		assert.InDelta(
+			t,
+			0.003,
+			*result.ParameterChange.ParamUpdate.Rho,
+			0.0001,
+		)
 		assert.NotNil(t, result.ParameterChange.ParamUpdate.Tau)
 		assert.InDelta(t, 0.2, *result.ParameterChange.ParamUpdate.Tau, 0.0001)
 	})
 
-	t.Run("extracts parameter change with governance parameters", func(t *testing.T) {
-		minCommitteeSize := uint(5)
-		committeeTermLimit := uint64(146)
-		govActionDeposit := uint64(100000000000)
-		drepDeposit := uint64(500000000)
+	t.Run(
+		"extracts parameter change with governance parameters",
+		func(t *testing.T) {
+			minCommitteeSize := uint(5)
+			committeeTermLimit := uint64(146)
+			govActionDeposit := uint64(100000000000)
+			drepDeposit := uint64(500000000)
 
-		action := &conway.ConwayParameterChangeGovAction{
-			Type: 0,
-			ParamUpdate: conway.ConwayProtocolParameterUpdate{
-				MinCommitteeSize:   &minCommitteeSize,
-				CommitteeTermLimit: &committeeTermLimit,
-				GovActionDeposit:   &govActionDeposit,
-				DRepDeposit:        &drepDeposit,
-			},
-		}
+			action := &conway.ConwayParameterChangeGovAction{
+				Type: 0,
+				ParamUpdate: conway.ConwayProtocolParameterUpdate{
+					MinCommitteeSize:   &minCommitteeSize,
+					CommitteeTermLimit: &committeeTermLimit,
+					GovActionDeposit:   &govActionDeposit,
+					DRepDeposit:        &drepDeposit,
+				},
+			}
 
-		result := extractGovActionData(action)
+			result := extractGovActionData(action)
 
-		assert.NotNil(t, result.ParameterChange)
-		assert.NotNil(t, result.ParameterChange.ParamUpdate)
-		assert.NotNil(t, result.ParameterChange.ParamUpdate.MinCommitteeSize)
-		assert.Equal(t, uint(5), *result.ParameterChange.ParamUpdate.MinCommitteeSize)
-		assert.NotNil(t, result.ParameterChange.ParamUpdate.CommitteeTermLimit)
-		assert.Equal(t, uint64(146), *result.ParameterChange.ParamUpdate.CommitteeTermLimit)
-		assert.NotNil(t, result.ParameterChange.ParamUpdate.GovActionDeposit)
-		assert.Equal(t, uint64(100000000000), *result.ParameterChange.ParamUpdate.GovActionDeposit)
-		assert.NotNil(t, result.ParameterChange.ParamUpdate.DRepDeposit)
-		assert.Equal(t, uint64(500000000), *result.ParameterChange.ParamUpdate.DRepDeposit)
-	})
+			assert.NotNil(t, result.ParameterChange)
+			assert.NotNil(t, result.ParameterChange.ParamUpdate)
+			assert.NotNil(
+				t,
+				result.ParameterChange.ParamUpdate.MinCommitteeSize,
+			)
+			assert.Equal(
+				t,
+				uint(5),
+				*result.ParameterChange.ParamUpdate.MinCommitteeSize,
+			)
+			assert.NotNil(
+				t,
+				result.ParameterChange.ParamUpdate.CommitteeTermLimit,
+			)
+			assert.Equal(
+				t,
+				uint64(146),
+				*result.ParameterChange.ParamUpdate.CommitteeTermLimit,
+			)
+			assert.NotNil(
+				t,
+				result.ParameterChange.ParamUpdate.GovActionDeposit,
+			)
+			assert.Equal(
+				t,
+				uint64(100000000000),
+				*result.ParameterChange.ParamUpdate.GovActionDeposit,
+			)
+			assert.NotNil(t, result.ParameterChange.ParamUpdate.DRepDeposit)
+			assert.Equal(
+				t,
+				uint64(500000000),
+				*result.ParameterChange.ParamUpdate.DRepDeposit,
+			)
+		},
+	)
 }
 
 func TestRationalToFloat(t *testing.T) {

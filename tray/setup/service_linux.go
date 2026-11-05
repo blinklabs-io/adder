@@ -88,11 +88,19 @@ func registerService(cfg ServiceConfig) error {
 	}
 
 	if out, err := exec.Command("systemctl", "--user", "daemon-reload").CombinedOutput(); err != nil {
-		return fmt.Errorf("daemon-reload: %s: %w", strings.TrimSpace(string(out)), err)
+		return fmt.Errorf(
+			"daemon-reload: %s: %w",
+			strings.TrimSpace(string(out)),
+			err,
+		)
 	}
 
 	if out, err := exec.Command("systemctl", "--user", "enable", serviceName).CombinedOutput(); err != nil {
-		return fmt.Errorf("enabling service: %s: %w", strings.TrimSpace(string(out)), err)
+		return fmt.Errorf(
+			"enabling service: %s: %w",
+			strings.TrimSpace(string(out)),
+			err,
+		)
 	}
 
 	return nil
@@ -100,7 +108,11 @@ func registerService(cfg ServiceConfig) error {
 
 func unregisterService() error {
 	if out, err := exec.Command("systemctl", "--user", "disable", serviceName).CombinedOutput(); err != nil {
-		return fmt.Errorf("disabling service: %s: %w", strings.TrimSpace(string(out)), err)
+		return fmt.Errorf(
+			"disabling service: %s: %w",
+			strings.TrimSpace(string(out)),
+			err,
+		)
 	}
 
 	if err := os.Remove(serviceUnitPath()); err != nil && !os.IsNotExist(err) {
@@ -108,7 +120,11 @@ func unregisterService() error {
 	}
 
 	if out, err := exec.Command("systemctl", "--user", "daemon-reload").CombinedOutput(); err != nil {
-		return fmt.Errorf("daemon-reload: %s: %w", strings.TrimSpace(string(out)), err)
+		return fmt.Errorf(
+			"daemon-reload: %s: %w",
+			strings.TrimSpace(string(out)),
+			err,
+		)
 	}
 
 	return nil
@@ -119,7 +135,8 @@ func serviceStatusCheck() (ServiceStatus, error) {
 		return ServiceNotRegistered, nil
 	}
 
-	out, err := exec.Command("systemctl", "--user", "is-active", serviceName).Output()
+	out, err := exec.Command("systemctl", "--user", "is-active", serviceName).
+		Output()
 	if err == nil && strings.TrimSpace(string(out)) == "active" {
 		return ServiceRunning, nil
 	}
@@ -129,14 +146,22 @@ func serviceStatusCheck() (ServiceStatus, error) {
 
 func startService() error {
 	if out, err := exec.Command("systemctl", "--user", "start", serviceName).CombinedOutput(); err != nil {
-		return fmt.Errorf("starting service: %s: %w", strings.TrimSpace(string(out)), err)
+		return fmt.Errorf(
+			"starting service: %s: %w",
+			strings.TrimSpace(string(out)),
+			err,
+		)
 	}
 	return nil
 }
 
 func stopService() error {
 	if out, err := exec.Command("systemctl", "--user", "stop", serviceName).CombinedOutput(); err != nil {
-		return fmt.Errorf("stopping service: %s: %w", strings.TrimSpace(string(out)), err)
+		return fmt.Errorf(
+			"stopping service: %s: %w",
+			strings.TrimSpace(string(out)),
+			err,
+		)
 	}
 	return nil
 }

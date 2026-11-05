@@ -161,7 +161,12 @@ func TestEventClient_ReconnectsOnClose(t *testing.T) {
 	waitForStatus(t, tracker, StatusConnected, 5*time.Second)
 
 	mu.Lock()
-	assert.GreaterOrEqual(t, connCount, 2, "should have reconnected at least once")
+	assert.GreaterOrEqual(
+		t,
+		connCount,
+		2,
+		"should have reconnected at least once",
+	)
 	mu.Unlock()
 }
 

@@ -895,7 +895,10 @@ func TestTemplateStepRestoresConsoleLogging(t *testing.T) {
 	test.NewApp()
 	plan := &setup.SetupPlan{
 		Filter: setup.FilterConfig{MonitorEverything: true},
-		Output: setup.OutputConfig{Type: "log", Config: map[string]string{"level": "error"}},
+		Output: setup.OutputConfig{
+			Type:   "log",
+			Config: map[string]string{"level": "error"},
+		},
 	}
 	step := &templateStep{plan: plan}
 	step.Content()

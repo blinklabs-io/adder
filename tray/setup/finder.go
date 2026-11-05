@@ -70,8 +70,11 @@ func (f *AppBinaryFinder) Find() (string, error) {
 		if cwd, err := os.Getwd(); err == nil {
 			candidate := filepath.Join(cwd, name)
 			if err := validateTrustedBinary(candidate); err == nil {
-				slog.Warn("using adder binary from working directory (dev mode)",
-					"path", candidate)
+				slog.Warn(
+					"using adder binary from working directory (dev mode)",
+					"path",
+					candidate,
+				)
 				return candidate, nil
 			} else {
 				slog.Debug("adder binary in working directory is not usable",

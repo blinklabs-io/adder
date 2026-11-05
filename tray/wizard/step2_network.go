@@ -158,7 +158,11 @@ func (s *networkStep) Content() fyne.CanvasObject {
 	)
 }
 
-func (s *networkStep) setTestStatus(msg string, isError bool, highlight string) {
+func (s *networkStep) setTestStatus(
+	msg string,
+	isError bool,
+	highlight string,
+) {
 	col := theme.ColorNameForeground
 	if msg != "Testing connection..." {
 		if isError {
@@ -270,10 +274,14 @@ func (s *networkStep) testConnection() {
 func (s *networkStep) Validate() error {
 	if s.customCheck.Checked {
 		if s.address.Text == "" {
-			return errors.New("node address is required for custom configuration")
+			return errors.New(
+				"node address is required for custom configuration",
+			)
 		}
 		if s.port.Text == "" {
-			return errors.New("port number is required for custom configuration")
+			return errors.New(
+				"port number is required for custom configuration",
+			)
 		}
 		p, err := strconv.Atoi(s.port.Text)
 		if err != nil || p < 1 || p > 65535 {

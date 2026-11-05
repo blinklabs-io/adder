@@ -220,7 +220,14 @@ func TestLogLevelConfiguration(t *testing.T) {
 			}
 
 			for lvl, expected := range tc.shouldLog {
-				assert.Equal(t, expected, found[lvl], "level %s presence mismatch for config level %s", lvl, tc.configLevel)
+				assert.Equal(
+					t,
+					expected,
+					found[lvl],
+					"level %s presence mismatch for config level %s",
+					lvl,
+					tc.configLevel,
+				)
 			}
 		})
 	}
@@ -235,22 +242,51 @@ func TestLoggerOutput(t *testing.T) {
 	logger := logging.GetLogger()
 
 	// Log structured message with custom attributes
-	logger.Info("user login", slog.String("user_id", "user-123"), slog.Int("attempts", 3))
+	logger.Info(
+		"user login",
+		slog.String("user_id", "user-123"),
+		slog.Int("attempts", 3),
+	)
 
 	var entry map[string]any
 	err := json.Unmarshal(buf.Bytes(), &entry)
 	require.NoError(t, err)
 
 	// Assert standard required fields
-	assert.Contains(t, entry, "timestamp", "log entry must contain custom timestamp field")
-	assert.NotContains(t, entry, "time", "log entry must not contain standard time field")
-	assert.Equal(t, "main", entry["component"], "component must default to main")
+	assert.Contains(
+		t,
+		entry,
+		"timestamp",
+		"log entry must contain custom timestamp field",
+	)
+	assert.NotContains(
+		t,
+		entry,
+		"time",
+		"log entry must not contain standard time field",
+	)
+	assert.Equal(
+		t,
+		"main",
+		entry["component"],
+		"component must default to main",
+	)
 	assert.Equal(t, "INFO", entry["level"], "level must be INFO")
 	assert.Equal(t, "user login", entry["msg"], "msg must be user login")
 
 	// Assert custom structured attributes
-	assert.Equal(t, "user-123", entry["user_id"], "custom string attribute must match")
-	assert.Equal(t, float64(3), entry["attempts"], "custom int attribute must match")
+	assert.Equal(
+		t,
+		"user-123",
+		entry["user_id"],
+		"custom string attribute must match",
+	)
+	assert.Equal(
+		t,
+		float64(3),
+		entry["attempts"],
+		"custom int attribute must match",
+	)
 
 	// Validate timestamp format complies with RFC3339
 	timestampStr, ok := entry["timestamp"].(string)
@@ -262,7 +298,11 @@ func TestLoggerOutput(t *testing.T) {
 // TestConfigure verifies that the Configure setup function runs cleanly without panicking.
 func TestConfigure(t *testing.T) {
 	logging.Configure(slog.LevelInfo)
-	assert.NotNil(t, logging.GetLogger(), "global logger should be configured and non-nil")
+	assert.NotNil(
+		t,
+		logging.GetLogger(),
+		"global logger should be configured and non-nil",
+	)
 }
 
 func TestKupoUsesConfiguredThreshold(t *testing.T) {
@@ -270,12 +310,22 @@ func TestKupoUsesConfiguredThreshold(t *testing.T) {
 		t.Run(level.String(), func(t *testing.T) {
 			var buf bytes.Buffer
 			logging.ConfigureWithWriter(&buf, level)
-			logger := logging.NewKugoCustomLoggerWithLogger(logging.GetLoggerForComponent("kupo"))
+			logger := logging.NewKugoCustomLoggerWithLogger(
+				logging.GetLoggerForComponent("kupo"),
+			)
 			child := logger.With(ogmigo.KeyValue{Key: "request", Value: "test"})
 			child.Debug("debug message")
 			child.Info("info message")
-			require.Equal(t, level <= slog.LevelDebug, bytes.Contains(buf.Bytes(), []byte("debug message")))
-			require.Equal(t, level <= slog.LevelInfo, bytes.Contains(buf.Bytes(), []byte("info message")))
+			require.Equal(
+				t,
+				level <= slog.LevelDebug,
+				bytes.Contains(buf.Bytes(), []byte("debug message")),
+			)
+			require.Equal(
+				t,
+				level <= slog.LevelInfo,
+				bytes.Contains(buf.Bytes(), []byte("info message")),
+			)
 		})
 	}
 }
@@ -289,7 +339,10 @@ func TestKugoCustomLogger(t *testing.T) {
 	assert.NotNil(t, l, "NewKugoCustomLogger should return a valid instance")
 
 	l.Info("test info message", ogmigo.KeyValue{Key: "foo", Value: "bar"})
-	l.Debug("test debug message (should be skipped)", ogmigo.KeyValue{Key: "ignored", Value: "ignore_me"})
+	l.Debug(
+		"test debug message (should be skipped)",
+		ogmigo.KeyValue{Key: "ignored", Value: "ignore_me"},
+	)
 
 	// Verify Info message is logged and Debug message is skipped
 	infoStr := bufInfo.String()
@@ -302,7 +355,10 @@ func TestKugoCustomLogger(t *testing.T) {
 	ld := logging.NewKugoCustomLoggerWithWriter(logging.LevelDebug, &bufDebug)
 	assert.NotNil(t, ld)
 
-	ld.Debug("test debug message (should log)", ogmigo.KeyValue{Key: "debug_foo", Value: "debug_bar"})
+	ld.Debug(
+		"test debug message (should log)",
+		ogmigo.KeyValue{Key: "debug_foo", Value: "debug_bar"},
+	)
 	debugStr := bufDebug.String()
 	assert.Contains(t, debugStr, "test debug message (should log)")
 	assert.Contains(t, debugStr, `"debug_foo":"debug_bar"`)
@@ -314,7 +370,12 @@ func TestKugoCustomLogger(t *testing.T) {
 
 	cw := cl.With(ogmigo.KeyValue{Key: "with_foo", Value: "with_bar"})
 	assert.NotNil(t, cw)
-	assert.NotEqual(t, cl, cw, "With should return a distinct logger instance with context")
+	assert.NotEqual(
+		t,
+		cl,
+		cw,
+		"With should return a distinct logger instance with context",
+	)
 
 	// Emit a log using the contextual logger
 	cw.Info("context test message")
@@ -324,11 +385,19 @@ func TestKugoCustomLogger(t *testing.T) {
 	err := json.Unmarshal(bufWith.Bytes(), &logData)
 	assert.NoError(t, err, "emitted log should be valid JSON")
 	assert.Equal(t, "context test message", logData["msg"])
-	assert.Equal(t, "with_bar", logData["with_foo"], "context key-value from With() must be propagated to emitted logs")
+	assert.Equal(
+		t,
+		"with_bar",
+		logData["with_foo"],
+		"context key-value from With() must be propagated to emitted logs",
+	)
 
 	// Verify passing nil writer does not panic and degrades gracefully to discarding logs
 	assert.NotPanics(t, func() {
-		nilLogger := logging.NewKugoCustomLoggerWithWriter(logging.LevelInfo, nil)
+		nilLogger := logging.NewKugoCustomLoggerWithWriter(
+			logging.LevelInfo,
+			nil,
+		)
 		assert.NotNil(t, nilLogger)
 		nilLogger.Info("this should be discarded without panicking")
 	})

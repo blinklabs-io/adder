@@ -24,15 +24,18 @@ import (
 func scrapeMetrics(t *testing.T, p *Pipeline) string {
 	t.Helper()
 	recorder := httptest.NewRecorder()
-	p.MetricsHandler().ServeHTTP(recorder, httptest.NewRequest("GET", "/metrics", nil))
+	p.MetricsHandler().
+		ServeHTTP(recorder, httptest.NewRequest("GET", "/metrics", nil))
 	require.Equal(t, 200, recorder.Code)
 	return recorder.Body.String()
 }
 
 func TestMetricsIncludeWebhookHTTPAttempts(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	}))
+	server := httptest.NewServer(
+		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		}),
+	)
 	t.Cleanup(server.Close)
 	output := webhook.New(webhook.WithUrl(server.URL, false))
 	p := New()
@@ -41,28 +44,53 @@ func TestMetricsIncludeWebhookHTTPAttempts(t *testing.T) {
 		Type: event.TypeRollback, Payload: event.RollbackEvent{},
 	}))
 	body := scrapeMetrics(t, p)
-	require.Contains(t, body, "adder_webhook_http_attempts_total{status_class=\"2xx\"} 1\n")
-	require.Contains(t, body, "adder_webhook_http_attempt_duration_seconds_count 1")
-	require.Contains(t, body, "adder_webhook_delivery_outcomes_total{outcome=\"success\"} 1\n")
+	require.Contains(
+		t,
+		body,
+		"adder_webhook_http_attempts_total{status_class=\"2xx\"} 1\n",
+	)
+	require.Contains(
+		t,
+		body,
+		"adder_webhook_http_attempt_duration_seconds_count 1",
+	)
+	require.Contains(
+		t,
+		body,
+		"adder_webhook_delivery_outcomes_total{outcome=\"success\"} 1\n",
+	)
 	require.NotContains(t, body, server.URL)
 }
 
 func TestMetricsAggregateMultipleWebhookOutputs(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	}))
+	server := httptest.NewServer(
+		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		}),
+	)
 	t.Cleanup(server.Close)
 	p := New()
 	first := webhook.New(webhook.WithUrl(server.URL, false))
 	second := webhook.New(webhook.WithUrl(server.URL, false))
 	p.AddOutput(first)
 	p.AddOutput(second)
-	evt := &event.Event{Type: event.TypeRollback, Payload: event.RollbackEvent{}}
+	evt := &event.Event{
+		Type:    event.TypeRollback,
+		Payload: event.RollbackEvent{},
+	}
 	require.NoError(t, first.SendWebhook(evt))
 	require.NoError(t, second.SendWebhook(evt))
 	body := scrapeMetrics(t, p)
-	require.Contains(t, body, "adder_webhook_http_attempts_total{status_class=\"2xx\"} 2\n")
-	require.Contains(t, body, "adder_webhook_delivery_outcomes_total{outcome=\"success\"} 2\n")
+	require.Contains(
+		t,
+		body,
+		"adder_webhook_http_attempts_total{status_class=\"2xx\"} 2\n",
+	)
+	require.Contains(
+		t,
+		body,
+		"adder_webhook_delivery_outcomes_total{outcome=\"success\"} 2\n",
+	)
 }
 
 func TestMetricsTrackDeliveryAndFilterDrops(t *testing.T) {
@@ -78,7 +106,10 @@ func TestMetricsTrackDeliveryAndFilterDrops(t *testing.T) {
 	in.emit(event.Event{Type: "private-address-from-input"})
 	require.Eventually(t, func() bool {
 		body := scrapeMetrics(t, p)
-		return strings.Contains(body, "adder_pipeline_filtered_events_total 1\n") &&
+		return strings.Contains(
+			body,
+			"adder_pipeline_filtered_events_total 1\n",
+		) &&
 			strings.Contains(body, "adder_pipeline_processed_events_total 0\n") &&
 			strings.Contains(body, "adder_pipeline_received_events_total 1\n")
 	}, time.Second, time.Millisecond)
@@ -86,7 +117,10 @@ func TestMetricsTrackDeliveryAndFilterDrops(t *testing.T) {
 	require.Equal(t, "kept", out.next(t).Type)
 	require.Eventually(t, func() bool {
 		body := scrapeMetrics(t, p)
-		return strings.Contains(body, "adder_pipeline_received_events_total 2\n") &&
+		return strings.Contains(
+			body,
+			"adder_pipeline_received_events_total 2\n",
+		) &&
 			strings.Contains(body, "adder_pipeline_filtered_events_total 1\n") &&
 			strings.Contains(body, "adder_pipeline_processed_events_total 1\n") &&
 			strings.Contains(body, "adder_pipeline_processing_duration_seconds_count 1\n") &&
@@ -108,8 +142,10 @@ func TestMetricsPreserveFilterDropObserverAcrossRestart(t *testing.T) {
 			passed:   event.Event{Type: "kept"},
 		},
 		{
-			name:   "cardano",
-			filter: cardanofilter.New(cardanofilter.WithPoolIds([]string{"selected-pool"})),
+			name: "cardano",
+			filter: cardanofilter.New(
+				cardanofilter.WithPoolIds([]string{"selected-pool"}),
+			),
 			rejected: event.Event{
 				Type:    event.TypeBlock,
 				Payload: event.BlockEvent{IssuerVkey: "other-pool"},
@@ -136,9 +172,20 @@ func TestMetricsPreserveFilterDropObserverAcrossRestart(t *testing.T) {
 				in.emit(tt.rejected)
 				in.emit(tt.passed)
 				require.Equal(t, tt.passed.Type, out.next(t).Type)
-				require.Equal(t, want, drops.Load(), "caller drop observer must run once per drop")
-				require.Contains(t, scrapeMetrics(t, p),
-					fmt.Sprintf("adder_pipeline_filtered_events_total %d\n", want))
+				require.Equal(
+					t,
+					want,
+					drops.Load(),
+					"caller drop observer must run once per drop",
+				)
+				require.Contains(
+					t,
+					scrapeMetrics(t, p),
+					fmt.Sprintf(
+						"adder_pipeline_filtered_events_total %d\n",
+						want,
+					),
+				)
 				require.NoError(t, p.Stop())
 			}
 		})
@@ -178,7 +225,10 @@ func (f *heldFilter) Stop() error { return f.Shutdown(plugin.ShutdownHooks{}) }
 func TestMetricsProcessingDurationIncludesFilterWait(t *testing.T) {
 	p := New()
 	in := &fakeInput{}
-	filter := &heldFilter{entered: make(chan struct{}), release: make(chan struct{})}
+	filter := &heldFilter{
+		entered: make(chan struct{}),
+		release: make(chan struct{}),
+	}
 	out := newCollectOutput(1)
 	p.AddInput(in)
 	p.AddFilter(filter)
@@ -207,7 +257,10 @@ func TestMetricsProcessingDurationIncludesFilterWait(t *testing.T) {
 	require.Equal(t, "held", out.next(t).Type)
 	require.Eventually(t, func() bool {
 		body := scrapeMetrics(t, p)
-		return strings.Contains(body, "adder_pipeline_processing_duration_seconds_count 1\n") &&
+		return strings.Contains(
+			body,
+			"adder_pipeline_processing_duration_seconds_count 1\n",
+		) &&
 			strings.Contains(body, "adder_pipeline_processing_duration_seconds_bucket{le=\"0.01\"} 0\n")
 	}, time.Second, time.Millisecond)
 }
@@ -230,7 +283,10 @@ func (g *gatedInput) StartContext(ctx context.Context) error {
 
 func TestMetricsScrapeWhileInputStarts(t *testing.T) {
 	p := New()
-	in := &gatedInput{entered: make(chan struct{}), release: make(chan struct{})}
+	in := &gatedInput{
+		entered: make(chan struct{}),
+		release: make(chan struct{}),
+	}
 	p.AddInput(in)
 	started := make(chan error, 1)
 	go func() { started <- p.Start() }()

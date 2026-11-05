@@ -25,7 +25,11 @@ func TestTerminalErrorIntegration(t *testing.T) {
 	diagnostics := p.read(t, "stderr.log")
 	require.Contains(t, diagnostics, "integration fixture failure")
 	require.Contains(t, diagnostics, `"level":"ERROR"`)
-	require.Contains(t, diagnostics, "terminal plugin failure, stopping pipeline")
+	require.Contains(
+		t,
+		diagnostics,
+		"terminal plugin failure, stopping pipeline",
+	)
 	require.NotContains(t, diagnostics, "DATA RACE")
 	require.Empty(t, p.read(t, "stdout.log"))
 }

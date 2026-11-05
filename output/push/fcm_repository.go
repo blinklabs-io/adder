@@ -106,10 +106,20 @@ func (s *TokenStore) loadTokens() {
 	if err != nil {
 		if os.IsNotExist(err) {
 			// File doesn't exist yet, that's fine for first run
-			logger.Debug("FCM token persistence file does not exist yet", "path", s.filePath)
+			logger.Debug(
+				"FCM token persistence file does not exist yet",
+				"path",
+				s.filePath,
+			)
 			return
 		}
-		logger.Error("failed to read FCM tokens from file", "error", err, "path", s.filePath)
+		logger.Error(
+			"failed to read FCM tokens from file",
+			"error",
+			err,
+			"path",
+			s.filePath,
+		)
 		return
 	}
 
@@ -117,7 +127,13 @@ func (s *TokenStore) loadTokens() {
 		FCMTokens map[string]string `json:"fcm_tokens"`
 	}
 	if err := json.Unmarshal(data, &loadedStore); err != nil {
-		logger.Error("failed to parse FCM tokens from file", "error", err, "path", s.filePath)
+		logger.Error(
+			"failed to parse FCM tokens from file",
+			"error",
+			err,
+			"path",
+			s.filePath,
+		)
 		return
 	}
 
@@ -127,7 +143,13 @@ func (s *TokenStore) loadTokens() {
 	}
 	s.mu.Unlock()
 
-	logger.Info("loaded FCM tokens from persistence file", "count", len(loadedStore.FCMTokens), "path", s.filePath)
+	logger.Info(
+		"loaded FCM tokens from persistence file",
+		"count",
+		len(loadedStore.FCMTokens),
+		"path",
+		s.filePath,
+	)
 }
 
 // saveTokens saves tokens to the persistence file
@@ -155,7 +177,13 @@ func (s *TokenStore) saveTokens() {
 	}
 
 	if err := os.WriteFile(s.filePath, data, 0o600); err != nil {
-		logger.Error("failed to write FCM tokens to file", "error", err, "path", s.filePath)
+		logger.Error(
+			"failed to write FCM tokens to file",
+			"error",
+			err,
+			"path",
+			s.filePath,
+		)
 		return
 	}
 

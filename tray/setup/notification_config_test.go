@@ -78,7 +78,9 @@ func TestNotificationConfigNormalizesTextValues(t *testing.T) {
 }
 
 func TestNotificationConfigRejectsUnknownFields(t *testing.T) {
-	_, err := DecodeNotificationConfig(strings.NewReader(`{"schemaVersion":1,"surprise":true}`))
+	_, err := DecodeNotificationConfig(
+		strings.NewReader(`{"schemaVersion":1,"surprise":true}`),
+	)
 	require.ErrorContains(t, err, "unknown field")
 }
 

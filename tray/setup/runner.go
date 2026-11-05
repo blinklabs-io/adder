@@ -86,7 +86,9 @@ func (r *SetupRunner) Apply(
 	var result ApplyResult
 
 	// 1. Prepare engine and tray configs
-	engineCfg, err := r.Store.LoadEngine(filepath.Join(ConfigDir(), "config.yaml"))
+	engineCfg, err := r.Store.LoadEngine(
+		filepath.Join(ConfigDir(), "config.yaml"),
+	)
 	if err != nil {
 		return result, err
 	}

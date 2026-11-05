@@ -18,26 +18,56 @@ import (
 func TestREADMETextExamples(t *testing.T) {
 	events := []event.Event{
 		{
-			Type:    event.TypeBlock,
-			Context: event.BlockContext{SlotNumber: 2000, BlockNumber: 100, Era: "Babbage"},
-			Payload: event.BlockEvent{BlockHash: "abc123hash", TransactionCount: 5, BlockBodySize: 1024},
+			Type: event.TypeBlock,
+			Context: event.BlockContext{
+				SlotNumber:  2000,
+				BlockNumber: 100,
+				Era:         "Babbage",
+			},
+			Payload: event.BlockEvent{
+				BlockHash:        "abc123hash",
+				TransactionCount: 5,
+				BlockBodySize:    1024,
+			},
 		},
 		{
-			Type:    event.TypeTransaction,
-			Context: event.TransactionContext{SlotNumber: 2000, BlockNumber: 100, TransactionHash: "deadbeef12345678"},
-			Payload: event.TransactionEvent{Fee: 180000, Inputs: make([]ledger.TransactionInput, 2), Outputs: make([]ledger.TransactionOutput, 3)},
+			Type: event.TypeTransaction,
+			Context: event.TransactionContext{
+				SlotNumber:      2000,
+				BlockNumber:     100,
+				TransactionHash: "deadbeef12345678",
+			},
+			Payload: event.TransactionEvent{
+				Fee:     180000,
+				Inputs:  make([]ledger.TransactionInput, 2),
+				Outputs: make([]ledger.TransactionOutput, 3),
+			},
 		},
 		{
-			Type:    event.TypeRollback,
-			Payload: event.RollbackEvent{SlotNumber: 2000, BlockHash: "aabbccdd11223344"},
+			Type: event.TypeRollback,
+			Payload: event.RollbackEvent{
+				SlotNumber: 2000,
+				BlockHash:  "aabbccdd11223344",
+			},
 		},
 		{
-			Type:    event.TypeGovernance,
-			Context: event.GovernanceContext{SlotNumber: 2000, BlockNumber: 100, TransactionHash: "govtx12345678abc"},
+			Type: event.TypeGovernance,
+			Context: event.GovernanceContext{
+				SlotNumber:      2000,
+				BlockNumber:     100,
+				TransactionHash: "govtx12345678abc",
+			},
 			Payload: event.GovernanceEvent{
-				ProposalProcedures: []event.ProposalProcedureData{{ActionType: "Info"}},
-				VotingProcedures:   []event.VotingProcedureData{{Vote: "Yes"}, {Vote: "No"}},
-				DRepCertificates:   []event.DRepCertificateData{{CertificateType: "Registration"}},
+				ProposalProcedures: []event.ProposalProcedureData{
+					{ActionType: "Info"},
+				},
+				VotingProcedures: []event.VotingProcedureData{
+					{Vote: "Yes"},
+					{Vote: "No"},
+				},
+				DRepCertificates: []event.DRepCertificateData{
+					{CertificateType: "Registration"},
+				},
 			},
 		},
 	}
@@ -63,5 +93,13 @@ func TestREADMETextExamples(t *testing.T) {
 	require.Equal(t, expected, string(actual))
 	readme, err := os.ReadFile("../../README.md")
 	require.NoError(t, err)
-	require.Contains(t, string(readme), "  ```text\n  "+strings.ReplaceAll(strings.TrimSuffix(expected, "\n"), "\n", "\n  ")+"\n  ```")
+	require.Contains(
+		t,
+		string(readme),
+		"  ```text\n  "+strings.ReplaceAll(
+			strings.TrimSuffix(expected, "\n"),
+			"\n",
+			"\n  ",
+		)+"\n  ```",
+	)
 }
