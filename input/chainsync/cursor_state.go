@@ -77,6 +77,12 @@ func (c *ChainSync) loadCursor() error {
 	}
 	c.intersectPoints = []ocommon.Point{{Slot: rec.Slot, Hash: hashBytes}}
 	c.intersectTip = false
+	// Treat the persisted checkpoint as an emitted point for rollback history.
+	// A restart can receive a rollback before it emits a new block; without
+	// this seed, that rollback would incorrectly fall back to genesis.
+	c.stateMu.Lock()
+	c.emittedCursors = []ocommon.Point{{Slot: rec.Slot, Hash: hashBytes}}
+	c.stateMu.Unlock()
 	if logger := c.Logger(); logger != nil {
 		logger.Info(
 			"resuming chainsync from persisted cursor",

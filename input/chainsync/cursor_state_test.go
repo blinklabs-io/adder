@@ -100,6 +100,29 @@ func TestLoadCursorWithSavedCursorOverridesIntersectTip(t *testing.T) {
 
 	require.False(t, c.intersectTip)
 	require.Equal(t, []ocommon.Point{point}, c.intersectPoints)
+	require.Equal(t, []ocommon.Point{point}, c.emittedCursors)
+}
+
+func TestLoadedCursorSurvivesRollbackBeforeNewBlock(t *testing.T) {
+	store := newFakeStore()
+	c := New(WithStateStore(store))
+	saved := ocommon.Point{Slot: 12345, Hash: make([]byte, 32)}
+	saved.Hash[0] = 0xde
+	c.saveCursor(saved)
+	require.NoError(t, c.loadCursor())
+
+	rollback := ocommon.Point{Slot: 13000, Hash: make([]byte, 32)}
+	require.NoError(t, c.handleRollBackward(
+		protocolchainsync.CallbackContext{},
+		rollback,
+		protocolchainsync.Tip{},
+	))
+
+	c.stateMu.Lock()
+	defer c.stateMu.Unlock()
+	require.Equal(t, []ocommon.Point{saved}, c.emittedCursors)
+	require.NotNil(t, c.pendingCursor)
+	require.Equal(t, saved, *c.pendingCursor)
 }
 
 func TestLoadCursorRejectsInvalidSavedHash(t *testing.T) {
@@ -200,6 +223,32 @@ func TestRollbackWithDelayedEventsKeepsLastEmittedCursor(t *testing.T) {
 	c.stateMu.Unlock()
 	require.NotNil(t, pending)
 	require.Equal(t, emitted, *pending)
+}
+
+func TestRollbackWithRetainedDelayedEventKeepsLastEmittedCursor(t *testing.T) {
+	store := newFakeStore()
+	c := New(WithStateStore(store), WithDelayConfirmations(2))
+	emitted := ocommon.Point{Slot: 100, Hash: make([]byte, 32)}
+	c.setPendingCursor(emitted)
+	c.delayBuffer = [][]event.Event{{
+		event.New(
+			event.TypeBlock,
+			time.Now(),
+			event.BlockContext{SlotNumber: 140},
+			nil,
+		),
+	}}
+
+	rollback := ocommon.Point{Slot: 150, Hash: make([]byte, 32)}
+	require.NoError(t, c.handleRollBackward(
+		protocolchainsync.CallbackContext{},
+		rollback,
+		protocolchainsync.Tip{},
+	))
+
+	c.stateMu.Lock()
+	defer c.stateMu.Unlock()
+	require.Equal(t, emitted, *c.pendingCursor)
 }
 
 func TestWithStateKeyOverridesDefault(t *testing.T) {

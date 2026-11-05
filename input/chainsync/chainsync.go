@@ -696,7 +696,9 @@ func (c *ChainSync) handleRollForward(
 	if c.delayConfirmations == 0 {
 		// Send events immediately if no delay confirmations configured
 		for _, evt := range tmpEvents {
-			_ = c.Emit(evt)
+			if !c.Emit(evt) {
+				return nil
+			}
 		}
 		c.setPendingCursor(updateTip.Point)
 	} else {
@@ -716,7 +718,9 @@ func (c *ChainSync) handleRollForward(
 						BlockNumber: blockEvt.Block.BlockNumber(),
 					}
 				}
-				_ = c.Emit(evt)
+				if !c.Emit(evt) {
+					return nil
+				}
 			}
 			c.delayBuffer = slices.Delete(c.delayBuffer, 0, 1)
 			c.setPendingCursor(updateTip.Point)
@@ -737,13 +741,14 @@ func (c *ChainSync) handleBlockFetchBlock(
 	blockType uint,
 	block ledger.Block,
 ) error {
+	events := make([]event.Event, 0, 20)
 	blockEvt := event.New(
 		event.TypeBlock,
 		time.Now(),
 		event.NewBlockContext(block, c.networkMagic),
 		event.NewBlockEvent(block, c.includeCbor),
 	)
-	_ = c.Emit(blockEvt)
+	events = append(events, blockEvt)
 	for t, transaction := range block.Transactions() {
 		resolvedInputs, err := resolveTransactionInputs(transaction, c)
 		if err != nil {
@@ -773,7 +778,7 @@ func (c *ChainSync) handleBlockFetchBlock(
 				resolvedInputs,
 			),
 		)
-		_ = c.Emit(txEvt)
+		events = append(events, txEvt)
 		// Emit governance event if transaction contains governance data
 		if event.HasGovernanceData(transaction) {
 			govEvt := event.New(
@@ -792,7 +797,7 @@ func (c *ChainSync) handleBlockFetchBlock(
 					c.includeCbor,
 				),
 			)
-			_ = c.Emit(govEvt)
+			events = append(events, govEvt)
 		}
 		// Emit DRep certificate events
 		if drepCerts := event.ExtractDRepCertificates(transaction); len(
@@ -813,9 +818,14 @@ func (c *ChainSync) handleBlockFetchBlock(
 						drepCtx,
 						event.NewDRepCertificateEvent(block, cert),
 					)
-					_ = c.Emit(drepEvt)
+					events = append(events, drepEvt)
 				}
 			}
+		}
+	}
+	for _, evt := range events {
+		if !c.Emit(evt) {
+			return nil
 		}
 	}
 	c.updateStatus(
