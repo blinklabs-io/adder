@@ -61,13 +61,21 @@ func TestSupervisorExitsOnContextCancellation(t *testing.T) {
 				}
 				errs := make(chan error, 1)
 				exited := make(chan struct{})
-				require.NoError(t, c.StartRun(ctx, chainSyncBaseConfig(), func(runCtx context.Context) error {
-					c.Go(func() {
-						defer close(exited)
-						c.superviseConnection(runCtx, errs)
-					})
-					return nil
-				}, plugin.ShutdownHooks{}))
+				require.NoError(
+					t,
+					c.StartRun(
+						ctx,
+						chainSyncBaseConfig(),
+						func(runCtx context.Context) error {
+							c.Go(func() {
+								defer close(exited)
+								c.superviseConnection(runCtx, errs)
+							})
+							return nil
+						},
+						plugin.ShutdownHooks{},
+					),
+				)
 				t.Cleanup(func() { require.NoError(t, c.Stop()) })
 				if reconnecting {
 					errs <- errors.New("connection lost")

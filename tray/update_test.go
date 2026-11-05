@@ -228,7 +228,11 @@ func TestGitHubUpdateChecker(t *testing.T) {
 
 	server := httptest.NewServer(
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			assert.Equal(t, "application/vnd.github+json", r.Header.Get("Accept"))
+			assert.Equal(
+				t,
+				"application/vnd.github+json",
+				r.Header.Get("Accept"),
+			)
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(expectedInfo)
 		}),
@@ -263,7 +267,11 @@ func TestGitHubUpdateCheckerError(t *testing.T) {
 
 	_, err := checker.CheckLatestRelease(context.Background())
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "HTTP 404: Not Found: release not available")
+	assert.Contains(
+		t,
+		err.Error(),
+		"HTTP 404: Not Found: release not available",
+	)
 }
 
 func TestGitHubUpdateChecker_TokenGating(t *testing.T) {
@@ -286,19 +294,27 @@ func TestGitHubUpdateChecker_TokenGating(t *testing.T) {
 	}
 	_, err := checker.CheckLatestRelease(context.Background())
 	require.NoError(t, err)
-	assert.Empty(t, receivedAuth, "token should not be sent to non-github BaseURL")
+	assert.Empty(
+		t,
+		receivedAuth,
+		"token should not be sent to non-github BaseURL",
+	)
 
 	// 2. Default api.github.com URL: Token MUST be attached.
 	captured := make(chan *http.Request, 1)
 	client := &http.Client{
-		Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
-			captured <- req
-			return &http.Response{
-				StatusCode: http.StatusOK,
-				Header:     make(http.Header),
-				Body:       io.NopCloser(strings.NewReader(`{"tag_name":"v0.44.0"}`)),
-			}, nil
-		}),
+		Transport: roundTripperFunc(
+			func(req *http.Request) (*http.Response, error) {
+				captured <- req
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Header:     make(http.Header),
+					Body: io.NopCloser(
+						strings.NewReader(`{"tag_name":"v0.44.0"}`),
+					),
+				}, nil
+			},
+		),
 	}
 	ghChecker := &GitHubUpdateChecker{
 		Repo:       "blinklabs-io/adder",
@@ -308,7 +324,11 @@ func TestGitHubUpdateChecker_TokenGating(t *testing.T) {
 	require.NoError(t, err)
 	select {
 	case req := <-captured:
-		assert.Equal(t, "Bearer secret-test-token", req.Header.Get("Authorization"))
+		assert.Equal(
+			t,
+			"Bearer secret-test-token",
+			req.Header.Get("Authorization"),
+		)
 		assert.Equal(t, "api.github.com", req.URL.Hostname())
 	default:
 		t.Fatal("expected request was not sent")
@@ -319,7 +339,8 @@ func TestGitHubUpdateChecker_PayloadSizeLimit(t *testing.T) {
 	t.Run("content length exceeds limit", func(t *testing.T) {
 		server := httptest.NewServer(
 			http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				w.Header().Set("Content-Length", fmt.Sprintf("%d", maxReleasePayloadSize+1))
+				w.Header().
+					Set("Content-Length", fmt.Sprintf("%d", maxReleasePayloadSize+1))
 				w.WriteHeader(http.StatusOK)
 			}),
 		)
@@ -391,7 +412,10 @@ func TestDownloadAsset_InvalidDigestFormat(t *testing.T) {
 		{name: "empty digest", digest: ""},
 		{name: "invalid text", digest: "not-a-valid-digest"},
 		{name: "short hash", digest: "sha256:short"},
-		{name: "invalid characters", digest: "sha256:zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"},
+		{
+			name:   "invalid characters",
+			digest: "sha256:zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+		},
 	}
 
 	for _, tc := range tests {
@@ -414,14 +438,39 @@ func TestDownloadAsset_InvalidDigestFormat(t *testing.T) {
 }
 
 func TestIsValidSHA256Digest(t *testing.T) {
-	assert.True(t, isValidSHA256Digest("sha256:ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"))
-	assert.True(t, isValidSHA256Digest("SHA256:BA7816BF8F01CFEA414140DE5DAE2223B00361A396177A9CB410FF61F20015AD"))
-	assert.True(t, isValidSHA256Digest("  sha256:ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad  "))
-	assert.True(t, isValidSHA256Digest("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"))
+	assert.True(
+		t,
+		isValidSHA256Digest(
+			"sha256:ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+		),
+	)
+	assert.True(
+		t,
+		isValidSHA256Digest(
+			"SHA256:BA7816BF8F01CFEA414140DE5DAE2223B00361A396177A9CB410FF61F20015AD",
+		),
+	)
+	assert.True(
+		t,
+		isValidSHA256Digest(
+			"  sha256:ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad  ",
+		),
+	)
+	assert.True(
+		t,
+		isValidSHA256Digest(
+			"ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+		),
+	)
 	assert.False(t, isValidSHA256Digest(""))
 	assert.False(t, isValidSHA256Digest("sha256:"))
 	assert.False(t, isValidSHA256Digest("sha256:short"))
-	assert.False(t, isValidSHA256Digest("sha256:zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"))
+	assert.False(
+		t,
+		isValidSHA256Digest(
+			"sha256:zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+		),
+	)
 }
 
 func TestDownloadAsset(t *testing.T) {
@@ -481,7 +530,9 @@ func TestDownloadAsset_DigestNormalization(t *testing.T) {
 	destPath := filepath.Join(t.TempDir(), "test.pkg")
 	payloadHash := sha256.Sum256(payload)
 	// Uppercase prefix and spaces around hash
-	validDigest := "  SHA256:" + strings.ToUpper(hex.EncodeToString(payloadHash[:])) + "  "
+	validDigest := "  SHA256:" + strings.ToUpper(
+		hex.EncodeToString(payloadHash[:]),
+	) + "  "
 
 	err := DownloadAsset(
 		context.Background(),
@@ -598,7 +649,8 @@ func TestDownloadAsset_SizeLimits(t *testing.T) {
 		server := httptest.NewServer(
 			http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/octet-stream")
-				w.Header().Set("Content-Length", fmt.Sprintf("%d", maxAssetDownloadSize+1))
+				w.Header().
+					Set("Content-Length", fmt.Sprintf("%d", maxAssetDownloadSize+1))
 				w.WriteHeader(http.StatusOK)
 			}),
 		)
@@ -649,7 +701,11 @@ func TestDownloadAsset_SizeLimits(t *testing.T) {
 			nil,
 		)
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "download exceeded maximum allowed size")
+		assert.Contains(
+			t,
+			err.Error(),
+			"download exceeded maximum allowed size",
+		)
 		assert.NoFileExists(t, destPath)
 		assert.NoFileExists(t, destPath+".part")
 	})
@@ -1040,7 +1096,10 @@ func TestAppShowCheckForUpdates_CheckWeeklyPersistsConfig(t *testing.T) {
 	var chk *widget.Check
 	require.Eventually(t, func() bool {
 		fyne.Do(func() {
-			chk = findCheck(a.updateWindow.Content(), "Check for updates weekly")
+			chk = findCheck(
+				a.updateWindow.Content(),
+				"Check for updates weekly",
+			)
 		})
 		return chk != nil && chk.Visible()
 	}, 2*time.Second, 10*time.Millisecond)
@@ -1103,35 +1162,38 @@ func TestPeriodicUpdateChecker_Scenarios(t *testing.T) {
 		assert.Nil(t, a.updateWindow)
 	})
 
-	t.Run("elapsed due with skipped version does not prompt", func(t *testing.T) {
-		checker := &mockUpdateChecker{
-			info: &ReleaseInfo{
-				TagName: "v0.44.0",
-				Name:    "v0.44.0",
-				HTMLURL: "https://github.com/blinklabs-io/adder/releases/tag/v0.44.0",
-			},
-		}
-		store := &setup.LocalStore{
-			TrayConfigPath: filepath.Join(t.TempDir(), "adder-tray.yaml"),
-		}
-		past := time.Now().Add(-8 * 24 * time.Hour)
-		a := &App{
-			fyneApp:       app,
-			updateChecker: checker,
-			runner: &setup.SetupRunner{
-				Store: store,
-			},
-			config: TrayConfig{
-				CheckUpdatesWeekly: true,
-				LastUpdateCheck:    past,
-				SkippedVersion:     "v0.44.0",
-			},
-		}
-		a.checkWeeklyUpdates()
-		assert.Equal(t, int32(1), checker.calls.Load())
-		assert.True(t, a.Config().LastUpdateCheck.After(past))
-		assert.Nil(t, a.updateWindow)
-	})
+	t.Run(
+		"elapsed due with skipped version does not prompt",
+		func(t *testing.T) {
+			checker := &mockUpdateChecker{
+				info: &ReleaseInfo{
+					TagName: "v0.44.0",
+					Name:    "v0.44.0",
+					HTMLURL: "https://github.com/blinklabs-io/adder/releases/tag/v0.44.0",
+				},
+			}
+			store := &setup.LocalStore{
+				TrayConfigPath: filepath.Join(t.TempDir(), "adder-tray.yaml"),
+			}
+			past := time.Now().Add(-8 * 24 * time.Hour)
+			a := &App{
+				fyneApp:       app,
+				updateChecker: checker,
+				runner: &setup.SetupRunner{
+					Store: store,
+				},
+				config: TrayConfig{
+					CheckUpdatesWeekly: true,
+					LastUpdateCheck:    past,
+					SkippedVersion:     "v0.44.0",
+				},
+			}
+			a.checkWeeklyUpdates()
+			assert.Equal(t, int32(1), checker.calls.Load())
+			assert.True(t, a.Config().LastUpdateCheck.After(past))
+			assert.Nil(t, a.updateWindow)
+		},
+	)
 
 	t.Run("elapsed due opens update window", func(t *testing.T) {
 		done := make(chan struct{})
@@ -1300,10 +1362,12 @@ func TestShowUpdateWindow_InstallAndRelaunch(t *testing.T) {
 	h := sha256.Sum256(payload)
 	validDigest := "sha256:" + hex.EncodeToString(h[:])
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write(payload)
-	}))
+	server := httptest.NewServer(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(payload)
+		}),
+	)
 	defer server.Close()
 
 	launchedCh := make(chan string, 1)
@@ -1532,10 +1596,12 @@ func TestShowUpdateWindow_DownloadCanceledNoLaunch(t *testing.T) {
 	}
 
 	started := make(chan struct{})
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		close(started)
-		<-r.Context().Done()
-	}))
+	server := httptest.NewServer(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			close(started)
+			<-r.Context().Done()
+		}),
+	)
 	defer server.Close()
 
 	payloadHash := sha256.Sum256([]byte("dummy"))
@@ -1608,7 +1674,9 @@ func TestShowUpdateWindow_DownloadCanceledNoLaunch(t *testing.T) {
 
 	select {
 	case <-launched:
-		t.Fatal("installer launcher should not be called when download was canceled")
+		t.Fatal(
+			"installer launcher should not be called when download was canceled",
+		)
 	case <-time.After(300 * time.Millisecond):
 	}
 
@@ -1685,7 +1753,11 @@ func TestManualUpdateMessage(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.goos+"/"+tc.goarch, func(t *testing.T) {
-			assert.Equal(t, tc.want, manualUpdateMessage("v0.46.0", "v0.45.0", tc.goos, tc.goarch))
+			assert.Equal(
+				t,
+				tc.want,
+				manualUpdateMessage("v0.46.0", "v0.45.0", tc.goos, tc.goarch),
+			)
 		})
 	}
 }

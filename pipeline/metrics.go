@@ -56,7 +56,10 @@ func newMetrics() *metrics {
 	}
 }
 
-func (m *metrics) RecordWebhookAttempt(statusClass string, elapsed time.Duration) {
+func (m *metrics) RecordWebhookAttempt(
+	statusClass string,
+	elapsed time.Duration,
+) {
 	m.webhookAttempts.WithLabelValues(statusClass).Inc()
 	m.webhookLatency.Observe(elapsed.Seconds())
 }
@@ -68,8 +71,14 @@ func (m *metrics) RecordWebhookOutcome(outcome string) {
 // MetricsHandler exposes this pipeline's metrics in Prometheus format.
 func (p *Pipeline) MetricsHandler() http.Handler {
 	registry := prometheus.NewRegistry()
-	registry.MustRegister(p.metrics.received, p.metrics.processed,
-		p.metrics.filtered, p.metrics.processing,
-		p.metrics.webhookAttempts, p.metrics.webhookOutcomes, p.metrics.webhookLatency)
+	registry.MustRegister(
+		p.metrics.received,
+		p.metrics.processed,
+		p.metrics.filtered,
+		p.metrics.processing,
+		p.metrics.webhookAttempts,
+		p.metrics.webhookOutcomes,
+		p.metrics.webhookLatency,
+	)
 	return promhttp.HandlerFor(registry, promhttp.HandlerOpts{})
 }

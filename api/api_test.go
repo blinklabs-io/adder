@@ -52,7 +52,12 @@ func TestRouteRegistration(t *testing.T) {
 	}
 	rr := httptest.NewRecorder()
 	apiInstance.Engine().ServeHTTP(rr, req)
-	assert.Equal(t, http.StatusNotFound, rr.Code, "expected 404 for missing token")
+	assert.Equal(
+		t,
+		http.StatusNotFound,
+		rr.Code,
+		"expected 404 for missing token",
+	)
 	assert.Empty(
 		t,
 		rr.Body.String(),

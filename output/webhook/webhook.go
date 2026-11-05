@@ -429,7 +429,9 @@ func (w *WebhookOutput) SendWebhook(e *event.Event) error {
 
 // SetDeliveryMetrics connects this output to its owning pipeline's aggregate metrics.
 // Call before Start or SendWebhook.
-func (w *WebhookOutput) SetDeliveryMetrics(observer plugin.DeliveryMetricsObserver) {
+func (w *WebhookOutput) SetDeliveryMetrics(
+	observer plugin.DeliveryMetricsObserver,
+) {
 	w.metricsObserver = observer
 }
 
@@ -445,7 +447,10 @@ type deliveryAttempt struct {
 	retryAfter string
 }
 
-func (w *WebhookOutput) sendWebhook(ctx context.Context, e *event.Event) deliveryAttempt {
+func (w *WebhookOutput) sendWebhook(
+	ctx context.Context,
+	e *event.Event,
+) deliveryAttempt {
 	logger := w.log()
 	logger.Info("sending event", "type", e.Type, "url", sanitizeURL(w.url))
 	data, err := formatWebhook(e, w.format)
@@ -453,7 +458,9 @@ func (w *WebhookOutput) sendWebhook(ctx context.Context, e *event.Event) deliver
 		return deliveryAttempt{err: err}
 	}
 	parsedURL, err := url.Parse(w.url)
-	if err != nil || (parsedURL.Scheme != "http" && parsedURL.Scheme != "https") || parsedURL.Host == "" {
+	if err != nil ||
+		(parsedURL.Scheme != "http" && parsedURL.Scheme != "https") ||
+		parsedURL.Host == "" {
 		return deliveryAttempt{err: errors.New("invalid webhook URL")}
 	}
 	// Setup request
@@ -513,10 +520,19 @@ func (w *WebhookOutput) sendWebhook(ctx context.Context, e *event.Event) deliver
 		}
 	}()
 	if err != nil {
-		return deliveryAttempt{err: err, retryable: !permanentTransportError(err)}
+		return deliveryAttempt{
+			err:       err,
+			retryable: !permanentTransportError(err),
+		}
 	}
 	if resp == nil {
-		return deliveryAttempt{err: fmt.Errorf("failed to send payload to %s", sanitizeURL(w.url)), retryable: true}
+		return deliveryAttempt{
+			err: fmt.Errorf(
+				"failed to send payload to %s",
+				sanitizeURL(w.url),
+			),
+			retryable: true,
+		}
 	}
 	defer resp.Body.Close()
 
@@ -526,8 +542,10 @@ func (w *WebhookOutput) sendWebhook(ctx context.Context, e *event.Event) deliver
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		status := resp.StatusCode
 		return deliveryAttempt{
-			err:        fmt.Errorf("server returned status: %d", status),
-			retryable:  status == http.StatusRequestTimeout || status == http.StatusTooManyRequests || status >= 500,
+			err: fmt.Errorf("server returned status: %d", status),
+			retryable: status == http.StatusRequestTimeout ||
+				status == http.StatusTooManyRequests ||
+				status >= 500,
 			retryAfter: resp.Header.Get("Retry-After"),
 		}
 	}
@@ -565,15 +583,23 @@ func permanentTransportError(err error) bool {
 	var roots x509.SystemRootsError
 	var recordHeader tls.RecordHeaderError
 	return errors.As(err, &authority) || errors.As(err, &certificate) ||
-		errors.As(err, &hostname) || errors.As(err, &roots) || errors.As(err, &recordHeader)
+		errors.As(
+			err,
+			&hostname,
+		) || errors.As(err, &roots) || errors.As(err, &recordHeader)
 }
 
-func retryAfterDelay(value string, now time.Time, bound time.Duration) (time.Duration, bool, bool) {
+func retryAfterDelay(
+	value string,
+	now time.Time,
+	bound time.Duration,
+) (time.Duration, bool, bool) {
 	value = strings.TrimSpace(value)
 	if value == "" {
 		return 0, false, false
 	}
-	if seconds, err := strconv.ParseInt(value, 10, 64); err == nil && seconds >= 0 {
+	if seconds, err := strconv.ParseInt(value, 10, 64); err == nil &&
+		seconds >= 0 {
 		if seconds > int64(bound/time.Second) {
 			return 0, true, true
 		}
@@ -643,17 +669,44 @@ func (w *WebhookOutput) sendWebhookWithRetry(
 				outcome = "terminal"
 			}
 			w.recordOutcome(outcome)
-			logger.Error("webhook delivery failed, giving up", "attempts", attempt+1,
-				"url", sanitizeURL(w.url), "event_type", e.Type, "error", result.err)
-			if !w.TrySendError(fmt.Errorf("webhook delivery to %s failed after %d attempts: %w",
-				sanitizeURL(w.url), attempt+1, result.err)) {
+			logger.Error(
+				"webhook delivery failed, giving up",
+				"attempts",
+				attempt+1,
+				"url",
+				sanitizeURL(w.url),
+				"event_type",
+				e.Type,
+				"error",
+				result.err,
+			)
+			if !w.TrySendError(
+				fmt.Errorf(
+					"webhook delivery to %s failed after %d attempts: %w",
+					sanitizeURL(w.url),
+					attempt+1,
+					result.err,
+				),
+			) {
 				logger.Warn("could not send error to error channel (full)")
 			}
 			return
 		}
-		logger.Warn("webhook delivery failed, retrying", "attempt", attempt+1,
-			"max_retries", w.maxRetries, "delay", delay, "url", sanitizeURL(w.url),
-			"event_type", e.Type, "error", result.err)
+		logger.Warn(
+			"webhook delivery failed, retrying",
+			"attempt",
+			attempt+1,
+			"max_retries",
+			w.maxRetries,
+			"delay",
+			delay,
+			"url",
+			sanitizeURL(w.url),
+			"event_type",
+			e.Type,
+			"error",
+			result.err,
+		)
 		timer := time.NewTimer(delay)
 		select {
 		case <-ctx.Done():
@@ -664,7 +717,10 @@ func (w *WebhookOutput) sendWebhookWithRetry(
 			return
 		case <-timer.C:
 		}
-		backoff = min(time.Duration(float64(backoff)*w.backoffFactor), w.maxBackoff)
+		backoff = min(
+			time.Duration(float64(backoff)*w.backoffFactor),
+			w.maxBackoff,
+		)
 	}
 }
 

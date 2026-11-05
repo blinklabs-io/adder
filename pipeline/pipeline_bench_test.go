@@ -34,7 +34,10 @@ func BenchmarkPipelineEventFlow(b *testing.B) {
 				}
 			}()
 
-			evt := event.Event{Type: event.TypeBlock, Timestamp: time.Unix(1, 0)}
+			evt := event.Event{
+				Type:      event.TypeBlock,
+				Timestamp: time.Unix(1, 0),
+			}
 			b.ReportAllocs()
 			b.ResetTimer()
 			for range b.N {

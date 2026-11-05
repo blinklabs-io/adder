@@ -35,7 +35,12 @@ func TestLoggingIntegration(t *testing.T) {
 			}
 			p := startAdder(t, f, flags...)
 			close(f.release)
-			wantTypes := []string{"input.block", "input.transaction", "input.governance", "input.rollback"}
+			wantTypes := []string{
+				"input.block",
+				"input.transaction",
+				"input.governance",
+				"input.rollback",
+			}
 			require.Equal(t, wantTypes, p.events(t, 4))
 			p.healthy(t)
 			// Observer delivery precedes output delivery; wait for the final
@@ -61,12 +66,27 @@ func TestLoggingIntegration(t *testing.T) {
 				lines := strings.Split(strings.TrimSpace(stdout), "\n")
 				require.Len(t, lines, 4)
 				for i, label := range []string{"BLOCK", "TX", "GOVERNANCE", "ROLLBACK"} {
-					require.Regexp(t, `^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} `+label+`\s+slot=100\s`, lines[i])
+					require.Regexp(
+						t,
+						`^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} `+label+`\s+slot=100\s`,
+						lines[i],
+					)
 				}
 			}
 			diagnostics := p.read(t, "stderr.log")
-			require.Equal(t, level == "debug" || level == "info", strings.Contains(diagnostics, "started utxorpc input"))
-			require.Equal(t, level != "error", strings.Contains(diagnostics, "intersect-point is set, overriding intersect-tip to false"))
+			require.Equal(
+				t,
+				level == "debug" || level == "info",
+				strings.Contains(diagnostics, "started utxorpc input"),
+			)
+			require.Equal(
+				t,
+				level != "error",
+				strings.Contains(
+					diagnostics,
+					"intersect-point is set, overriding intersect-tip to false",
+				),
+			)
 			for _, line := range strings.Split(strings.TrimSpace(diagnostics), "\n") {
 				if line == "" {
 					continue
@@ -86,7 +106,12 @@ func TestOutputLevelIntegration(t *testing.T) {
 	p := startAdder(t, f, "--output-log-format", "json",
 		"--output-log-level", "error")
 	close(f.release)
-	want := []string{"input.block", "input.transaction", "input.governance", "input.rollback"}
+	want := []string{
+		"input.block",
+		"input.transaction",
+		"input.governance",
+		"input.rollback",
+	}
 	require.Equal(t, want, p.events(t, len(want)))
 	p.healthy(t)
 	p.stop(t, syscall.SIGTERM)

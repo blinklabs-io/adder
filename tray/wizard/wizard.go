@@ -228,8 +228,16 @@ func NewWizard(
 
 	w.stepContent = container.NewStack()
 
-	w.backBtn = widget.NewButtonWithIcon("Back", theme.NavigateBackIcon(), w.prevStep)
-	w.nextBtn = widget.NewButtonWithIcon("Next Step", theme.NavigateNextIcon(), w.nextStep)
+	w.backBtn = widget.NewButtonWithIcon(
+		"Back",
+		theme.NavigateBackIcon(),
+		w.prevStep,
+	)
+	w.nextBtn = widget.NewButtonWithIcon(
+		"Next Step",
+		theme.NavigateNextIcon(),
+		w.nextStep,
+	)
 	w.nextBtn.IconPlacement = widget.ButtonIconTrailingText
 
 	header := container.NewVBox(

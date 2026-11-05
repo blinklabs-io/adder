@@ -102,13 +102,17 @@ func TestPushOutput_FCMFailureSurfacesError(t *testing.T) {
 		http.DefaultTransport = origTransport
 	})
 
-	http.DefaultTransport = mockRoundTripper(func(req *http.Request) (*http.Response, error) {
-		return &http.Response{
-			StatusCode: http.StatusInternalServerError,
-			Body:       io.NopCloser(bytes.NewBufferString("FCM Simulated 500 Error")),
-			Header:     make(http.Header),
-		}, nil
-	})
+	http.DefaultTransport = mockRoundTripper(
+		func(req *http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusInternalServerError,
+				Body: io.NopCloser(
+					bytes.NewBufferString("FCM Simulated 500 Error"),
+				),
+				Header: make(http.Header),
+			}, nil
+		},
+	)
 
 	// Send a block event
 	evt := event.Event{
@@ -166,7 +170,11 @@ func TestPushOutput_New_MissingProjectId_Fails(t *testing.T) {
 
 	_, err = New(WithServiceAccountFilePath(filePath))
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "invalid or empty project_id in service account file")
+	assert.Contains(
+		t,
+		err.Error(),
+		"invalid or empty project_id in service account file",
+	)
 }
 
 func TestPushOutput_ShutdownDuringInFlightRequest(t *testing.T) {
@@ -202,11 +210,13 @@ func TestPushOutput_ShutdownDuringInFlightRequest(t *testing.T) {
 	})
 
 	requestStarted := make(chan struct{})
-	http.DefaultTransport = mockRoundTripper(func(req *http.Request) (*http.Response, error) {
-		close(requestStarted)
-		<-req.Context().Done()
-		return nil, req.Context().Err()
-	})
+	http.DefaultTransport = mockRoundTripper(
+		func(req *http.Request) (*http.Response, error) {
+			close(requestStarted)
+			<-req.Context().Done()
+			return nil, req.Context().Err()
+		},
+	)
 
 	// Send an event
 	evt := event.Event{

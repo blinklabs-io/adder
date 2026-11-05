@@ -452,20 +452,29 @@ func TestWebhookOutput_ShutdownDuringInFlightRequest(t *testing.T) {
 	for _, retries := range []int{0, 3} {
 		t.Run(strconv.Itoa(retries), func(t *testing.T) {
 			entered, release := make(chan struct{}), make(chan struct{})
-			srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
-				_, _ = io.Copy(io.Discard, r.Body)
-				close(entered)
-				select {
-				case <-r.Context().Done():
-				case <-release:
-				}
-			}))
+			srv := httptest.NewServer(
+				http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+					_, _ = io.Copy(io.Discard, r.Body)
+					close(entered)
+					select {
+					case <-r.Context().Done():
+					case <-release:
+					}
+				}),
+			)
 			t.Cleanup(srv.Close)
 			var logs bytes.Buffer
 			w := New(
 				WithUrl(srv.URL, false),
 				WithRetryConfig(retries, time.Hour, time.Hour),
-				WithLogger(slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelWarn}))),
+				WithLogger(
+					slog.New(
+						slog.NewTextHandler(
+							&logs,
+							&slog.HandlerOptions{Level: slog.LevelWarn},
+						),
+					),
+				),
 			)
 			t.Cleanup(func() {
 				close(release)
@@ -490,15 +499,21 @@ func TestWebhookOutput_ShutdownDuringInFlightRequest(t *testing.T) {
 			for err := range errs {
 				t.Errorf("normal shutdown reported a delivery failure: %v", err)
 			}
-			require.Empty(t, logs.String(), "normal shutdown must not log retry/failure warnings")
+			require.Empty(
+				t,
+				logs.String(),
+				"normal shutdown must not log retry/failure warnings",
+			)
 		})
 	}
 }
 
 func TestWebhookRetryBackoffHonorsRunContext(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
-	}))
+	srv := httptest.NewServer(
+		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusInternalServerError)
+		}),
+	)
 	t.Cleanup(srv.Close)
 	signal := &retrySignalWriter{retrying: make(chan struct{})}
 	w := New(

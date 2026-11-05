@@ -18,7 +18,9 @@ package setup
 
 import "errors"
 
-var errFreeBSDServiceUnsupported = errors.New("FreeBSD service management is not implemented")
+var errFreeBSDServiceUnsupported = errors.New(
+	"FreeBSD service management is not implemented",
+)
 
 func renderUnit(cfg ServiceConfig) ([]byte, error) {
 	if err := cfg.Validate(); err != nil {

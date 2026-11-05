@@ -7,9 +7,9 @@ require (
 	fyne.io/fyne/v2 v2.8.2
 	github.com/SundaeSwap-finance/kugo v1.3.2
 	github.com/SundaeSwap-finance/ogmigo/v6 v6.2.2
-	github.com/blinklabs-io/gouroboros v0.216.2
+	github.com/blinklabs-io/gouroboros v0.218.0
 	github.com/blinklabs-io/ouroboros-mock v0.21.1
-	github.com/blinklabs-io/plutigo v0.10.1
+	github.com/blinklabs-io/plutigo v0.11.4
 	github.com/btcsuite/btcd/btcutil v1.2.0
 	github.com/gen2brain/beeep v0.11.3
 	github.com/go-telegram/bot v1.27.0
@@ -64,7 +64,7 @@ require (
 	github.com/dustin/go-humanize v1.1.0 // indirect
 	github.com/esiqveland/notify v0.14.0 // indirect
 	github.com/fsnotify/fsnotify v1.10.1 // indirect
-	github.com/fxamacker/cbor/v2 v2.9.6 // indirect
+	github.com/fxamacker/cbor/v2 v2.10.0 // indirect
 	github.com/fyne-io/gl-js v0.2.1-0.20260315212741-029c47fd27e8 // indirect
 	github.com/fyne-io/glfw-js v0.4.0 // indirect
 	github.com/fyne-io/image v0.1.1 // indirect
@@ -96,7 +96,6 @@ require (
 	github.com/klauspost/cpuid/v2 v2.4.0 // indirect
 	github.com/mattn/go-isatty v0.0.24 // indirect
 	github.com/mattn/go-runewidth v0.0.30 // indirect
-	github.com/minio/sha256-simd v1.0.1 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/ncruces/go-strftime v1.1.0 // indirect
 	github.com/nfnt/resize v0.0.0-20180221191011-83c6a9932646 // indirect

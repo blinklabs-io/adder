@@ -14,7 +14,10 @@ import (
 
 func TestFactoryConstructionResult(t *testing.T) {
 	credentials := filepath.Join(t.TempDir(), "service-account.json")
-	require.NoError(t, os.WriteFile(credentials, []byte(`{"project_id":"test"}`), 0o600))
+	require.NoError(
+		t,
+		os.WriteFile(credentials, []byte(`{"project_id":"test"}`), 0o600),
+	)
 	for _, path := range []string{"", credentials} {
 		t.Run(filepath.Base(path), func(t *testing.T) {
 			cfg, err := plugin.ResolveConfig(
@@ -27,8 +30,16 @@ func TestFactoryConstructionResult(t *testing.T) {
 			require.NoError(t, err)
 			p, err := newFromOptions(options)
 			if path == "" {
-				require.ErrorContains(t, err, "service account file path is required")
-				require.True(t, p == nil, "failed factory returned a non-nil interface")
+				require.ErrorContains(
+					t,
+					err,
+					"service account file path is required",
+				)
+				require.True(
+					t,
+					p == nil,
+					"failed factory returned a non-nil interface",
+				)
 			} else {
 				require.NoError(t, err)
 				require.IsType(t, &PushOutput{}, p)

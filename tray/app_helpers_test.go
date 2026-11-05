@@ -618,8 +618,11 @@ func TestOnWizardFinishReloadsTrayConfigOnSuccess(t *testing.T) {
 		Network: setup.NetworkConfig{Name: "mainnet"},
 		Filter:  setup.FilterConfig{MonitorEverything: true},
 		API:     setup.APIConfig{Address: "127.0.0.1", Port: 9090},
-		Output:  setup.OutputConfig{Type: "log", Config: make(map[string]string)},
-		Notify:  make(setup.NotificationPrefs),
+		Output: setup.OutputConfig{
+			Type:   "log",
+			Config: make(map[string]string),
+		},
+		Notify: make(setup.NotificationPrefs),
 	}, nil)
 
 	require.Eventually(t, func() bool {

@@ -71,7 +71,8 @@ func ExtractAssetDetailsFromMatch(
 
 			// Kupo returns asset names as hex; decode so JSON gets correct name (UTF-8) and nameHex
 			assetNameBytes := []byte(assetName)
-			if decoded, err := hex.DecodeString(assetName); err == nil && len(decoded) > 0 {
+			if decoded, err := hex.DecodeString(assetName); err == nil &&
+				len(decoded) > 0 {
 				assetNameBytes = decoded
 			}
 			byteStringAssetName := cbor.NewByteString(assetNameBytes)

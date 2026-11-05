@@ -27,7 +27,11 @@ type fixture struct {
 	attempts         atomic.Int32
 }
 
-func (f *fixture) FollowTip(ctx context.Context, _ *connect.Request[syncpb.FollowTipRequest], stream *connect.ServerStream[syncpb.FollowTipResponse]) error {
+func (f *fixture) FollowTip(
+	ctx context.Context,
+	_ *connect.Request[syncpb.FollowTipRequest],
+	stream *connect.ServerStream[syncpb.FollowTipResponse],
+) error {
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
@@ -35,7 +39,10 @@ func (f *fixture) FollowTip(ctx context.Context, _ *connect.Request[syncpb.Follo
 	}
 	attempt := f.attempts.Add(1)
 	if f.fail || attempt <= f.failFirst {
-		return connect.NewError(connect.CodeInternal, errors.New("integration fixture failure"))
+		return connect.NewError(
+			connect.CodeInternal,
+			errors.New("integration fixture failure"),
+		)
 	}
 	if attempt > 1 && f.reconnectRelease != nil {
 		select {
@@ -44,20 +51,32 @@ func (f *fixture) FollowTip(ctx context.Context, _ *connect.Request[syncpb.Follo
 		case <-f.reconnectRelease:
 		}
 	}
-	block := &syncpb.AnyChainBlock{Chain: &syncpb.AnyChainBlock_Cardano{Cardano: &cardanopb.Block{
-		Header: &cardanopb.BlockHeader{Slot: 100, Height: 50, Hash: bytes.Repeat([]byte{1}, 32)},
-		Body: &cardanopb.BlockBody{Tx: []*cardanopb.Tx{{
-			Hash: bytes.Repeat([]byte{2}, 32),
-			Fee:  &cardanopb.BigInt{BigInt: &cardanopb.BigInt_Int{Int: 200000}},
-			Proposals: []*cardanopb.GovernanceActionProposal{{
-				Deposit:       &cardanopb.BigInt{BigInt: &cardanopb.BigInt_Int{Int: 500000000}},
-				RewardAccount: append([]byte{0xe1}, make([]byte, 28)...),
-				GovAction: &cardanopb.GovernanceAction{GovernanceAction: &cardanopb.GovernanceAction_InfoAction{
-					InfoAction: &cardanopb.InfoAction{},
+	block := &syncpb.AnyChainBlock{
+		Chain: &syncpb.AnyChainBlock_Cardano{Cardano: &cardanopb.Block{
+			Header: &cardanopb.BlockHeader{
+				Slot:   100,
+				Height: 50,
+				Hash:   bytes.Repeat([]byte{1}, 32),
+			},
+			Body: &cardanopb.BlockBody{Tx: []*cardanopb.Tx{{
+				Hash: bytes.Repeat([]byte{2}, 32),
+				Fee: &cardanopb.BigInt{
+					BigInt: &cardanopb.BigInt_Int{Int: 200000},
+				},
+				Proposals: []*cardanopb.GovernanceActionProposal{{
+					Deposit: &cardanopb.BigInt{
+						BigInt: &cardanopb.BigInt_Int{Int: 500000000},
+					},
+					RewardAccount: append([]byte{0xe1}, make([]byte, 28)...),
+					GovAction: &cardanopb.GovernanceAction{
+						GovernanceAction: &cardanopb.GovernanceAction_InfoAction{
+							InfoAction: &cardanopb.InfoAction{},
+						},
+					},
 				}},
-			}},
-		}}},
-	}}}
+			}}},
+		}},
+	}
 	for _, response := range []*syncpb.FollowTipResponse{
 		{Action: &syncpb.FollowTipResponse_Apply{Apply: block}},
 		{Action: &syncpb.FollowTipResponse_Undo{Undo: block}},
@@ -71,7 +90,10 @@ func (f *fixture) FollowTip(ctx context.Context, _ *connect.Request[syncpb.Follo
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-f.disconnectFirst:
-			return connect.NewError(connect.CodeUnavailable, errors.New("integration stream disconnected"))
+			return connect.NewError(
+				connect.CodeUnavailable,
+				errors.New("integration stream disconnected"),
+			)
 		}
 	}
 	// Keep the stream open so EOF cannot masquerade as a shutdown failure.

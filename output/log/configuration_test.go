@@ -22,9 +22,13 @@ func TestLevelControlsOnlyItsOutput(t *testing.T) {
 		for _, level := range []string{"debug", "info", "warn", "error"} {
 			t.Run(format+"/"+level, func(t *testing.T) {
 				path := filepath.Join(t.TempDir(), "events.log")
-				p, err := plugin.GetPlugin(plugin.PluginTypeOutput, "log", map[string]any{
-					"format": format, "level": level, "path": path,
-				})
+				p, err := plugin.GetPlugin(
+					plugin.PluginTypeOutput,
+					"log",
+					map[string]any{
+						"format": format, "level": level, "path": path,
+					},
+				)
 				require.NoError(t, err)
 				output, ok := p.(*LogOutput)
 				require.True(t, ok)
@@ -37,12 +41,27 @@ func TestLevelControlsOnlyItsOutput(t *testing.T) {
 				t.Cleanup(func() { require.NoError(t, other.Stop()) })
 				events := []event.Event{
 					{Type: event.TypeBlock, Payload: event.BlockEvent{}},
-					{Type: event.TypeTransaction, Payload: event.TransactionEvent{}},
+					{
+						Type:    event.TypeTransaction,
+						Payload: event.TransactionEvent{},
+					},
 					{Type: event.TypeRollback, Payload: event.RollbackEvent{}},
-					{Type: event.TypeGovernance, Payload: event.GovernanceEvent{}},
-					{Type: event.TypeDRepRegistration, Payload: map[string]any{"certificate": "registration"}},
-					{Type: event.TypeDRepUpdate, Payload: map[string]any{"certificate": "update"}},
-					{Type: event.TypeDRepRetirement, Payload: map[string]any{"certificate": "retirement"}},
+					{
+						Type:    event.TypeGovernance,
+						Payload: event.GovernanceEvent{},
+					},
+					{
+						Type:    event.TypeDRepRegistration,
+						Payload: map[string]any{"certificate": "registration"},
+					},
+					{
+						Type:    event.TypeDRepUpdate,
+						Payload: map[string]any{"certificate": "update"},
+					},
+					{
+						Type:    event.TypeDRepRetirement,
+						Payload: map[string]any{"certificate": "retirement"},
+					},
 				}
 				for range 20 {
 					for _, evt := range events {
@@ -61,7 +80,11 @@ func TestLevelControlsOnlyItsOutput(t *testing.T) {
 				require.NoError(t, err)
 				otherData, err := os.ReadFile(otherPath)
 				require.NoError(t, err)
-				require.Equal(t, 20*len(events), strings.Count(string(otherData), "\n"))
+				require.Equal(
+					t,
+					20*len(events),
+					strings.Count(string(otherData), "\n"),
+				)
 				if level == "warn" || level == "error" {
 					require.Empty(t, data)
 				} else {
@@ -91,10 +114,14 @@ func TestLevelConfigurationPrecedence(t *testing.T) {
 			fs := pflag.NewFlagSet("test", pflag.ContinueOnError)
 			require.NoError(t, plugin.PopulateCmdlineOptions(fs))
 			require.NoError(t, fs.Parse(tc.args))
-			resolved, err := plugin.ResolveConfig(tc.yaml, fs, func(key string) (string, bool) {
-				value, ok := tc.env[key]
-				return value, ok
-			})
+			resolved, err := plugin.ResolveConfig(
+				tc.yaml,
+				fs,
+				func(key string) (string, bool) {
+					value, ok := tc.env[key]
+					return value, ok
+				},
+			)
 			require.NoError(t, err)
 			p, err := resolved.New(plugin.PluginTypeOutput, "log")
 			require.NoError(t, err)
@@ -109,8 +136,16 @@ func TestLevelConfigurationPrecedence(t *testing.T) {
 func TestRejectInvalidLevel(t *testing.T) {
 	for _, level := range []string{"", "trace", "infp", "none", "off"} {
 		t.Run(level, func(t *testing.T) {
-			p, err := plugin.GetPlugin(plugin.PluginTypeOutput, "log", map[string]any{"level": level})
-			require.ErrorContains(t, err, "level must be debug, info, warn, or error")
+			p, err := plugin.GetPlugin(
+				plugin.PluginTypeOutput,
+				"log",
+				map[string]any{"level": level},
+			)
+			require.ErrorContains(
+				t,
+				err,
+				"level must be debug, info, warn, or error",
+			)
 			require.Nil(t, p)
 		})
 	}

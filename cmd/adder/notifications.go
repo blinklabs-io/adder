@@ -59,7 +59,10 @@ func validateNotificationInput(
 		return nil
 	}
 	if inputName != "chainsync" {
-		return fmt.Errorf("notify-json requires chainsync input, got %q", inputName)
+		return fmt.Errorf(
+			"notify-json requires chainsync input, got %q",
+			inputName,
+		)
 	}
 	outputOptions, err := resolved.Options(plugin.PluginTypeOutput, outputName)
 	if err != nil {
@@ -95,7 +98,11 @@ func validateNotificationInput(
 	)
 	normalizedExpected, err := normalizeHostPort(expectedAddress)
 	if err != nil {
-		return fmt.Errorf("invalid notification custom node %q: %w", expectedAddress, err)
+		return fmt.Errorf(
+			"invalid notification custom node %q: %w",
+			expectedAddress,
+			err,
+		)
 	}
 	normalizedInput, err := normalizeHostPort(inputAddress)
 	if err != nil {
@@ -142,7 +149,10 @@ func newNotificationsCmd() *cobra.Command {
 			}
 			if jsonOutput {
 				if encodeErr := json.NewEncoder(cmd.OutOrStdout()).Encode(result); encodeErr != nil {
-					return fmt.Errorf("encoding validation result: %w", encodeErr)
+					return fmt.Errorf(
+						"encoding validation result: %w",
+						encodeErr,
+					)
 				}
 			} else if err == nil {
 				fmt.Fprintln(cmd.OutOrStdout(), "notification configuration is valid")
@@ -157,8 +167,10 @@ func newNotificationsCmd() *cobra.Command {
 			return nil
 		},
 	}
-	validate.Flags().StringVar(&path, "config", "", "path to notification JSON configuration")
-	validate.Flags().BoolVar(&jsonOutput, "json", false, "emit a machine-readable validation result")
+	validate.Flags().
+		StringVar(&path, "config", "", "path to notification JSON configuration")
+	validate.Flags().
+		BoolVar(&jsonOutput, "json", false, "emit a machine-readable validation result")
 	cmd.AddCommand(validate)
 	return cmd
 }

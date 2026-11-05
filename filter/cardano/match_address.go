@@ -26,7 +26,11 @@ import (
 // matchAddressFilter checks if transaction matches address filters
 func (c *Cardano) matchAddressFilter(te event.TransactionEvent) bool {
 	// Include resolved inputs as outputs for matching
-	allOutputs := make([]ledger.TransactionOutput, 0, len(te.Outputs)+len(te.ResolvedInputs))
+	allOutputs := make(
+		[]ledger.TransactionOutput,
+		0,
+		len(te.Outputs)+len(te.ResolvedInputs),
+	)
 	allOutputs = append(allOutputs, te.Outputs...)
 	allOutputs = append(allOutputs, te.ResolvedInputs...)
 
@@ -103,7 +107,9 @@ func (c *Cardano) matchAddressFilterGovernance(ge event.GovernanceEvent) bool {
 }
 
 // matchStakeCertificates checks certificates against stake credential hashes
-func (c *Cardano) matchStakeCertificates(certificates []ledger.Certificate) bool {
+func (c *Cardano) matchStakeCertificates(
+	certificates []ledger.Certificate,
+) bool {
 	for _, certificate := range certificates {
 		var credBytes []byte
 		switch cert := certificate.(type) {

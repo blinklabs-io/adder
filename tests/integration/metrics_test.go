@@ -34,7 +34,11 @@ func TestMetricsIntegration(t *testing.T) {
 	f := &fixture{release: make(chan struct{})}
 	p := startAdder(t, f, "--filter-type", "input.transaction,input.rollback")
 	close(f.release)
-	require.Equal(t, []string{"input.transaction", "input.rollback"}, p.events(t, 2))
+	require.Equal(
+		t,
+		[]string{"input.transaction", "input.rollback"},
+		p.events(t, 2),
+	)
 
 	client := &http.Client{Timeout: time.Second}
 	require.Eventually(t, func() bool {
@@ -42,7 +46,10 @@ func TestMetricsIntegration(t *testing.T) {
 		if err != nil {
 			return false
 		}
-		return strings.Contains(metrics, "adder_pipeline_processed_events_total 2\n") &&
+		return strings.Contains(
+			metrics,
+			"adder_pipeline_processed_events_total 2\n",
+		) &&
 			strings.Contains(metrics, "adder_pipeline_filtered_events_total 2\n") &&
 			strings.Contains(metrics, "adder_pipeline_processing_duration_seconds_count 2\n")
 	}, 5*time.Second, 20*time.Millisecond)

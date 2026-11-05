@@ -166,7 +166,11 @@ type Configuration struct{ plugins map[string]configuredPlugin }
 func (c *Configuration) Options(kind PluginType, name string) (Options, error) {
 	item, ok := c.plugins[PluginTypeName(kind)+"."+name]
 	if !ok {
-		return Options{}, fmt.Errorf("unknown %s plugin %q", PluginTypeName(kind), name)
+		return Options{}, fmt.Errorf(
+			"unknown %s plugin %q",
+			PluginTypeName(kind),
+			name,
+		)
 	}
 	return item.values, nil
 }

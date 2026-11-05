@@ -522,20 +522,23 @@ func TestFilterByPoolIdTransactionEvent(t *testing.T) {
 		assert.True(t, cs.filterTransactionEvent(te))
 	})
 
-	t.Run("non-matching SPO voting procedures in transaction", func(t *testing.T) {
-		vps := make(common.VotingProcedures)
-		vps[&common.Voter{
-			Type: common.VoterTypeStakingPoolKeyHash,
-			Hash: otherPoolKeyHash,
-		}] = nil
+	t.Run(
+		"non-matching SPO voting procedures in transaction",
+		func(t *testing.T) {
+			vps := make(common.VotingProcedures)
+			vps[&common.Voter{
+				Type: common.VoterTypeStakingPoolKeyHash,
+				Hash: otherPoolKeyHash,
+			}] = nil
 
-		te := event.TransactionEvent{
-			Transaction: mockTransaction{
-				votingProcedures: vps,
-			},
-		}
-		assert.False(t, cs.filterTransactionEvent(te))
-	})
+			te := event.TransactionEvent{
+				Transaction: mockTransaction{
+					votingProcedures: vps,
+				},
+			}
+			assert.False(t, cs.filterTransactionEvent(te))
+		},
+	)
 }
 
 func TestFilterByDRepIdGovernanceEvent(t *testing.T) {
@@ -787,7 +790,11 @@ func TestWithDRepIds(t *testing.T) {
 			_, hasDrep := cs.filterSet.dreps.bech32DRepIds[expectedDrep]
 			assert.True(t, hasDrep, "should compute bech32 drep variant")
 			_, hasDrepScript := cs.filterSet.dreps.bech32DRepIds[expectedDrepScript]
-			assert.True(t, hasDrepScript, "should compute bech32 drep_script variant")
+			assert.True(
+				t,
+				hasDrepScript,
+				"should compute bech32 drep_script variant",
+			)
 		},
 	)
 
@@ -1079,7 +1086,11 @@ func TestFilterByPoolOrDRepIdGovernanceEvent(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.shouldMatch, cs.filterGovernanceEvent(tt.governance))
+			assert.Equal(
+				t,
+				tt.shouldMatch,
+				cs.filterGovernanceEvent(tt.governance),
+			)
 		})
 	}
 }

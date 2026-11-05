@@ -45,13 +45,21 @@ func startAdder(t *testing.T, f *fixture, flags ...string) *process {
 	return p
 }
 
-func launchAdder(t *testing.T, f *fixture, config settings, flags ...string) *process {
+func launchAdder(
+	t *testing.T,
+	f *fixture,
+	config settings,
+	flags ...string,
+) *process {
 	t.Helper()
 	binary := os.Getenv("ADDER_INTEGRATION_BINARY")
 	require.NotEmpty(t, binary, "run scripts/test-integration.sh")
 	artifacts := os.Getenv("ADDER_INTEGRATION_ARTIFACTS")
 	require.NotEmpty(t, artifacts, "run scripts/test-integration.sh")
-	dir, err := os.MkdirTemp(artifacts, strings.ReplaceAll(t.Name(), "/", "-")+"-")
+	dir, err := os.MkdirTemp(
+		artifacts,
+		strings.ReplaceAll(t.Name(), "/", "-")+"-",
+	)
 	require.NoError(t, err)
 	t.Logf("artifacts: %s", dir)
 	mux := http.NewServeMux()
@@ -77,7 +85,12 @@ func launchAdder(t *testing.T, f *fixture, config settings, flags ...string) *pr
 		require.NoError(t, os.WriteFile(configPath, []byte(config.yaml), 0o600))
 		args = append(args, "--config", configPath)
 	}
-	p := &process{cmd: exec.Command(binary, args...), done: make(chan struct{}), dir: dir, apiURL: "http://" + address}
+	p := &process{
+		cmd:    exec.Command(binary, args...),
+		done:   make(chan struct{}),
+		dir:    dir,
+		apiURL: "http://" + address,
+	}
 	p.cmd.Dir = dir
 	// Isolate configuration from the developer's exported plugin settings.
 	p.cmd.Env = []string{"GORACE=halt_on_error=1"}
@@ -92,7 +105,10 @@ func launchAdder(t *testing.T, f *fixture, config settings, flags ...string) *pr
 		Env  []string `json:"env"`
 	}{args, config.env}, "", "  ")
 	require.NoError(t, err)
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "invocation.json"), invocation, 0o600))
+	require.NoError(
+		t,
+		os.WriteFile(filepath.Join(dir, "invocation.json"), invocation, 0o600),
+	)
 	stdout, err := os.Create(filepath.Join(dir, "stdout.log"))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = stdout.Close() })
@@ -141,7 +157,9 @@ func (p *process) healthy(t *testing.T) {
 		}
 		defer response.Body.Close()
 		var body map[string]any
-		return response.StatusCode == http.StatusOK && json.NewDecoder(response.Body).Decode(&body) == nil && body["failed"] == false
+		return response.StatusCode == http.StatusOK &&
+			json.NewDecoder(response.Body).Decode(&body) == nil &&
+			body["failed"] == false
 	}, 10*time.Second, 20*time.Millisecond, "Adder did not become healthy")
 }
 
@@ -149,7 +167,12 @@ func (p *process) events(t *testing.T, count int) []string {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	t.Cleanup(cancel)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, p.apiURL+"/events", nil)
+	req, err := http.NewRequestWithContext(
+		ctx,
+		http.MethodGet,
+		p.apiURL+"/events",
+		nil,
+	)
 	require.NoError(t, err)
 	response, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)
@@ -166,7 +189,10 @@ func (p *process) events(t *testing.T, count int) []string {
 		var evt struct {
 			Type string `json:"type"`
 		}
-		require.NoError(t, json.Unmarshal([]byte(strings.TrimPrefix(line, "data: ")), &evt))
+		require.NoError(
+			t,
+			json.Unmarshal([]byte(strings.TrimPrefix(line, "data: ")), &evt),
+		)
 		types = append(types, evt.Type)
 	}
 	require.NoError(t, scanner.Err())
@@ -182,7 +208,9 @@ func (p *process) stop(t *testing.T, signal os.Signal) {
 	case <-p.done:
 		require.NoError(t, p.err, "stderr: %s", p.read(t, "stderr.log"))
 	case <-time.After(5 * time.Second):
-		t.Fatal("Adder did not shut down within five seconds with SSE connected")
+		t.Fatal(
+			"Adder did not shut down within five seconds with SSE connected",
+		)
 	}
 	require.NotContains(t, p.read(t, "stderr.log"), "DATA RACE")
 }

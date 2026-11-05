@@ -19,7 +19,11 @@ func (p *Pipeline) HealthDetails() plugin.HealthDetails {
 	if running && !startedAt.IsZero() {
 		uptime = time.Since(startedAt).Seconds()
 	}
-	components := make([]plugin.ComponentHealth, 0, len(p.inputs)+len(p.filters)+len(p.outputs))
+	components := make(
+		[]plugin.ComponentHealth,
+		0,
+		len(p.inputs)+len(p.filters)+len(p.outputs),
+	)
 	for _, group := range []struct {
 		role    string
 		plugins []plugin.ManagedPlugin

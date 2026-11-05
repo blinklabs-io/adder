@@ -88,6 +88,8 @@ func ParseLevel(value string) (slog.Level, error) {
 	case "error":
 		return slog.LevelError, nil
 	default:
-		return slog.LevelInfo, errors.New("level must be debug, info, warn, or error")
+		return slog.LevelInfo, errors.New(
+			"level must be debug, info, warn, or error",
+		)
 	}
 }

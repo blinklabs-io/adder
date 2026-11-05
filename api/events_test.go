@@ -260,7 +260,12 @@ func TestEventHub_SSEFallback(t *testing.T) {
 	// Make a regular HTTP request with timeout so test can't hang
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, server.URL+"/events", nil)
+	req, err := http.NewRequestWithContext(
+		ctx,
+		http.MethodGet,
+		server.URL+"/events",
+		nil,
+	)
 	require.NoError(t, err)
 	resp, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)

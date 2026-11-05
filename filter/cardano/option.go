@@ -202,7 +202,8 @@ func WithDRepIds(drepIds []string) CardanoOptionFunc {
 			}
 		}
 		// Only enable filter if at least one valid ID was stored
-		if len(c.filterSet.dreps.hexDRepIds) > 0 || len(c.filterSet.dreps.bech32DRepIds) > 0 {
+		if len(c.filterSet.dreps.hexDRepIds) > 0 ||
+			len(c.filterSet.dreps.bech32DRepIds) > 0 {
 			c.filterSet.hasDRepFilter = true
 		}
 	}

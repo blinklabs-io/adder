@@ -96,9 +96,12 @@ func TestEpochFromSlotByNetwork(t *testing.T) {
 				[]ChainSyncOptionFunc{},
 				tt.options...,
 			)
-			options = append(options, WithStatusUpdateFunc(func(update ChainSyncStatus) {
-				status = update
-			}))
+			options = append(
+				options,
+				WithStatusUpdateFunc(func(update ChainSyncStatus) {
+					status = update
+				}),
+			)
 			c := New(options...)
 			c.updateStatus(tt.slot, 0, "", tt.slot, "")
 			require.Equal(t, tt.want, c.status.EpochNumber)

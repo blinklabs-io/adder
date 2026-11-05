@@ -29,7 +29,13 @@ func TestDarwinServicePlistDirAndPath(t *testing.T) {
 	assert.True(t, strings.HasSuffix(dir, "Library/LaunchAgents"))
 
 	path := serviceUnitPath()
-	assert.True(t, strings.HasSuffix(path, "Library/LaunchAgents/io.blinklabs.adder.plist"))
+	assert.True(
+		t,
+		strings.HasSuffix(
+			path,
+			"Library/LaunchAgents/io.blinklabs.adder.plist",
+		),
+	)
 }
 
 func TestDarwinRenderUnitAutoStart(t *testing.T) {
@@ -46,7 +52,11 @@ func TestDarwinRenderUnitAutoStart(t *testing.T) {
 
 	assert.Contains(t, content, "<key>RunAtLoad</key>\n    <true/>")
 	assert.Contains(t, content, "<key>KeepAlive</key>\n    <true/>")
-	assert.Contains(t, content, "<string>/Applications/AdderTray.app/Contents/MacOS/adder</string>")
+	assert.Contains(
+		t,
+		content,
+		"<string>/Applications/AdderTray.app/Contents/MacOS/adder</string>",
+	)
 	assert.Contains(t, content, "<string>--config</string>")
 
 	cfgNoAutoStart := ServiceConfig{
@@ -74,7 +84,11 @@ func TestDarwinRenderUnitXmlEscape(t *testing.T) {
 	require.NoError(t, err)
 	content := string(data)
 
-	assert.Contains(t, content, "/path/with &lt;special&gt; &amp; &#34;quotes&#34;/adder")
+	assert.Contains(
+		t,
+		content,
+		"/path/with &lt;special&gt; &amp; &#34;quotes&#34;/adder",
+	)
 }
 
 func TestFindAppBundlePath(t *testing.T) {

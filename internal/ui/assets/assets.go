@@ -132,7 +132,9 @@ func GetGrayscaleIcon(size uint) fyne.Resource {
 			// RGBA returns values in range [0, 0xffff], so uint16 cast is safe.
 			// gosec G115 is a false positive here as values never overflow
 			// uint16.
-			gray := uint32(0.299*float64(r) + 0.587*float64(g) + 0.114*float64(b))
+			gray := uint32(
+				0.299*float64(r) + 0.587*float64(g) + 0.114*float64(b),
+			)
 			dst.Set(x, y, color.RGBA64{
 				R: uint16(gray), //nolint:gosec // range checked
 				G: uint16(gray), //nolint:gosec // range checked
@@ -153,17 +155,26 @@ func GetGrayscaleIcon(size uint) fyne.Resource {
 
 // GetBlockIcon returns a blue-tinted icon for block events.
 func GetBlockIcon(size uint) fyne.Resource {
-	return GetIcon(size, color.RGBA{R: 52, G: 152, B: 219, A: 255}) // Peter River Blue
+	return GetIcon(
+		size,
+		color.RGBA{R: 52, G: 152, B: 219, A: 255},
+	) // Peter River Blue
 }
 
 // GetGovernanceIcon returns a gold-tinted icon for governance events.
 func GetGovernanceIcon(size uint) fyne.Resource {
-	return GetIcon(size, color.RGBA{R: 241, G: 196, B: 15, A: 255}) // Sun Flower Yellow
+	return GetIcon(
+		size,
+		color.RGBA{R: 241, G: 196, B: 15, A: 255},
+	) // Sun Flower Yellow
 }
 
 // GetTransactionIcon returns a green-tinted icon for transaction events.
 func GetTransactionIcon(size uint) fyne.Resource {
-	return GetIcon(size, color.RGBA{R: 46, G: 204, B: 113, A: 255}) // Emerald Green
+	return GetIcon(
+		size,
+		color.RGBA{R: 46, G: 204, B: 113, A: 255},
+	) // Emerald Green
 }
 
 // GetFullResource returns the original illustration as a fyne.Resource.
@@ -172,7 +183,10 @@ func GetFullResource() fyne.Resource {
 		data, _ := encodePNG(generateFallbackImage(256, nil))
 		return fyne.NewStaticResource("fallback.png", data)
 	}
-	return fyne.NewStaticResource("adder-illustration.png", adderIllustrationData)
+	return fyne.NewStaticResource(
+		"adder-illustration.png",
+		adderIllustrationData,
+	)
 }
 
 func applyTint(c color.Color, tint color.Color) color.Color {

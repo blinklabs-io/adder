@@ -142,7 +142,9 @@ func TestRulesEditorEverythingToggleHidesTargets(t *testing.T) {
 // targets box at construction time WITHOUT relying on Fyne firing
 // OnChanged from SetChecked — the prefs hydration path documents the
 // same invariant.
-func TestRulesEditorHydratesMonitorEverythingWithoutFiringOnChanged(t *testing.T) {
+func TestRulesEditorHydratesMonitorEverythingWithoutFiringOnChanged(
+	t *testing.T,
+) {
 	test.NewApp()
 	plan := samplePlan()
 	plan.Filter.MonitorEverything = true

@@ -33,7 +33,11 @@ func (e *Event) SetDropObserver(observer func()) { e.onDrop = observer }
 
 // SetPipelineDropObserver records rejected events for the owning pipeline.
 // Configure before Start; replacing the callback keeps restarts idempotent.
-func (e *Event) SetPipelineDropObserver(observer func()) { e.pipelineOnDrop = observer }
+func (e *Event) SetPipelineDropObserver(
+	observer func(),
+) {
+	e.pipelineOnDrop = observer
+}
 
 // New returns a new Event object with the specified options applied
 func New(options ...EventOptionFunc) *Event {
