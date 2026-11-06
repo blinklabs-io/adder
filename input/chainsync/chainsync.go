@@ -33,6 +33,7 @@ import (
 	"github.com/blinklabs-io/adder/internal/logging"
 	"github.com/blinklabs-io/adder/internal/nodeconn"
 	"github.com/blinklabs-io/adder/plugin"
+	"github.com/blinklabs-io/adder/state"
 	ouroboros "github.com/blinklabs-io/gouroboros"
 	"github.com/blinklabs-io/gouroboros/ledger"
 	blockfetch "github.com/blinklabs-io/gouroboros/protocol/blockfetch"
@@ -58,6 +59,15 @@ const (
 
 	maxAutoReconnectDelay = 60 * time.Second
 	defaultKupoTimeout    = 30 * time.Second
+
+	// defaultStateKey is the key used to persist the chainsync cursor in
+	// a configured state.Store, unless overridden with WithStateKey.
+	defaultStateKey = "chainsync-cursor"
+
+	// cursorPersistInterval bounds how often the persisted cursor is
+	// flushed to the state store. Flushing on every block would add a
+	// disk write per block, which is wasteful during catch-up sync.
+	cursorPersistInterval = 5 * time.Second
 )
 
 type ChainSync struct {
@@ -92,6 +102,17 @@ type ChainSync struct {
 	reconnectCallback  func()
 	eraHistory         EraHistory
 	eraHistorySet      bool
+	// stateStore, when set, persists the chainsync cursor so a restart
+	// resumes from the last emitted block instead of the configured
+	// intersect point. stateMu guards pendingCursor and emittedCursors,
+	// which persistCursorLoop periodically flushes.
+	stateStore      state.Store
+	stateKey        string
+	stateMu         sync.Mutex
+	pendingCursor   *ocommon.Point
+	emittedCursors  []ocommon.Point
+	stateStoreOwned bool
+	openStateStore  func() (state.Store, error)
 }
 
 // chainSyncBaseConfig is the Base configuration for this plugin. It is a
@@ -121,6 +142,7 @@ func New(options ...ChainSyncOptionFunc) *ChainSync {
 	c := &ChainSync{
 		intersectPoints: []ocommon.Point{},
 		status:          &ChainSyncStatus{},
+		stateKey:        defaultStateKey,
 	}
 	for _, option := range options {
 		option(c)
@@ -150,11 +172,20 @@ func (c *ChainSync) StartContext(ctx context.Context) error {
 }
 
 func (c *ChainSync) start(ctx context.Context) error {
+	if err := c.ensureStateStore(); err != nil {
+		return err
+	}
+	if err := c.loadCursor(); err != nil {
+		return err
+	}
 	connErrChan, err := c.connect(ctx)
 	if err != nil {
 		return err
 	}
 	c.Go(func() { c.superviseConnection(ctx, connErrChan) })
+	if c.stateStore != nil {
+		c.Go(func() { c.persistCursorLoop(ctx) })
+	}
 	return nil
 }
 
@@ -184,7 +215,20 @@ func (c *ChainSync) shutdownHooks() plugin.ShutdownHooks {
 			return c.closeConn()
 		},
 		AfterWait: func() error {
-			return c.closeConn()
+			err := c.closeConn()
+			// persistCursorLoop has exited by now (it is a tracked worker
+			// waited on above), so flushing here cannot race its own
+			// periodic flush.
+			if flushErr := c.flushCursor(); flushErr != nil {
+				err = errors.Join(err, flushErr)
+			}
+			if c.stateStoreOwned && c.stateStore != nil {
+				if closeErr := c.stateStore.Close(); closeErr != nil {
+					err = errors.Join(err, closeErr)
+				}
+				c.stateStore = nil
+			}
+			return err
 		},
 	}
 }
@@ -506,6 +550,7 @@ func (c *ChainSync) handleRollBackward(
 		}
 	}
 	_ = c.Emit(evt)
+	c.rewindPendingCursor(point)
 
 	// updating status after roll backward
 	c.updateStatus(
@@ -651,8 +696,11 @@ func (c *ChainSync) handleRollForward(
 	if c.delayConfirmations == 0 {
 		// Send events immediately if no delay confirmations configured
 		for _, evt := range tmpEvents {
-			_ = c.Emit(evt)
+			if !c.Emit(evt) {
+				return nil
+			}
 		}
+		c.setPendingCursor(updateTip.Point)
 	} else {
 		// Add events to delay buffer
 		c.delayBuffer = append(c.delayBuffer, tmpEvents)
@@ -670,9 +718,12 @@ func (c *ChainSync) handleRollForward(
 						BlockNumber: blockEvt.Block.BlockNumber(),
 					}
 				}
-				_ = c.Emit(evt)
+				if !c.Emit(evt) {
+					return nil
+				}
 			}
 			c.delayBuffer = slices.Delete(c.delayBuffer, 0, 1)
+			c.setPendingCursor(updateTip.Point)
 		}
 	}
 	c.updateStatus(
@@ -690,13 +741,14 @@ func (c *ChainSync) handleBlockFetchBlock(
 	blockType uint,
 	block ledger.Block,
 ) error {
+	events := make([]event.Event, 0, 20)
 	blockEvt := event.New(
 		event.TypeBlock,
 		time.Now(),
 		event.NewBlockContext(block, c.networkMagic),
 		event.NewBlockEvent(block, c.includeCbor),
 	)
-	_ = c.Emit(blockEvt)
+	events = append(events, blockEvt)
 	for t, transaction := range block.Transactions() {
 		resolvedInputs, err := resolveTransactionInputs(transaction, c)
 		if err != nil {
@@ -726,7 +778,7 @@ func (c *ChainSync) handleBlockFetchBlock(
 				resolvedInputs,
 			),
 		)
-		_ = c.Emit(txEvt)
+		events = append(events, txEvt)
 		// Emit governance event if transaction contains governance data
 		if event.HasGovernanceData(transaction) {
 			govEvt := event.New(
@@ -745,7 +797,7 @@ func (c *ChainSync) handleBlockFetchBlock(
 					c.includeCbor,
 				),
 			)
-			_ = c.Emit(govEvt)
+			events = append(events, govEvt)
 		}
 		// Emit DRep certificate events
 		if drepCerts := event.ExtractDRepCertificates(transaction); len(
@@ -766,9 +818,14 @@ func (c *ChainSync) handleBlockFetchBlock(
 						drepCtx,
 						event.NewDRepCertificateEvent(block, cert),
 					)
-					_ = c.Emit(drepEvt)
+					events = append(events, drepEvt)
 				}
 			}
+		}
+	}
+	for _, evt := range events {
+		if !c.Emit(evt) {
+			return nil
 		}
 	}
 	c.updateStatus(
@@ -778,6 +835,10 @@ func (c *ChainSync) handleBlockFetchBlock(
 		c.lastTip.Point.Slot,
 		hex.EncodeToString(c.lastTip.Point.Hash),
 	)
+	c.setPendingCursor(ocommon.Point{
+		Slot: block.SlotNumber(),
+		Hash: block.Hash().Bytes(),
+	})
 	return nil
 }
 
@@ -797,10 +858,8 @@ func (c *ChainSync) updateStatus(
 ) {
 	// Update cursor cache
 	blockHashBytes, _ := hex.DecodeString(blockHash)
-	c.cursorCache = append(
-		c.cursorCache,
-		ocommon.Point{Slot: slotNumber, Hash: blockHashBytes},
-	)
+	point := ocommon.Point{Slot: slotNumber, Hash: blockHashBytes}
+	c.cursorCache = append(c.cursorCache, point)
 	if len(c.cursorCache) > cursorCacheSize {
 		c.cursorCache = c.cursorCache[len(c.cursorCache)-cursorCacheSize:]
 	}

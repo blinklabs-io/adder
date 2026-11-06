@@ -23,6 +23,7 @@ import (
 
 	"github.com/blinklabs-io/adder/internal/logging"
 	"github.com/blinklabs-io/adder/plugin"
+	"github.com/blinklabs-io/adder/state"
 	ouroboros "github.com/blinklabs-io/gouroboros"
 	ocommon "github.com/blinklabs-io/gouroboros/protocol/common"
 )
@@ -103,6 +104,12 @@ func init() {
 					Type:         plugin.PluginOptionTypeUint,
 					Description:  "number of confirmations required before emitting events",
 					DefaultValue: uint(0),
+				},
+				{
+					Name:         "state-path",
+					Type:         plugin.PluginOptionTypeString,
+					Description:  "path to a SQLite database file for persisting the chainsync cursor across restarts; if unset, no cursor is persisted",
+					DefaultValue: "",
 				},
 			},
 		},
@@ -190,6 +197,15 @@ func newFromOptions(values plugin.Options) (plugin.ManagedPlugin, error) {
 			opts,
 			WithIntersectTip(values.Bool("intersect-tip")),
 		)
+	}
+	if statePath := values.String("state-path"); statePath != "" {
+		store, err := state.NewSqliteStore(statePath)
+		if err != nil {
+			return nil, fmt.Errorf("state-path: %w", err)
+		}
+		opts = append(opts, withOwnedStateStore(store, func() (state.Store, error) {
+			return state.NewSqliteStore(statePath)
+		}))
 	}
 	p := New(opts...)
 	return p, nil
