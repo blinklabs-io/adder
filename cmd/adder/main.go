@@ -335,6 +335,9 @@ func configureOutput(
 	if registrar, ok := output.(api.APIRouteRegistrar); ok {
 		registrar.RegisterRoutes()
 	}
+	if statusOutput, ok := output.(interface{ SetStatusProvider(func() bool) }); ok {
+		statusOutput.SetStatusProvider(pipe.IsRunning)
+	}
 	pipe.AddOutput(output)
 	return nil
 }

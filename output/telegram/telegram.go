@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/blinklabs-io/adder/event"
@@ -56,6 +57,12 @@ type TelegramOutput struct {
 	maxBackoff     time.Duration
 	backoffFactor  float64
 	pollCancel     context.CancelFunc
+	botUsername    string
+	settingsFile   string
+	settingsMu     sync.RWMutex
+	settings       notificationSettings
+	operatorIDs    map[int64]struct{}
+	statusProvider func() bool
 }
 
 // New creates a new TelegramOutput with the provided options
@@ -67,9 +74,13 @@ func New(options ...TelegramOptionFunc) (*TelegramOutput, error) {
 		initialBackoff: defaultInitialBackoff,
 		maxBackoff:     defaultMaxBackoff,
 		backoffFactor:  defaultBackoffFactor,
+		settings:       defaultNotificationSettings(),
 	}
 	for _, option := range options {
 		option(t)
+	}
+	if err := t.loadSettings(); err != nil {
+		return nil, err
 	}
 
 	// Validate required configuration
@@ -84,10 +95,9 @@ func New(options ...TelegramOptionFunc) (*TelegramOutput, error) {
 	if id, err := strconv.ParseInt(parts[0], 10, 64); err != nil || id <= 0 {
 		return nil, errors.New("invalid telegram bot token format")
 	}
-	cmdHandler := commandHandler(t.chatID)
 	b, err := bot.New(t.botToken,
 		bot.WithSkipGetMe(),
-		bot.WithDefaultHandler(cmdHandler),
+		bot.WithDefaultHandler(t.commandHandler),
 		bot.WithAllowedUpdates(bot.AllowedUpdates{models.AllowedUpdateMessage}),
 	)
 	if err != nil {
@@ -96,37 +106,6 @@ func New(options ...TelegramOptionFunc) (*TelegramOutput, error) {
 	t.bot = b
 
 	return t, nil
-}
-
-// commandHandler returns a handler that replies to /start, /help, and /settings (Telegram global commands).
-// Replies are sent only in the configured chat (chatID) so the bot stays send-only and minimal.
-func commandHandler(
-	chatID int64,
-) func(context.Context, *bot.Bot, *models.Update) {
-	return func(ctx context.Context, b *bot.Bot, update *models.Update) {
-		if update.Message == nil || update.Message.Text == "" {
-			return
-		}
-		if chatID != 0 && update.Message.Chat.ID != chatID {
-			return
-		}
-		text := strings.TrimSpace(update.Message.Text)
-		var reply string
-		switch {
-		case text == "/start" || strings.HasPrefix(text, "/start "):
-			reply = "This bot sends Cardano event notifications. Use /help for more."
-		case text == "/help":
-			reply = "This bot sends Cardano chain event notifications (blocks, transactions, rollbacks) to this chat. It is run by Adder and has no in-chat settings."
-		case text == "/settings":
-			reply = "No configurable settings."
-		default:
-			return
-		}
-		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
-			ChatID: update.Message.Chat.ID,
-			Text:   reply,
-		})
-	}
 }
 
 // log returns the plugin logger, or the global logger if unset.
@@ -174,25 +153,30 @@ func (t *TelegramOutput) start(ctx context.Context) error {
 		return fmt.Errorf("failed to authorize with Telegram: %w", err)
 	}
 	if me.Username != "" {
+		t.botUsername = me.Username
 		logger.Info("Telegram bot authorized as @" + me.Username)
 	} else {
 		logger.Info("Telegram bot authorized")
 	}
 
-	// Set global commands per Telegram bot requirements (https://core.telegram.org/bots/features#global-commands)
-	globalCommands := []models.BotCommand{
+	commands := []models.BotCommand{
 		{
 			Command:     "start",
 			Description: "Start the bot and see an introduction",
 		},
 		{Command: "help", Description: "Show help and list of commands"},
 		{Command: "settings", Description: "View bot settings"},
+		{Command: "status", Description: "View Adder pipeline status"},
+		{Command: "notify", Description: "Set an event notification preference"},
 	}
-	if _, err := t.bot.SetMyCommands(authCtx, &bot.SetMyCommandsParams{Commands: globalCommands}); err != nil {
+	if _, err := t.bot.SetMyCommands(authCtx, &bot.SetMyCommandsParams{
+		Commands: commands,
+		Scope:    &models.BotCommandScopeChat{ChatID: t.chatID},
+	}); err != nil {
 		logger.Warn("failed to set Telegram bot commands: " + err.Error())
 	}
 
-	// Start long polling so the bot can react to /start, /help, /settings
+	// Start long polling so the bot can react to commands.
 	pollCtx, pollCancel := context.WithCancel(ctx)
 	t.pollCancel = pollCancel
 	t.Go(func() { t.bot.Start(pollCtx) })
@@ -230,6 +214,9 @@ func (t *TelegramOutput) eventLoop(
 // processEvent handles incoming events and sends them to Telegram
 func (t *TelegramOutput) processEvent(ctx context.Context, evt *event.Event) {
 	logger := t.log()
+	if !t.notificationsEnabled(evt.Type) {
+		return
+	}
 
 	payload := evt.Payload
 	if payload == nil {

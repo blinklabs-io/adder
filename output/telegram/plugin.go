@@ -17,6 +17,7 @@ package telegram
 import (
 	"errors"
 	"strconv"
+	"strings"
 
 	"github.com/blinklabs-io/adder/internal/logging"
 	"github.com/blinklabs-io/adder/plugin"
@@ -54,6 +55,18 @@ func init() {
 					Description:  "disable link preview in messages",
 					DefaultValue: false,
 				},
+				{
+					Name:         "settings-file",
+					Type:         plugin.PluginOptionTypeString,
+					Description:  "local YAML file for Telegram notification preferences",
+					DefaultValue: "",
+				},
+				{
+					Name:         "operator-user-ids",
+					Type:         plugin.PluginOptionTypeString,
+					Description:  "comma-separated Telegram user IDs allowed to change group preferences",
+					DefaultValue: "",
+				},
 			},
 		},
 	)
@@ -79,6 +92,16 @@ func newFromOptions(values plugin.Options) (plugin.ManagedPlugin, error) {
 	if err != nil || chatID == 0 {
 		return nil, errors.New("chat-id must be a signed 64-bit integer")
 	}
+	var operatorIDs []int64
+	if raw := strings.TrimSpace(values.String("operator-user-ids")); raw != "" {
+		for _, part := range strings.Split(raw, ",") {
+			id, err := strconv.ParseInt(strings.TrimSpace(part), 10, 64)
+			if err != nil || id <= 0 {
+				return nil, errors.New("operator-user-ids must contain positive Telegram user IDs")
+			}
+			operatorIDs = append(operatorIDs, id)
+		}
+	}
 
 	p, err := New(
 		WithLogger(
@@ -88,6 +111,8 @@ func newFromOptions(values plugin.Options) (plugin.ManagedPlugin, error) {
 		WithChatID(chatID),
 		WithParseMode(values.String("parse-mode")),
 		WithDisableLinkPreview(values.Bool("disable-preview")),
+		WithSettingsFile(values.String("settings-file")),
+		WithOperatorUserIDs(operatorIDs...),
 	)
 	if err != nil {
 		return nil, err
