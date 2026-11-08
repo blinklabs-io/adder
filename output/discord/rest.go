@@ -18,11 +18,15 @@ import (
 )
 
 func (d *DiscordOutput) request(ctx context.Context, method, path string, body []byte, authenticated bool) ([]byte, error) {
+	localCooldown := time.Time{}
 	for attempt := 0; attempt < 4; attempt++ {
 		d.mu.Lock()
-		deadline := d.cooldown[path]
-		if authenticated && d.globalCooldown.After(deadline) {
-			deadline = d.globalCooldown
+		deadline := localCooldown
+		if authenticated {
+			deadline = d.cooldown[path]
+			if d.globalCooldown.After(deadline) {
+				deadline = d.globalCooldown
+			}
 		}
 		d.mu.Unlock()
 		if delay := time.Until(deadline); delay > 0 {
@@ -52,7 +56,7 @@ func (d *DiscordOutput) request(ctx context.Context, method, path string, body [
 			if errors.As(err, &urlErr) {
 				err = urlErr.Err
 			}
-			if attempt == 3 {
+			if method != http.MethodGet || attempt == 3 {
 				return nil, fmt.Errorf("discord request failed: %w", err)
 			}
 			if err := sleep(ctx, time.Duration(1<<attempt)*time.Second); err != nil {
@@ -70,25 +74,29 @@ func (d *DiscordOutput) request(ctx context.Context, method, path string, body [
 			if !ok {
 				return nil, errors.New("discord rate limit lacks a valid retry delay")
 			}
-			d.mu.Lock()
 			until := time.Now().Add(delay)
 			var limit struct {
 				Global bool `json:"global"`
 			}
 			_ = json.Unmarshal(data, &limit)
-			if limit.Global && authenticated {
-				d.globalCooldown = until
+			if authenticated {
+				d.mu.Lock()
+				if limit.Global {
+					d.globalCooldown = until
+				} else {
+					d.cooldown[path] = until
+				}
+				d.mu.Unlock()
 			} else {
-				d.cooldown[path] = until
+				localCooldown = until
 			}
-			d.mu.Unlock()
 			if attempt == 3 {
 				return nil, errors.New("discord rate limit retry budget exhausted")
 			}
 			continue
 		}
 		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-			if resp.Header.Get("X-RateLimit-Remaining") == "0" {
+			if authenticated && resp.Header.Get("X-RateLimit-Remaining") == "0" {
 				if seconds, err := strconv.ParseFloat(resp.Header.Get("X-RateLimit-Reset-After"), 64); err == nil && seconds >= 0 && seconds <= 3600 {
 					d.mu.Lock()
 					d.cooldown[path] = time.Now().Add(time.Duration(seconds * float64(time.Second)))
@@ -97,7 +105,7 @@ func (d *DiscordOutput) request(ctx context.Context, method, path string, body [
 			}
 			return data, nil
 		}
-		if resp.StatusCode >= 500 && attempt < 3 {
+		if resp.StatusCode >= 500 && method == http.MethodGet && attempt < 3 {
 			if err := sleep(ctx, time.Duration(1<<attempt)*time.Second); err != nil {
 				return nil, err
 			}
@@ -119,7 +127,7 @@ func retryDelay(header string, data []byte) (time.Duration, bool) {
 		}
 		seconds = *value.RetryAfter
 	}
-	if seconds < 0 || seconds > 3600 {
+	if !(seconds >= 0 && seconds <= 3600) {
 		return 0, false
 	}
 	return time.Duration(seconds * float64(time.Second)), true

@@ -24,17 +24,20 @@ output: discord
 plugins:
   output:
     discord:
-      bot-token: "DISCORD_BOT_TOKEN"
       application-id: "123456789012345678"
       guild-id: "234567890123456789"
       channel-id: "345678901234567890"
-      event-types: "blocks,transactions,rollbacks,governance"
+      event-types: "blocks,rollbacks,governance"
 ```
 
-All three IDs and the bot token are required. `event-types` accepts one or more
-of `blocks`, `transactions`, `rollbacks`, and `governance`; all four are enabled
-by default. The bot reuses the existing Discord webhook event layout for
-messages. It suppresses mentions in posted events and command replies. Delivery
+All three IDs and the bot token are required. Set the token with the
+`OUTPUT_DISCORD_BOT_TOKEN` environment variable, preferably from a secret
+store, or with `bot-token` in YAML. `event-types` accepts one or more of
+`blocks`, `transactions`, `rollbacks`, and `governance`; blocks, rollbacks, and
+governance are enabled by default. Transactions can be high volume, so select
+them only when the destination can handle the traffic. The bot reuses the
+existing Discord webhook event layout for messages. It suppresses mentions in
+posted events and command replies. Delivery
 errors appear on the output error channel and in logs without the token.
 
 Create a Discord application and bot, then install it in the target server with
@@ -48,7 +51,12 @@ and [Gateway documentation](https://docs.discord.com/developers/events/gateway).
 
 The bot sends heartbeats, resumes a Gateway session when possible, and
 reconnects with bounded backoff. HTTP requests honor Discord's rate-limit
-headers and retry 429 and temporary server failures up to three times.
+headers and retries rejected 429 requests up to three times. GET requests also
+retry temporary server and transport failures. POST requests are not replayed
+after ambiguous failures, which could otherwise duplicate messages.
+A `Retry-After` cooldown longer than ten seconds causes the current delivery to
+fail immediately. Later events for that route are also rejected while more than
+ten seconds remain, then wait out the rest of the cooldown.
 A delivery failure is reported; an undelivered event is not retained for a
 later restart. See Discord's [rate limit documentation](https://docs.discord.com/developers/topics/rate-limits).
 

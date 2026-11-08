@@ -17,7 +17,9 @@ import (
 	"time"
 
 	"github.com/blinklabs-io/adder/event"
+	"github.com/blinklabs-io/adder/plugin"
 	"github.com/gorilla/websocket"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -54,12 +56,30 @@ func TestDiscordConfiguration(t *testing.T) {
 	require.Equal(t, "wss://example.com/gateway?encoding=json&v=10", gatewayURL("wss://example.com/gateway"))
 }
 
+func TestDiscordFactoryEventTypes(t *testing.T) {
+	cfg, err := plugin.ResolveConfig(map[string]map[string]map[string]any{
+		"output": {"discord": {"bot-token": "secret", "application-id": "1", "guild-id": "2", "channel-id": "3", "event-types": "Blocks, GOVERNANCE"}},
+	}, nil, func(string) (string, bool) { return "", false })
+	require.NoError(t, err)
+	options, err := cfg.Options(plugin.PluginTypeOutput, "discord")
+	require.NoError(t, err)
+	output, err := newFromOptions(options)
+	require.NoError(t, err)
+	selected := output.(*DiscordOutput).selected
+	require.True(t, selected[event.TypeBlock])
+	require.True(t, selected[event.TypeGovernance])
+	require.False(t, selected[event.TypeTransaction])
+	defaultOutput, err := New(WithCredentials("secret", "1", "2", "3"))
+	require.NoError(t, err)
+	require.False(t, defaultOutput.selected[event.TypeTransaction])
+}
+
 func TestDiscordRateLimitAndSelection(t *testing.T) {
 	var mu sync.Mutex
 	calls := 0
 	var body map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		require.Equal(t, "Bot secret", r.Header.Get("Authorization"))
+		assert.Equal(t, "Bot secret", r.Header.Get("Authorization"))
 		mu.Lock()
 		calls++
 		n := calls
@@ -71,7 +91,11 @@ func TestDiscordRateLimitAndSelection(t *testing.T) {
 			return
 		}
 		if r.URL.Path == "/channels/3/messages" {
-			require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Error(err)
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
 		}
 		w.WriteHeader(http.StatusCreated)
 	}))
@@ -110,14 +134,23 @@ func TestDiscordGatewayCommands(t *testing.T) {
 				return
 			}
 			defer conn.Close()
-			require.Equal(t, "10", r.URL.Query().Get("v"))
-			require.Equal(t, "json", r.URL.Query().Get("encoding"))
-			require.NoError(t, conn.WriteJSON(map[string]any{"op": 10, "d": map[string]any{"heartbeat_interval": 200}}))
+			assert.Equal(t, "10", r.URL.Query().Get("v"))
+			assert.Equal(t, "json", r.URL.Query().Get("encoding"))
+			if err := conn.WriteJSON(map[string]any{"op": 10, "d": map[string]any{"heartbeat_interval": 200}}); err != nil {
+				t.Error(err)
+				return
+			}
 			var identify map[string]any
-			require.NoError(t, conn.ReadJSON(&identify))
+			if err := conn.ReadJSON(&identify); err != nil {
+				t.Error(err)
+				return
+			}
 			identified <- identify
 			wsURL := "wss" + strings.TrimPrefix(server.URL, "https") + "/gateway"
-			require.NoError(t, conn.WriteJSON(map[string]any{"op": 0, "t": "READY", "s": 1, "d": map[string]any{"session_id": "session", "resume_gateway_url": wsURL}}))
+			if err := conn.WriteJSON(map[string]any{"op": 0, "t": "READY", "s": 1, "d": map[string]any{"session_id": "session", "resume_gateway_url": wsURL}}); err != nil {
+				t.Error(err)
+				return
+			}
 			select {
 			case <-messageSent:
 			case <-time.After(5 * time.Second):
@@ -125,7 +158,10 @@ func TestDiscordGatewayCommands(t *testing.T) {
 			}
 			for i, item := range []struct{ guild, channel, name string }{{"2", "3", "adder-status"}, {"2", "3", "adder-recent"}, {"2", "4", "adder-status"}, {"9", "3", "adder-status"}} {
 				payload := map[string]any{"id": fmt.Sprintf("%d", i+10), "token": fmt.Sprintf("token%d", i), "application_id": "1", "guild_id": item.guild, "channel_id": item.channel, "type": 2, "data": map[string]any{"name": item.name}}
-				require.NoError(t, conn.WriteJSON(map[string]any{"op": 0, "t": "INTERACTION_CREATE", "s": i + 2, "d": payload}))
+				if err := conn.WriteJSON(map[string]any{"op": 0, "t": "INTERACTION_CREATE", "s": i + 2, "d": payload}); err != nil {
+					t.Error(err)
+					return
+				}
 			}
 			for {
 				var incoming map[string]any
@@ -138,27 +174,43 @@ func TestDiscordGatewayCommands(t *testing.T) {
 				}
 			}
 		case r.URL.Path == "/applications/1/guilds/2/commands":
-			require.Equal(t, "Bot secret", r.Header.Get("Authorization"))
+			assert.Equal(t, "Bot secret", r.Header.Get("Authorization"))
 			var body map[string]any
-			require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Error(err)
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
 			mu.Lock()
-			commands = append(commands, body["name"].(string))
+			if name, ok := body["name"].(string); ok {
+				commands = append(commands, name)
+			} else {
+				t.Errorf("missing command name: %v", body)
+			}
 			mu.Unlock()
 			w.WriteHeader(http.StatusCreated)
 		case r.URL.Path == "/gateway/bot":
-			require.Equal(t, "Bot secret", r.Header.Get("Authorization"))
+			assert.Equal(t, "Bot secret", r.Header.Get("Authorization"))
 			_ = json.NewEncoder(w).Encode(map[string]any{"url": "wss" + strings.TrimPrefix(server.URL, "https") + "/gateway"})
 		case r.URL.Path == "/channels/3/messages":
-			require.Equal(t, "Bot secret", r.Header.Get("Authorization"))
+			assert.Equal(t, "Bot secret", r.Header.Get("Authorization"))
 			var body map[string]any
-			require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
-			require.Len(t, body["embeds"], 1)
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Error(err)
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			assert.Len(t, body["embeds"], 1)
 			close(messageSent)
 			w.WriteHeader(http.StatusCreated)
 		case strings.HasPrefix(r.URL.Path, "/interactions/"):
-			require.Empty(t, r.Header.Get("Authorization"))
+			assert.Empty(t, r.Header.Get("Authorization"))
 			var body map[string]any
-			require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Error(err)
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
 			if strings.HasPrefix(r.URL.Path, "/interactions/10/") {
 				time.Sleep(350 * time.Millisecond)
 			}
@@ -222,7 +274,7 @@ func TestDiscordRetryDelay(t *testing.T) {
 		header, body string
 		want         time.Duration
 		ok           bool
-	}{{"0.25", "", 250 * time.Millisecond, true}, {"", `{"retry_after":0.5}`, 500 * time.Millisecond, true}, {"", `{}`, 0, false}, {"bad", `bad`, 0, false}, {"-1", "", 0, false}} {
+	}{{"0.25", "", 250 * time.Millisecond, true}, {"", `{"retry_after":0.5}`, 500 * time.Millisecond, true}, {"", `{}`, 0, false}, {"bad", `bad`, 0, false}, {"-1", "", 0, false}, {"NaN", "", 0, false}} {
 		actual, ok := retryDelay(tt.header, []byte(tt.body))
 		require.Equal(t, tt.ok, ok)
 		require.Equal(t, tt.want, actual)
@@ -300,7 +352,7 @@ func TestDiscordInteractionBypassesBotGlobalCooldown(t *testing.T) {
 			fmt.Fprint(w, `{"global": true, "retry_after": 30}`)
 			return
 		}
-		require.Empty(t, r.Header.Get("Authorization"))
+		assert.Empty(t, r.Header.Get("Authorization"))
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	defer server.Close()
@@ -362,7 +414,7 @@ func TestDiscordInvalidSessionRequiresIdentify(t *testing.T) {
 
 func TestDiscordGatewayHeartbeatUsesLatestSequence(t *testing.T) {
 	upgrader := websocket.Upgrader{}
-	heartbeats := make(chan map[string]any, 2)
+	heartbeats := make(chan map[string]any, 3)
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
@@ -380,7 +432,7 @@ func TestDiscordGatewayHeartbeatUsesLatestSequence(t *testing.T) {
 			return
 		}
 		_ = conn.WriteJSON(map[string]any{"op": 0, "t": "READY", "s": 99, "d": map[string]any{"session_id": "session", "resume_gateway_url": "wss://example.com"}})
-		for i := 0; i < 2; i++ {
+		for i := 0; i < 3; i++ {
 			if conn.ReadJSON(&frame) != nil {
 				return
 			}
@@ -395,13 +447,81 @@ func TestDiscordGatewayHeartbeatUsesLatestSequence(t *testing.T) {
 	defer cancel()
 	var session gatewaySession
 	_ = d.runGateway(ctx, "wss"+strings.TrimPrefix(server.URL, "https"), &session)
-	for i := 0; i < 2; i++ {
+	seenLatest := false
+	for i := 0; i < 3; i++ {
 		select {
 		case frame := <-heartbeats:
 			require.Equal(t, float64(1), frame["op"])
-			require.Equal(t, float64(99), frame["d"])
+			if frame["d"] == float64(99) {
+				seenLatest = true
+			}
 		case <-ctx.Done():
 			t.Fatal("missing heartbeat")
 		}
 	}
+	require.True(t, seenLatest, "a heartbeat after READY must carry the latest sequence")
+}
+
+func TestDiscordDoesNotReplayAmbiguousPost(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		transportError bool
+	}{
+		{"server error", false},
+		{"transport error", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			calls := 0
+			client := &http.Client{Transport: discordRoundTripFunc(func(req *http.Request) (*http.Response, error) {
+				calls++
+				if tc.transportError {
+					return nil, fmt.Errorf("connection lost")
+				}
+				return &http.Response{StatusCode: http.StatusInternalServerError, Header: make(http.Header), Body: io.NopCloser(strings.NewReader("unavailable"))}, nil
+			})}
+			d, err := New(WithCredentials("secret", "1", "2", "3"), WithHTTPClient(client))
+			require.NoError(t, err)
+			_, err = d.request(context.Background(), http.MethodPost, "/channels/3/messages", []byte(`{}`), true)
+			require.Error(t, err)
+			require.Equal(t, 1, calls)
+		})
+	}
+}
+
+func TestDiscordGetRetriesTemporaryFailure(t *testing.T) {
+	calls := 0
+	client := &http.Client{Transport: discordRoundTripFunc(func(req *http.Request) (*http.Response, error) {
+		calls++
+		status := http.StatusInternalServerError
+		if calls == 2 {
+			status = http.StatusOK
+		}
+		return &http.Response{StatusCode: status, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(`{"url":"wss://gateway.discord.gg"}`))}, nil
+	})}
+	d, err := New(WithCredentials("secret", "1", "2", "3"), WithHTTPClient(client))
+	require.NoError(t, err)
+	_, err = d.request(context.Background(), http.MethodGet, "/gateway/bot", nil, true)
+	require.NoError(t, err)
+	require.Equal(t, 2, calls)
+}
+
+func TestDiscordCallbackRateLimitDoesNotRetainTokenPath(t *testing.T) {
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		if calls == 1 {
+			w.Header().Set("Retry-After", "0.01")
+			w.WriteHeader(http.StatusTooManyRequests)
+			fmt.Fprint(w, `{"retry_after":0.01}`)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+	d, err := New(WithCredentials("secret", "1", "2", "3"), WithAPIBaseURL(server.URL))
+	require.NoError(t, err)
+	_, err = d.request(context.Background(), http.MethodPost, "/interactions/10/token/callback", []byte(`{}`), false)
+	require.NoError(t, err)
+	require.Equal(t, 2, calls)
+	require.Empty(t, d.cooldown)
 }

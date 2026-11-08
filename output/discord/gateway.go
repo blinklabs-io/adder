@@ -30,6 +30,7 @@ type gatewaySession struct {
 	id, resumeURL string
 	sequence      int64
 	hasSequence   bool
+	established   bool
 }
 
 func validateGatewayURL(raw string) error {
@@ -61,6 +62,9 @@ func (d *DiscordOutput) gatewayLoop(ctx context.Context, gateway string) {
 			endpoint = session.resumeURL
 		}
 		err := d.runGateway(ctx, endpoint, &session)
+		if session.established {
+			backoff = time.Second
+		}
 		if ctx.Err() != nil {
 			return
 		}
@@ -90,6 +94,7 @@ func (d *DiscordOutput) gatewayLoop(ctx context.Context, gateway string) {
 }
 
 func (d *DiscordOutput) runGateway(ctx context.Context, endpoint string, session *gatewaySession) error {
+	session.established = false
 	if err := validateGatewayURL(endpoint); err != nil {
 		return err
 	}
@@ -98,7 +103,7 @@ func (d *DiscordOutput) runGateway(ctx context.Context, endpoint string, session
 		response.Body.Close()
 	}
 	if err != nil {
-		return errors.New("discord Gateway connection failed")
+		return fmt.Errorf("discord Gateway connection failed: %w", err)
 	}
 	d.mu.Lock()
 	d.conn = conn
@@ -188,7 +193,7 @@ func (d *DiscordOutput) runGateway(ctx context.Context, endpoint string, session
 			}
 		}
 	}()
-	defer func() { close(stopHeartbeat); <-heartbeatDone }()
+	defer func() { close(stopHeartbeat); conn.Close(); <-heartbeatDone }()
 	for {
 		var evt gatewayEvent
 		if err := conn.ReadJSON(&evt); err != nil {
@@ -211,7 +216,10 @@ func (d *DiscordOutput) runGateway(ctx context.Context, endpoint string, session
 				if json.Unmarshal(evt.D, &ready) == nil && validateGatewayURL(ready.ResumeGatewayURL) == nil {
 					session.id = ready.SessionID
 					session.resumeURL = ready.ResumeGatewayURL
+					session.established = true
 				}
+			case "RESUMED":
+				session.established = true
 			case "INTERACTION_CREATE":
 				select {
 				case d.interactionSlots <- struct{}{}:

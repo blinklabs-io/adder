@@ -40,7 +40,7 @@ type DiscordOutput struct {
 
 // New builds a Discord bot output.
 func New(options ...Option) (*DiscordOutput, error) {
-	d := &DiscordOutput{selected: map[string]bool{event.TypeBlock: true, event.TypeTransaction: true, event.TypeRollback: true, event.TypeGovernance: true}, client: &http.Client{Timeout: 15 * time.Second}, dialer: websocket.DefaultDialer, apiBaseURL: apiURL, cooldown: make(map[string]time.Time), interactionSlots: make(chan struct{}, 16)}
+	d := &DiscordOutput{selected: map[string]bool{event.TypeBlock: true, event.TypeRollback: true, event.TypeGovernance: true}, client: &http.Client{Timeout: 15 * time.Second}, dialer: websocket.DefaultDialer, apiBaseURL: apiURL, cooldown: make(map[string]time.Time), interactionSlots: make(chan struct{}, 16)}
 	for _, option := range options {
 		option(d)
 	}

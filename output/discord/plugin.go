@@ -27,7 +27,7 @@ func init() {
 			{Name: "application-id", Type: plugin.PluginOptionTypeString, Description: "Discord application ID", DefaultValue: ""},
 			{Name: "guild-id", Type: plugin.PluginOptionTypeString, Description: "allowed Discord server ID", DefaultValue: ""},
 			{Name: "channel-id", Type: plugin.PluginOptionTypeString, Description: "allowed Discord channel ID", DefaultValue: ""},
-			{Name: "event-types", Type: plugin.PluginOptionTypeString, Description: "comma-separated event types", DefaultValue: "blocks,transactions,rollbacks,governance"},
+			{Name: "event-types", Type: plugin.PluginOptionTypeString, Description: "comma-separated event types", DefaultValue: "blocks,rollbacks,governance"},
 		},
 	})
 }
