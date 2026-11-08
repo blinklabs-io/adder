@@ -48,6 +48,21 @@ func WithChatID(chatID int64) TelegramOptionFunc {
 	}
 }
 
+// WithSettingsFile sets the local YAML file used for notification preferences.
+func WithSettingsFile(path string) TelegramOptionFunc {
+	return func(t *TelegramOutput) { t.settingsFile = path }
+}
+
+// WithOperatorUserIDs allows the listed Telegram users to change group preferences.
+func WithOperatorUserIDs(ids ...int64) TelegramOptionFunc {
+	return func(t *TelegramOutput) {
+		t.operatorIDs = make(map[int64]struct{}, len(ids))
+		for _, id := range ids {
+			t.operatorIDs[id] = struct{}{}
+		}
+	}
+}
+
 // WithParseMode specifies the message parse mode
 // Options: HTML, Markdown (legacy), MarkdownV2 (default markdown)
 func WithParseMode(mode string) TelegramOptionFunc {
