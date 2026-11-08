@@ -3,6 +3,8 @@ package pipeline
 import (
 	"context"
 	"fmt"
+	"os"
+	"strconv"
 	"testing"
 	"time"
 
@@ -68,7 +70,22 @@ func BenchmarkPipelineEventFlow(b *testing.B) {
 
 func BenchmarkPipelineStreaming(b *testing.B) {
 	const batchSize = 4096
-	for _, buffer := range []int{10, 256, 2048} {
+	buffers := []int{10, 256, 2048}
+	shift := 0
+	if value := os.Getenv("ADDER_BENCH_ORDER"); value != "" {
+		var err error
+		shift, err = strconv.Atoi(value)
+		if err != nil || shift < 0 || shift >= len(buffers) {
+			b.Fatalf("invalid ADDER_BENCH_ORDER %q", value)
+		}
+	}
+	order := []int{
+		buffers[shift],
+		buffers[(shift+1)%len(buffers)],
+		buffers[(shift+2)%len(buffers)],
+	}
+	b.Logf("buffer order: %v", order)
+	for _, buffer := range order {
 		for _, slow := range []bool{false, true} {
 			name := fmt.Sprintf("buffer_%d/fast_output", buffer)
 			if slow {

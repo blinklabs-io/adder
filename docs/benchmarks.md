@@ -36,7 +36,9 @@ synthetic input buffers of 10, 256, and 2,048 slots with the same pipeline and
 output:
 
 ```sh
-GOWORK=off go test ./pipeline -run '^$' -bench '^BenchmarkPipelineStreaming$' -benchmem -benchtime=200ms -count=5
+for order in 0 1 2 2 1 0; do
+  GOMAXPROCS=2 ADDER_BENCH_ORDER="$order" GOWORK=off go test ./pipeline -run '^$' -bench '^BenchmarkPipelineStreaming$' -benchmem -benchtime=200ms -count=1 -v
+done
 ```
 
 Each operation sends and drains 4,096 block event envelopes. `fast_output`
@@ -45,19 +47,21 @@ every 64 events to model intermittent sink backpressure. The benchmark reports
 events/s as well as time and allocations per 4,096-event operation. Startup is
 outside the timed section. No Cardano node, decoding, filters, serialization,
 network output, or payload allocations are included. The pause is a synthetic
-schedule, not a measured sink latency. Compare the same named case across
-runs; faster producer completion alone does not mean faster end-to-end delivery.
+schedule, not a measured sink latency. The six separate runs balance the three
+buffer orders; `-v` prints each order with the raw timings. Compare the same
+named case across runs; faster producer completion alone does not mean faster
+end-to-end delivery.
 Because channel creation is outside the timer, B/op does not include the
 buffer's storage.
 
 One local run on Apple M5 with Go 1.27.3, `GOMAXPROCS=2`, and other work on the
-machine gave these medians from five repetitions:
+machine gave these medians from six repetitions:
 
 | Input buffer | Fast output events/s | Periodic pause events/s | Event slot storage |
 | ---: | ---: | ---: | ---: |
-| 10 | 1,017,757 | 352,287 | 960 B |
-| 256 | 1,028,742 | 353,611 | 24 KiB |
-| 2,048 | 1,039,363 | 353,360 | 192 KiB |
+| 10 | 1,050,530 | 352,140 | 960 B |
+| 256 | 1,080,099 | 354,043 | 24 KiB |
+| 2,048 | 1,048,588 | 353,900 | 192 KiB |
 
 The slot storage column is capacity multiplied by the 96-byte `event.Event`
 value on this arm64 build. It excludes channel bookkeeping and memory retained
