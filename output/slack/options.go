@@ -37,7 +37,11 @@ func WithLogger(logger plugin.Logger) Option {
 	return func(s *SlackOutput) { s.SetLogger(logger) }
 }
 
-// WithMaxRetries sets the number of retries after the first delivery attempt.
+// WithMaxRetries sets zero to three retries after the first delivery attempt.
 func WithMaxRetries(retries int) Option {
-	return func(s *SlackOutput) { s.maxRetries = retries }
+	return func(s *SlackOutput) {
+		if retries >= 0 && retries <= 3 {
+			s.maxRetries = retries
+		}
+	}
 }

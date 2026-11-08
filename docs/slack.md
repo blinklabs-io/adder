@@ -6,6 +6,12 @@ destination. Create one for each channel using Slack's
 [incoming webhook setup](https://docs.slack.dev/messaging/sending-messages-using-incoming-webhooks/)
 and keep the URLs private.
 
+Slack's current public incoming webhook API is unversioned. The local tests
+assert its documented JSON `text` POST, HTTP 200 `ok` success response, and
+HTTP 429 `Retry-After` behavior against the
+[current webhook guide](https://docs.slack.dev/messaging/sending-messages-using-incoming-webhooks/)
+and [rate limit reference](https://docs.slack.dev/apis/web-api/rate-limits/).
+
 ```yaml
 output: slack
 plugins:
@@ -29,7 +35,8 @@ Adder spaces ordinary posts to each webhook by at least one second. For HTTP
 up to three times. The cooldown remains in force for later events, including
 when an event exhausts its retry budget. It also retries transient server or
 transport errors with bounded backoff. Missing or invalid `Retry-After`
-values fail the output; other client errors and exhausted retries appear on
+values fail the affected delivery and impose a one-minute destination cooldown.
+Other client errors and exhausted retries appear on
 the plugin error channel and in logs without exposing webhook URLs. A delay
 beyond one minute is reported as a delivery failure. Later events for that
 destination are skipped while more than one minute remains, then wait for the

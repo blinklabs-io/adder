@@ -6,6 +6,7 @@ package slack
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -68,11 +69,84 @@ func TestSlackRateLimitUsesRetryAfter(t *testing.T) {
 }
 
 func TestSlackRateLimitWithoutUsableRetryAfterFails(t *testing.T) {
+	var attempts atomic.Int32
 	client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		attempts.Add(1)
 		return slackResponse(http.StatusTooManyRequests, "rate_limited", ""), nil
 	})}
 	s := New(WithWebhookURLs("https://hooks.slack.com/services/test"), WithHTTPClient(client))
 	require.ErrorContains(t, s.deliver(context.Background(), s.urls[0], "test"), "Retry-After")
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	require.ErrorIs(t, s.deliver(ctx, s.urls[0], "next"), context.DeadlineExceeded)
+	require.EqualValues(t, 1, attempts.Load())
+}
+
+func TestSlackInvalidRetryAfterKeepsOtherDestinationsRunning(t *testing.T) {
+	var healthy atomic.Int32
+	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		if strings.HasSuffix(req.URL.Path, "/bad") {
+			return slackResponse(http.StatusTooManyRequests, "rate_limited", ""), nil
+		}
+		healthy.Add(1)
+		return slackResponse(http.StatusOK, "ok", ""), nil
+	})}
+	s := New(WithWebhookURLs("https://hooks.slack.com/services/bad", "https://hooks.slack.com/services/good"), WithHTTPClient(client))
+	require.NoError(t, s.Start())
+	t.Cleanup(func() { require.NoError(t, s.Stop()) })
+	s.InputChan() <- rollbackEvent()
+	select {
+	case err := <-s.ErrorChan():
+		require.ErrorContains(t, err, "Retry-After")
+	case <-time.After(2 * time.Second):
+		t.Fatal("missing delivery error")
+	}
+	require.True(t, s.Running())
+	require.Eventually(t, func() bool { return healthy.Load() == 1 }, time.Second, 10*time.Millisecond)
+}
+
+func TestSlackRetriesTransientResponsesAndTransportErrors(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		firstStatus int
+		firstErr    error
+	}{
+		{"server error", http.StatusInternalServerError, nil},
+		{"transport error", 0, errors.New("temporary network failure")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			attempts := 0
+			client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+				attempts++
+				if attempts == 1 {
+					if tc.firstErr != nil {
+						return nil, tc.firstErr
+					}
+					return slackResponse(tc.firstStatus, "unavailable", ""), nil
+				}
+				return slackResponse(http.StatusOK, "ok", ""), nil
+			})}
+			s := New(WithWebhookURLs("https://hooks.slack.com/services/test"), WithHTTPClient(client), WithMaxRetries(1))
+			require.NoError(t, s.deliver(context.Background(), s.urls[0], "test"))
+			require.Equal(t, 2, attempts)
+		})
+	}
+}
+
+func TestSlackPersistentTransportFailureExhaustsRetries(t *testing.T) {
+	attempts := 0
+	client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		attempts++
+		return nil, errors.New("temporary network failure")
+	})}
+	s := New(WithWebhookURLs("https://hooks.slack.com/services/test"), WithHTTPClient(client), WithMaxRetries(1))
+	require.ErrorContains(t, s.deliver(context.Background(), s.urls[0], "test"), "after 2 attempts")
+	require.Equal(t, 2, attempts)
+}
+
+func TestSlackInvalidRetryCountKeepsDefault(t *testing.T) {
+	require.Equal(t, 3, New(WithMaxRetries(-1)).maxRetries)
+	require.Equal(t, 3, New(WithMaxRetries(4)).maxRetries)
 }
 
 func TestSlackCooldownSurvivesExhaustedRetryBudget(t *testing.T) {
@@ -150,6 +224,8 @@ func TestSlackFactoryValidatesConfig(t *testing.T) {
 	}{
 		{"", "blocks", "webhook-urls"},
 		{"not-a-url", "blocks", "webhook-urls"},
+		{"https://:443/services/test", "blocks", "webhook-urls"},
+		{"https://hooks.slack.com:99999/services/test", "blocks", "webhook-urls"},
 		{"https://hooks.slack.com/services/test", "unknown", "unsupported Slack event type"},
 		{"https://hooks.slack.com/services/test", "blocks, rollbacks", ""},
 	} {

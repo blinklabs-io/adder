@@ -242,7 +242,7 @@ func (s *SlackOutput) deliver(ctx context.Context, destination, message string) 
 		if resp.status == http.StatusTooManyRequests {
 			seconds, err := strconv.ParseInt(resp.retryAfter, 10, 64)
 			if err != nil || seconds < 0 || seconds > int64((1<<63-1)/time.Second) {
-				s.Fail(errors.New("slack rate limit has invalid Retry-After"))
+				s.nextAllowed[destination] = time.Now().Add(maxRetryAfter)
 				return errors.New("slack rate limit has invalid Retry-After")
 			}
 			delay := time.Duration(seconds) * time.Second

@@ -51,8 +51,11 @@ func newFromOptions(values plugin.Options) (plugin.ManagedPlugin, error) {
 }
 
 func validateWebhookURL(destination string) error {
+	if err := plugin.ValidateHTTPURL(destination); err != nil {
+		return err
+	}
 	parsed, err := url.Parse(destination)
-	if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil {
+	if err != nil || parsed.Scheme != "https" || parsed.User != nil {
 		return errors.New("must be an HTTPS URL")
 	}
 	return nil
