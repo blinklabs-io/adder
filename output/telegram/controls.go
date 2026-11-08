@@ -67,6 +67,9 @@ func (t *TelegramOutput) loadSettings() error {
 	} else if !errors.Is(err, io.EOF) {
 		return fmt.Errorf("decoding trailing Telegram settings: %w", err)
 	}
+	if settings.ChatID == 0 {
+		return errors.New("telegram settings chat_id is required")
+	}
 	if settings.ChatID != t.chatID {
 		return fmt.Errorf("telegram settings chat ID %d does not match configured chat ID %d", settings.ChatID, t.chatID)
 	}

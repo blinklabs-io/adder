@@ -20,8 +20,10 @@ Use a separate settings file for each Adder instance and configured chat. The
 process must be able to write its parent directory. Adder creates the directory
 with private permissions and saves the YAML file atomically. The file records
 the chat ID and the four preferences; a file belonging to another chat or a
-malformed file prevents startup. If `settings-file` is omitted, events remain
-enabled and the bot can show settings, but in-chat changes are unavailable.
+malformed file prevents startup. A hand-written settings file must include
+`chat_id` matching the configured chat ID. If `settings-file` is omitted, events
+remain enabled and the bot can show settings, but in-chat changes are
+unavailable.
 
 | Command | Behavior |
 | --- | --- |

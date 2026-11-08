@@ -275,6 +275,13 @@ func TestTelegramRejectsAdditionalSettingsDocument(t *testing.T) {
 	require.ErrorContains(t, err, "additional YAML document")
 }
 
+func TestTelegramRequiresSettingsChatID(t *testing.T) {
+	settingsFile := filepath.Join(t.TempDir(), "telegram.yaml")
+	require.NoError(t, os.WriteFile(settingsFile, []byte("blocks: false\n"), 0o600))
+	_, err := New(WithBotToken("123:abc"), WithChatID(99), WithSettingsFile(settingsFile))
+	require.ErrorContains(t, err, "chat_id is required")
+}
+
 func TestTelegramSaveFailureKeepsPreference(t *testing.T) {
 	settingsFile := filepath.Join(t.TempDir(), "settings.yaml")
 	b, calls, _ := testTelegramAPI(t)
