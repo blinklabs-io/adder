@@ -162,12 +162,10 @@ GOEXPERIMENT=goroutineleakprofile go build -o adder ./cmd/adder
 > **Note**: If you attempt to compile with this flag on older Go versions, the compiler will fail with:
 > `go: unknown GOEXPERIMENT goroutineleakprofile`
 
-### Analyzing via HTTP pprof
-When the profiler is enabled, you can access the `goroutineleak` profile via the net/http/pprof endpoint if the debug port is enabled:
-```bash
-go tool pprof http://localhost:6060/debug/pprof/goroutineleak
-```
+### Collecting profiles
 
-The ordinary `goroutine` profile lists all active goroutines. Use both profiles
-when investigating workers that remain after shutdown; an empty leak profile
-does not prove that every worker exited.
+Adder's debug listener does not register HTTP pprof handlers. Enabling its
+port alone does not expose a `goroutineleak` profile. See the
+[benchmark profiling workflow](benchmarks.md#cpu-memory-and-execution-trace-profiles)
+for local CPU, memory, and execution trace capture. An empty leak profile does
+not prove that every worker exited.
