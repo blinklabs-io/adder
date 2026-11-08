@@ -931,8 +931,9 @@ adder --filter-type input.governance \
 
 ## Additional Documentation
 
-- [Benchmarks](docs/benchmarks.md): measure pipeline event flow, Cardano
-  filtering, and event JSON serialization with allocation counts.
+- [Benchmarks and profiling](docs/benchmarks.md): measure pipeline event flow,
+  streaming backpressure, Cardano filtering, and event JSON serialization;
+  collect local CPU, memory, and execution trace profiles.
 - [Local CLI integration tests](docs/testing/local-integration.md): run
   `./scripts/test-integration.sh` to check logging thresholds, diagnostic
   levels, configuration precedence, filtering, startup failures, RPC recovery,
