@@ -331,6 +331,7 @@ delivery or per-endpoint identity.
 
 ### Webhook retry policy
 
+
 Webhook delivery makes one initial attempt and at most three retries by default.
 Transient transport failures and HTTP 408, 429, and 5xx responses use bounded
 exponential backoff (1s, 2s, 4s by default). A valid `Retry-After` can extend
@@ -342,6 +343,9 @@ body intact. A redirect that does not reach a final response fails. Other
 non-2xx responses fail immediately. After the retry limit,
 Adder discards the event and reports a terminal error. Retries and queued
 events remain in memory and can be lost on shutdown.
+
+For a Discord bot with selected event delivery and read-only slash commands,
+see [Discord bot output](docs/discord.md).
 
 With regular scrapes, `increase(adder_pipeline_received_events_total[10m])`
 estimates how much the received counter advanced over ten minutes. If it stays
