@@ -122,6 +122,7 @@ func TestDiscordGatewayCommands(t *testing.T) {
 	commands := []string{}
 	callbacks := make(chan map[string]any, 4)
 	messageSent := make(chan struct{})
+	allowInteractions := make(chan struct{})
 	identified := make(chan map[string]any, 1)
 	gatewayDone := make(chan struct{})
 	upgrader := websocket.Upgrader{}
@@ -153,6 +154,11 @@ func TestDiscordGatewayCommands(t *testing.T) {
 			}
 			select {
 			case <-messageSent:
+			case <-time.After(5 * time.Second):
+				return
+			}
+			select {
+			case <-allowInteractions:
 			case <-time.After(5 * time.Second):
 				return
 			}
@@ -236,6 +242,12 @@ func TestDiscordGatewayCommands(t *testing.T) {
 		t.Fatal("Gateway Identify not received")
 	}
 	d.InputChan() <- event.Event{Type: event.TypeBlock, Payload: event.BlockEvent{BlockHash: "hash"}, Context: event.BlockContext{BlockNumber: 1, SlotNumber: 2}}
+	require.Eventually(t, func() bool {
+		d.mu.Lock()
+		defer d.mu.Unlock()
+		return len(d.recent) == 1
+	}, 5*time.Second, 10*time.Millisecond)
+	close(allowInteractions)
 	replies := make([]string, 0, 3)
 	for i := 0; i < 3; i++ {
 		select {
