@@ -51,7 +51,7 @@ transactions, rollbacks, and governance actions. It uses a plugin-based
 pipeline architecture with configurable inputs, filters, and outputs.
 
 Input plugins:  chainsync (default), mempool, utxorpc
-Output plugins: log (default), webhook, telegram, push, notify, notify-json
+Output plugins: log (default), webhook, telegram, slack, push, notify, notify-json
 Use --output-log-level error for errors-only logging.
 Filters:        address, asset, policy, pool, drep, event type
 
