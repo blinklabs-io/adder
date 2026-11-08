@@ -19,6 +19,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
@@ -59,6 +60,12 @@ func (t *TelegramOutput) loadSettings() error {
 	dec.KnownFields(true)
 	if err := dec.Decode(&settings); err != nil {
 		return fmt.Errorf("decoding Telegram settings: %w", err)
+	}
+	var extra any
+	if err := dec.Decode(&extra); err == nil {
+		return errors.New("additional YAML document in Telegram settings")
+	} else if !errors.Is(err, io.EOF) {
+		return fmt.Errorf("decoding trailing Telegram settings: %w", err)
 	}
 	if settings.ChatID != t.chatID {
 		return fmt.Errorf("telegram settings chat ID %d does not match configured chat ID %d", settings.ChatID, t.chatID)

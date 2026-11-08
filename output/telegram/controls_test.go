@@ -263,6 +263,18 @@ func TestTelegramRejectsSettingsForAnotherChat(t *testing.T) {
 	require.ErrorContains(t, err, "does not match configured chat ID")
 }
 
+func TestTelegramRejectsAdditionalSettingsDocument(t *testing.T) {
+	settingsFile := filepath.Join(t.TempDir(), "telegram.yaml")
+	tg, err := New(WithBotToken("123:abc"), WithChatID(99), WithSettingsFile(settingsFile))
+	require.NoError(t, err)
+	require.NoError(t, tg.setNotification("blocks", false))
+	data, err := os.ReadFile(settingsFile)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(settingsFile, append(data, []byte("---\nchat_id: 99\n")...), 0o600))
+	_, err = New(WithBotToken("123:abc"), WithChatID(99), WithSettingsFile(settingsFile))
+	require.ErrorContains(t, err, "additional YAML document")
+}
+
 func TestTelegramSaveFailureKeepsPreference(t *testing.T) {
 	settingsFile := filepath.Join(t.TempDir(), "settings.yaml")
 	b, calls, _ := testTelegramAPI(t)

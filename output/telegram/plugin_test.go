@@ -38,3 +38,22 @@ func TestFactoryConstructionResult(t *testing.T) {
 		})
 	}
 }
+
+func TestFactoryAcceptsEmptyOperatorEntries(t *testing.T) {
+	cfg, err := plugin.ResolveConfig(
+		map[string]map[string]map[string]any{
+			"output": {"telegram": {
+				"chat-id": "99", "bot-token": "123:test",
+				"operator-user-ids": "42,,  ,43,",
+			}},
+		}, nil, func(string) (string, bool) { return "", false },
+	)
+	require.NoError(t, err)
+	options, err := cfg.Options(plugin.PluginTypeOutput, "telegram")
+	require.NoError(t, err)
+	p, err := newFromOptions(options)
+	require.NoError(t, err)
+	tg := p.(*TelegramOutput)
+	require.Contains(t, tg.operatorIDs, int64(42))
+	require.Contains(t, tg.operatorIDs, int64(43))
+}
