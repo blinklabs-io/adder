@@ -129,6 +129,10 @@ func (d *DiscordOutput) deliverEvent(ctx context.Context, evt event.Event) {
 		d.reportError(err)
 		return
 	}
+	if message == nil {
+		d.reportError(errors.New("empty Discord event message"))
+		return
+	}
 	message["allowed_mentions"] = map[string]any{"parse": []string{}}
 	payload, err = json.Marshal(message)
 	if err != nil {

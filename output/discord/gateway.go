@@ -41,7 +41,10 @@ func validateGatewayURL(raw string) error {
 }
 
 func gatewayURL(raw string) string {
-	u, _ := url.Parse(raw)
+	u, err := url.Parse(raw)
+	if err != nil || u == nil {
+		return ""
+	}
 	q := u.Query()
 	q.Set("v", "10")
 	q.Set("encoding", "json")

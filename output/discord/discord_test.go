@@ -184,7 +184,7 @@ func TestDiscordGatewayCommands(t *testing.T) {
 		t.Fatal("Gateway Identify not received")
 	}
 	d.InputChan() <- event.Event{Type: event.TypeBlock, Payload: event.BlockEvent{BlockHash: "hash"}, Context: event.BlockContext{BlockNumber: 1, SlotNumber: 2}}
-	var replies []string
+	replies := make([]string, 0, 3)
 	for i := 0; i < 3; i++ {
 		select {
 		case body := <-callbacks:
