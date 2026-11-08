@@ -144,28 +144,3 @@ Filters use **AND** logic across pipeline stages. Within the Cardano filter, mul
 | `server returned status: 500` | `output/webhook` | The target server received the request but hit an internal server error. | Check logs on your webhook server to diagnose its crash. |
 | `failed to parse credential file` | `output/push` / `internal/config` | JSON credential file contains syntax errors or invalid JSON format. | Validate service account credentials format. |
 | `failed to resolve plugin config` | `internal/config` / `plugin` | Config keys contain unrecognized types or incompatible values. | Match types to option definitions in standard configs. |
-
----
-
-## 7. Diagnosing Goroutine Leaks (Go 1.26+ Leak Profiling)
-
-If Adder experiences a memory leak, it may be caused by orphaned goroutines stuck on unreachable primitives (like channels or mutexes).
-
-The Go 1.26 `goroutineleakprofile` experiment detects goroutines blocked on unreachable synchronization objects. It cannot detect every worker that outlives its owner.
-
-### Enabling the Leak Profiler
-This feature **requires Go 1.26 or later**. It is disabled by default and requires compiling Adder with the `goroutineleakprofile` experiment enabled:
-```bash
-GOEXPERIMENT=goroutineleakprofile go build -o adder ./cmd/adder
-```
-
-> **Note**: If you attempt to compile with this flag on older Go versions, the compiler will fail with:
-> `go: unknown GOEXPERIMENT goroutineleakprofile`
-
-### Collecting profiles
-
-Adder's debug listener does not register HTTP pprof handlers. Enabling its
-port alone does not expose a `goroutineleak` profile. See the
-[benchmark profiling workflow](benchmarks.md#cpu-memory-and-execution-trace-profiles)
-for local CPU, memory, and execution trace capture. An empty leak profile does
-not prove that every worker exited.
