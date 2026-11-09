@@ -10,7 +10,9 @@ type Option func(*NATSOutput)
 func WithServers(servers ...string) Option {
 	return func(n *NATSOutput) { n.servers = append([]string(nil), servers...) }
 }
-func WithToken(token string) Option               { return func(n *NATSOutput) { n.token = token } }
-func WithSubjectPrefix(prefix string) Option      { return func(n *NATSOutput) { n.subjectPrefix = prefix } }
+func WithToken(token string) Option          { return func(n *NATSOutput) { n.token = token } }
+func WithSubjectPrefix(prefix string) Option { return func(n *NATSOutput) { n.subjectPrefix = prefix } }
+
 func WithEventTypes(types map[string]bool) Option { return func(n *NATSOutput) { n.selected = types } }
-func WithLogger(logger plugin.Logger) Option      { return func(n *NATSOutput) { n.SetLogger(logger) } }
+
+func WithLogger(logger plugin.Logger) Option { return func(n *NATSOutput) { n.SetLogger(logger) } }

@@ -25,6 +25,7 @@ func init() {
 		},
 	})
 }
+
 func newFromOptions(values plugin.Options) (plugin.ManagedPlugin, error) {
 	servers := plugin.SplitAndTrim(values.String("servers"))
 	if len(servers) == 0 {

@@ -74,6 +74,7 @@ func (n *NATSOutput) Start() error            { return n.StartContext(context.Ba
 func (n *NATSOutput) StartContext(ctx context.Context) error {
 	return n.StartRun(ctx, plugin.BaseConfig{HasInput: true}, n.start, plugin.ShutdownHooks{BeforeWait: n.close})
 }
+
 func (n *NATSOutput) start(ctx context.Context) error {
 	if len(n.servers) == 0 {
 		return errors.New("servers must contain at least one NATS URL")
