@@ -96,8 +96,8 @@ func validateHomeserver(raw string) error {
 }
 
 func validateRoomID(room string) error {
-	separator := strings.IndexByte(room, ':')
-	if !strings.HasPrefix(room, "!") || separator <= 1 || separator == len(room)-1 || strings.ContainsAny(room, " \t\r\n") {
+	// Room version 12 IDs are hashes without the legacy :server suffix.
+	if len(room) < 2 || room[0] != '!' || strings.ContainsAny(room, " \t\r\n") {
 		return errors.New("room-ids must contain Matrix room IDs")
 	}
 	return nil

@@ -4,6 +4,7 @@
 package matrix
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -161,6 +162,17 @@ func TestMatrixEventTypesAreCopied(t *testing.T) {
 	require.True(t, m.selected[event.TypeRollback])
 }
 
+func TestMatrixAcceptsRoomVersion12ID(t *testing.T) {
+	roomID := "!Nhcu5BS-UMnFX7hBVfVSoXiD7OgH6iRT-xyIuqDnpYQ"
+	p, err := plugin.GetPlugin(plugin.PluginTypeOutput, "matrix", map[string]any{
+		"homeserver-url": "https://example.org", "access-token": "secret", "room-ids": roomID,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, p)
+	require.NoError(t, p.StartContext(context.Background()))
+	require.NoError(t, p.Stop())
+}
+
 func TestMatrixRejectsInvalidConfiguration(t *testing.T) {
 	for _, tt := range []struct {
 		values map[string]any
@@ -170,7 +182,7 @@ func TestMatrixRejectsInvalidConfiguration(t *testing.T) {
 		{map[string]any{"homeserver-url": "https://example.org:0", "access-token": "secret", "room-ids": "!room:example.org"}, "homeserver-url"},
 		{map[string]any{"homeserver-url": "https://example.org", "room-ids": "!room:example.org"}, "access-token"},
 		{map[string]any{"homeserver-url": "https://example.org", "access-token": "secret"}, "room-ids"},
-		{map[string]any{"homeserver-url": "https://example.org", "access-token": "secret", "room-ids": "!room"}, "room-ids"},
+		{map[string]any{"homeserver-url": "https://example.org", "access-token": "secret", "room-ids": "!room bad"}, "room-ids"},
 		{map[string]any{"homeserver-url": "https://example.org", "access-token": "secret", "room-ids": "!room:example.org", "event-types": "bogus"}, "event type"},
 	} {
 		p, err := plugin.GetPlugin(plugin.PluginTypeOutput, "matrix", tt.values)

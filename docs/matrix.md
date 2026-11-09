@@ -15,7 +15,7 @@ plugins:
       event-types: blocks,rollbacks,governance
 ```
 
-The access token belongs to a Matrix account that has joined each destination room and can send messages there. Keep the token in a secret-managed configuration. `homeserver-url` must use HTTPS; HTTP is accepted only for loopback testing. `room-ids` accepts comma-separated room IDs. The default event selection is `blocks,rollbacks,governance`; optional types are `transactions`, `drep-registration`, `drep-update`, and `drep-retirement`.
+The access token belongs to a Matrix account that has joined each destination room and can send messages there. Keep the token in a secret-managed configuration. `homeserver-url` must use HTTPS; HTTP is accepted only for loopback testing. `room-ids` accepts comma-separated room IDs, including [room version 12 IDs without a server suffix](https://spec.matrix.org/v1.19/rooms/v12/). The default event selection is `blocks,rollbacks,governance`; optional types are `transactions`, `drep-registration`, `drep-update`, and `drep-retirement`.
 
 Messages contain the event type and Adder event JSON. Delivery is best effort. The output retries network errors and server errors up to three times, and observes the Matrix [rate-limit response](https://spec.matrix.org/v1.19/client-server-api/#rate-limiting) `Retry-After` header (or legacy `retry_after_ms` field) for waits of at most one minute. When neither hint is supplied, it uses bounded backoff. Permanent client errors are reported without retry. Delivery errors go to the plugin error channel. There is no persistent queue; messages in flight can be lost when Adder stops. A successful room-send response confirms acceptance by the homeserver, not that a user read the message.
 
