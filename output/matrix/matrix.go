@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -75,6 +76,9 @@ func selectedTypes(names []string) (map[string]bool, error) {
 }
 
 func validateHomeserver(raw string) error {
+	if err := plugin.ValidateHTTPURL(raw); err != nil {
+		return fmt.Errorf("homeserver-url: %w", err)
+	}
 	u, err := url.Parse(raw)
 	if err != nil || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
 		return errors.New("homeserver-url must be a valid HTTPS URL without credentials, query, or fragment")
@@ -89,6 +93,14 @@ func validateHomeserver(raw string) error {
 		}
 	}
 	return errors.New("homeserver-url must use HTTPS (HTTP is allowed for loopback testing)")
+}
+
+func validateRoomID(room string) error {
+	separator := strings.IndexByte(room, ':')
+	if !strings.HasPrefix(room, "!") || separator <= 1 || separator == len(room)-1 || strings.ContainsAny(room, " \t\r\n") {
+		return errors.New("room-ids must contain Matrix room IDs")
+	}
+	return nil
 }
 
 func (m *MatrixOutput) Role() plugin.PluginType { return plugin.PluginTypeOutput }
@@ -108,8 +120,8 @@ func (m *MatrixOutput) start(ctx context.Context) error {
 		return errors.New("room-ids must contain at least one room")
 	}
 	for _, room := range m.rooms {
-		if !strings.HasPrefix(room, "!") || !strings.Contains(room, ":") || strings.ContainsAny(room, " \t\r\n") {
-			return errors.New("room-ids must contain Matrix room IDs")
+		if err := validateRoomID(room); err != nil {
+			return err
 		}
 	}
 	if m.client == nil {
@@ -222,18 +234,18 @@ func (m *MatrixOutput) deliver(ctx context.Context, room, id, message string) er
 			}
 			delay := time.Second << attempt
 			if retryAfter != "" {
-				seconds, parseErr := strconv.ParseFloat(retryAfter, 64)
-				if parseErr != nil || seconds < 0 || seconds > maxRetryAfter.Seconds() {
-					return errors.New("matrix rate limit has invalid or excessive Retry-After")
+				var parseErr error
+				delay, parseErr = parseRetryAfter(retryAfter)
+				if parseErr != nil {
+					return parseErr
 				}
-				delay = time.Duration(seconds * float64(time.Second))
 			}
 			if err := wait(ctx, delay); err != nil {
 				return err
 			}
 			continue
 		}
-		if err == nil && status < 500 {
+		if err == nil && status != http.StatusRequestTimeout && status < 500 {
 			return fmt.Errorf("matrix returned HTTP %d", status)
 		}
 		if attempt == m.maxRetries {
@@ -247,6 +259,27 @@ func (m *MatrixOutput) deliver(ctx context.Context, room, id, message string) er
 		}
 	}
 	return errors.New("matrix retry budget exhausted")
+}
+
+func parseRetryAfter(value string) (time.Duration, error) {
+	if seconds, err := strconv.ParseFloat(value, 64); err == nil {
+		if math.IsNaN(seconds) || math.IsInf(seconds, 0) || seconds < 0 || seconds > maxRetryAfter.Seconds() {
+			return 0, errors.New("matrix rate limit has invalid or excessive Retry-After")
+		}
+		return time.Duration(seconds * float64(time.Second)), nil
+	}
+	date, err := http.ParseTime(value)
+	if err != nil {
+		return 0, errors.New("matrix rate limit has invalid Retry-After")
+	}
+	delay := time.Until(date)
+	if delay < 0 {
+		return 0, nil
+	}
+	if delay > maxRetryAfter {
+		return 0, errors.New("matrix rate limit exceeds retry window")
+	}
+	return delay, nil
 }
 
 func wait(ctx context.Context, delay time.Duration) error {

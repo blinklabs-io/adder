@@ -122,14 +122,55 @@ func TestMatrixRateLimitWithoutDelayHint(t *testing.T) {
 	}
 }
 
+func TestMatrixHTTPDateRetryAfter(t *testing.T) {
+	delay, err := parseRetryAfter(time.Now().Add(30 * time.Second).UTC().Format(http.TimeFormat))
+	require.NoError(t, err)
+	require.Greater(t, delay, 28*time.Second)
+	require.LessOrEqual(t, delay, 30*time.Second)
+}
+
+func TestMatrixRequestTimeoutRetry(t *testing.T) {
+	var mu sync.Mutex
+	var paths []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		paths = append(paths, r.URL.EscapedPath())
+		count := len(paths)
+		mu.Unlock()
+		if count == 1 {
+			w.WriteHeader(http.StatusRequestTimeout)
+			return
+		}
+		_, _ = w.Write([]byte(`{"event_id":"$sent:example.org"}`))
+	}))
+	defer server.Close()
+	m := New(WithHomeserver(server.URL), WithAccessToken("test-token"), WithRooms("!one:example.org"))
+	require.NoError(t, m.Start())
+	m.InputChan() <- event.New(event.TypeRollback, time.Now(), nil, event.RollbackEvent{SlotNumber: 42})
+	require.Eventually(t, func() bool { mu.Lock(); defer mu.Unlock(); return len(paths) == 2 }, 3*time.Second, 10*time.Millisecond)
+	require.NoError(t, m.Stop())
+	mu.Lock()
+	defer mu.Unlock()
+	require.Equal(t, paths[0], paths[1])
+}
+
+func TestMatrixEventTypesAreCopied(t *testing.T) {
+	types := map[string]bool{event.TypeRollback: true}
+	m := New(WithEventTypes(types))
+	types[event.TypeRollback] = false
+	require.True(t, m.selected[event.TypeRollback])
+}
+
 func TestMatrixRejectsInvalidConfiguration(t *testing.T) {
 	for _, tt := range []struct {
 		values map[string]any
 		match  string
 	}{
 		{map[string]any{"homeserver-url": "http://remote.example", "access-token": "secret", "room-ids": "!room:example.org"}, "HTTPS"},
+		{map[string]any{"homeserver-url": "https://example.org:0", "access-token": "secret", "room-ids": "!room:example.org"}, "homeserver-url"},
 		{map[string]any{"homeserver-url": "https://example.org", "room-ids": "!room:example.org"}, "access-token"},
 		{map[string]any{"homeserver-url": "https://example.org", "access-token": "secret"}, "room-ids"},
+		{map[string]any{"homeserver-url": "https://example.org", "access-token": "secret", "room-ids": "!room"}, "room-ids"},
 		{map[string]any{"homeserver-url": "https://example.org", "access-token": "secret", "room-ids": "!room:example.org", "event-types": "bogus"}, "event type"},
 	} {
 		p, err := plugin.GetPlugin(plugin.PluginTypeOutput, "matrix", tt.values)

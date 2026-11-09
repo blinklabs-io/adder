@@ -38,8 +38,8 @@ func newFromOptions(values plugin.Options) (plugin.ManagedPlugin, error) {
 		return nil, errors.New("room-ids must contain at least one room")
 	}
 	for _, room := range rooms {
-		if len(room) < 4 || room[0] != '!' {
-			return nil, errors.New("room-ids must contain Matrix room IDs")
+		if err := validateRoomID(room); err != nil {
+			return nil, err
 		}
 	}
 	types, err := selectedTypes(plugin.SplitAndTrim(values.String("event-types")))

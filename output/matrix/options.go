@@ -18,7 +18,12 @@ func WithRooms(rooms ...string) Option {
 }
 
 func WithEventTypes(types map[string]bool) Option {
-	return func(m *MatrixOutput) { m.selected = types }
+	return func(m *MatrixOutput) {
+		m.selected = make(map[string]bool, len(types))
+		for typ, enabled := range types {
+			m.selected[typ] = enabled
+		}
+	}
 }
 
 func WithHTTPClient(client *http.Client) Option { return func(m *MatrixOutput) { m.client = client } }
