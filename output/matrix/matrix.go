@@ -79,10 +79,16 @@ func validateHomeserver(raw string) error {
 	if err != nil || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
 		return errors.New("homeserver-url must be a valid HTTPS URL without credentials, query, or fragment")
 	}
-	if u.Scheme != "https" && !(u.Scheme == "http" && (u.Hostname() == "localhost" || u.Hostname() == "127.0.0.1" || u.Hostname() == "::1")) {
-		return errors.New("homeserver-url must use HTTPS (HTTP is allowed for loopback testing)")
+	if u.Scheme == "https" {
+		return nil
 	}
-	return nil
+	if u.Scheme == "http" {
+		switch u.Hostname() {
+		case "localhost", "127.0.0.1", "::1":
+			return nil
+		}
+	}
+	return errors.New("homeserver-url must use HTTPS (HTTP is allowed for loopback testing)")
 }
 
 func (m *MatrixOutput) Role() plugin.PluginType { return plugin.PluginTypeOutput }
@@ -90,6 +96,7 @@ func (m *MatrixOutput) Start() error            { return m.StartContext(context.
 func (m *MatrixOutput) StartContext(ctx context.Context) error {
 	return m.StartRun(ctx, plugin.BaseConfig{HasInput: true}, m.start, plugin.ShutdownHooks{})
 }
+
 func (m *MatrixOutput) start(ctx context.Context) error {
 	if err := validateHomeserver(m.homeserver); err != nil {
 		return err
@@ -106,7 +113,7 @@ func (m *MatrixOutput) start(ctx context.Context) error {
 		}
 	}
 	if m.client == nil {
-		return errors.New("Matrix HTTP client is required")
+		return errors.New("matrix HTTP client is required")
 	}
 	var random [12]byte
 	if _, err := rand.Read(random[:]); err != nil {
@@ -145,7 +152,7 @@ func (m *MatrixOutput) deliverEvent(ctx context.Context, evt event.Event) {
 	for i, room := range m.rooms {
 		id := fmt.Sprintf("adder-%s-%d", m.prefix, m.nextID.Add(1))
 		if err := m.deliver(ctx, room, id, message); err != nil && ctx.Err() == nil {
-			m.reportError(fmt.Errorf("Matrix room %d: %w", i+1, err))
+			m.reportError(fmt.Errorf("matrix room %d: %w", i+1, err))
 		}
 	}
 }
@@ -183,7 +190,7 @@ func (m *MatrixOutput) send(ctx context.Context, room, id, message string) (int,
 			EventID string `json:"event_id"`
 		}
 		if err := json.Unmarshal(data, &result); err != nil || result.EventID == "" {
-			return 0, "", errors.New("Matrix response has no event_id")
+			return 0, "", errors.New("matrix response has no event_id")
 		}
 	}
 	if resp.StatusCode == http.StatusTooManyRequests {
@@ -211,13 +218,13 @@ func (m *MatrixOutput) deliver(ctx context.Context, room, id, message string) er
 		}
 		if status == http.StatusTooManyRequests {
 			if attempt == m.maxRetries {
-				return errors.New("Matrix rate limit retry budget exhausted")
+				return errors.New("matrix rate limit retry budget exhausted")
 			}
 			delay := time.Second << attempt
 			if retryAfter != "" {
 				seconds, parseErr := strconv.ParseFloat(retryAfter, 64)
 				if parseErr != nil || seconds < 0 || seconds > maxRetryAfter.Seconds() {
-					return errors.New("Matrix rate limit has invalid or excessive Retry-After")
+					return errors.New("matrix rate limit has invalid or excessive Retry-After")
 				}
 				delay = time.Duration(seconds * float64(time.Second))
 			}
@@ -227,20 +234,21 @@ func (m *MatrixOutput) deliver(ctx context.Context, room, id, message string) er
 			continue
 		}
 		if err == nil && status < 500 {
-			return fmt.Errorf("Matrix returned HTTP %d", status)
+			return fmt.Errorf("matrix returned HTTP %d", status)
 		}
 		if attempt == m.maxRetries {
 			if err != nil {
-				return fmt.Errorf("Matrix request failed after %d attempts: %w", attempt+1, err)
+				return fmt.Errorf("matrix request failed after %d attempts: %w", attempt+1, err)
 			}
-			return fmt.Errorf("Matrix returned HTTP %d after %d attempts", status, attempt+1)
+			return fmt.Errorf("matrix returned HTTP %d after %d attempts", status, attempt+1)
 		}
 		if err := wait(ctx, time.Second<<attempt); err != nil {
 			return err
 		}
 	}
-	return errors.New("Matrix retry budget exhausted")
+	return errors.New("matrix retry budget exhausted")
 }
+
 func wait(ctx context.Context, delay time.Duration) error {
 	timer := time.NewTimer(delay)
 	defer timer.Stop()
@@ -251,6 +259,7 @@ func wait(ctx context.Context, delay time.Duration) error {
 		return nil
 	}
 }
+
 func (m *MatrixOutput) reportError(err error) {
 	logger := m.Logger()
 	if logger == nil {

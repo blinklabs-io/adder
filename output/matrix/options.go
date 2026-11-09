@@ -4,8 +4,9 @@
 package matrix
 
 import (
-	"github.com/blinklabs-io/adder/plugin"
 	"net/http"
+
+	"github.com/blinklabs-io/adder/plugin"
 )
 
 type Option func(*MatrixOutput)
@@ -15,10 +16,13 @@ func WithAccessToken(token string) Option { return func(m *MatrixOutput) { m.tok
 func WithRooms(rooms ...string) Option {
 	return func(m *MatrixOutput) { m.rooms = append([]string(nil), rooms...) }
 }
+
 func WithEventTypes(types map[string]bool) Option {
 	return func(m *MatrixOutput) { m.selected = types }
 }
+
 func WithHTTPClient(client *http.Client) Option { return func(m *MatrixOutput) { m.client = client } }
+
 func WithMaxRetries(n int) Option {
 	return func(m *MatrixOutput) {
 		if n >= 0 && n <= 3 {
@@ -26,4 +30,5 @@ func WithMaxRetries(n int) Option {
 		}
 	}
 }
+
 func WithLogger(logger plugin.Logger) Option { return func(m *MatrixOutput) { m.SetLogger(logger) } }
