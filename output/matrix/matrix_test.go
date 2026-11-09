@@ -57,6 +57,9 @@ func TestMatrixRoomSendContractAndFiltering(t *testing.T) {
 	require.NoError(t, m.Stop())
 	mu.Lock()
 	defer mu.Unlock()
+	if len(paths) != 2 {
+		t.Fatalf("got %d room sends, want 2", len(paths))
+	}
 	for _, path := range paths {
 		require.Contains(t, path, "/_matrix/client/v3/rooms/%21")
 		require.Contains(t, path, "/send/m.room.message/adder-")
@@ -87,6 +90,9 @@ func TestMatrixRetryPreservesTransactionID(t *testing.T) {
 	require.NoError(t, m.Stop())
 	mu.Lock()
 	defer mu.Unlock()
+	if len(paths) != 2 {
+		t.Fatalf("got %d attempts, want 2", len(paths))
+	}
 	require.Equal(t, paths[0], paths[1])
 }
 
@@ -152,6 +158,9 @@ func TestMatrixRequestTimeoutRetry(t *testing.T) {
 	require.NoError(t, m.Stop())
 	mu.Lock()
 	defer mu.Unlock()
+	if len(paths) != 2 {
+		t.Fatalf("got %d attempts, want 2", len(paths))
+	}
 	require.Equal(t, paths[0], paths[1])
 }
 
