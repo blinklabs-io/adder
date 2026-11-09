@@ -955,6 +955,7 @@ following:
   about governance schemas, supported actions, and fields.
 - [Slack output](./docs/slack.md) — Configure event notifications through Slack
   incoming webhooks.
+- [NATS output](./docs/nats.md) — Publish selected events to Core NATS subjects.
 - [Discord bot output](docs/discord.md) — Configure selected event delivery and
   read-only slash commands.
 - [Telegram output controls](./docs/telegram.md) — Configure authorized bot
