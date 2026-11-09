@@ -47,14 +47,22 @@ func fakeServerWithReject(t *testing.T, reject bool) (string, <-chan published) 
 	t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = listener.Close() })
+	stop := make(chan struct{})
+	done := make(chan struct{})
+	t.Cleanup(func() {
+		close(stop)
+		_ = listener.Close()
+		<-done // the fixture cannot call t.Error after the test has ended
+	})
 	messages := make(chan published, 2)
 	go func() {
+		defer close(done)
 		conn, err := listener.Accept()
 		if err != nil {
 			return
 		}
 		defer conn.Close()
+		go func() { <-stop; _ = conn.Close() }()
 		_, _ = io.WriteString(conn, "INFO {\"server_id\":\"test\",\"version\":\"2.10.0\",\"proto\":1,\"max_payload\":1048576}\r\n")
 		reader := bufio.NewReader(conn)
 		for {
@@ -108,6 +116,8 @@ func TestNATSPermissionRejectionIsReported(t *testing.T) {
 func TestNATSStopWaitsForAsyncCallback(t *testing.T) {
 	server, _ := fakeServerWithReject(t, true)
 	logger := &blockingLogger{entered: make(chan struct{}), release: make(chan struct{})}
+	release := sync.OnceFunc(func() { close(logger.release) })
+	t.Cleanup(release)
 	n := New(WithServers(server), WithSubjectPrefix("cardano.adder"), WithLogger(logger))
 	require.NoError(t, n.Start())
 	n.InputChan() <- event.New(event.TypeRollback, time.Now(), nil, event.RollbackEvent{SlotNumber: 42})
@@ -123,13 +133,20 @@ func TestNATSStopWaitsForAsyncCallback(t *testing.T) {
 		t.Fatal("Stop returned before callback completed")
 	case <-time.After(50 * time.Millisecond):
 	}
-	close(logger.release)
+	release()
 	select {
 	case err := <-stopped:
 		require.NoError(t, err)
 	case <-time.After(3 * time.Second):
 		t.Fatal("Stop did not join callback")
 	}
+}
+
+func TestNATSEventTypesAreCopied(t *testing.T) {
+	types := map[string]bool{event.TypeRollback: true}
+	n := New(WithEventTypes(types))
+	types[event.TypeRollback] = false
+	require.True(t, n.selected[event.TypeRollback])
 }
 
 func TestNATSFailedRestartDoesNotWaitForOldConnection(t *testing.T) {
@@ -182,5 +199,13 @@ func TestNATSFactoryRejectsInvalidConfig(t *testing.T) {
 		require.Nil(t, p)
 		require.ErrorContains(t, err, tt.match)
 		require.NotContains(t, err.Error(), "password")
+	}
+}
+
+func TestNATSFactoryAcceptsTLSAndIPv6(t *testing.T) {
+	for _, server := range []string{"tls://nats.example.org:4222", "nats://[::1]:4222"} {
+		p, err := plugin.GetPlugin(plugin.PluginTypeOutput, "nats", map[string]any{"servers": server})
+		require.NoError(t, err)
+		require.NotNil(t, p)
 	}
 }

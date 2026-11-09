@@ -13,6 +13,13 @@ func WithServers(servers ...string) Option {
 func WithToken(token string) Option          { return func(n *NATSOutput) { n.token = token } }
 func WithSubjectPrefix(prefix string) Option { return func(n *NATSOutput) { n.subjectPrefix = prefix } }
 
-func WithEventTypes(types map[string]bool) Option { return func(n *NATSOutput) { n.selected = types } }
+func WithEventTypes(types map[string]bool) Option {
+	return func(n *NATSOutput) {
+		n.selected = make(map[string]bool, len(types))
+		for typ, enabled := range types {
+			n.selected[typ] = enabled
+		}
+	}
+}
 
 func WithLogger(logger plugin.Logger) Option { return func(n *NATSOutput) { n.SetLogger(logger) } }

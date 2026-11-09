@@ -33,8 +33,8 @@ func newFromOptions(values plugin.Options) (plugin.ManagedPlugin, error) {
 	}
 	for i, raw := range servers {
 		u, err := url.Parse(raw)
-		if err != nil || u.Scheme != "nats" || u.Hostname() == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || (u.Path != "" && u.Path != "/") {
-			return nil, fmt.Errorf("servers entry %d must be a nats:// URL without credentials or path", i+1)
+		if err != nil || (u.Scheme != "nats" && u.Scheme != "tls") || u.Hostname() == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || (u.Path != "" && u.Path != "/") {
+			return nil, fmt.Errorf("servers entry %d must be a nats:// or tls:// URL without credentials or path", i+1)
 		}
 	}
 	prefix := values.String("subject-prefix")
