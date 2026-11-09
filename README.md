@@ -956,6 +956,7 @@ following:
 - [Slack output](./docs/slack.md) — Configure event notifications through Slack
   incoming webhooks.
 - [Matrix output](./docs/matrix.md) — Configure event notifications in Matrix rooms.
+- [NATS output](./docs/nats.md) — Publish selected events to Core NATS subjects.
 - [Discord bot output](docs/discord.md) — Configure selected event delivery and
   read-only slash commands.
 - [Telegram output controls](./docs/telegram.md) — Configure authorized bot

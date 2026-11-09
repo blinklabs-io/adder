@@ -40,6 +40,7 @@ func TestRegisteredFactories(t *testing.T) {
 		"discord":     {"bot-token": "test-secret", "application-id": "123", "guild-id": "456", "channel-id": "789"},
 		"slack":       {"webhook-urls": "https://hooks.slack.com/services/test"},
 		"matrix":      {"homeserver-url": "https://matrix.example.org", "access-token": "test-secret", "room-ids": "!room:example.org"},
+		"nats":        {"servers": "nats://127.0.0.1:4222"},
 		"notify-json": {"config": notification},
 	}
 	for _, kind := range []plugin.PluginType{plugin.PluginTypeInput, plugin.PluginTypeFilter, plugin.PluginTypeOutput} {
@@ -85,6 +86,7 @@ func TestFactoryErrorsAreDescriptive(t *testing.T) {
 		{plugin.PluginTypeOutput, "discord", map[string]any{"bot-token": "test-secret", "application-id": "123", "guild-id": "456", "channel-id": "789", "event-types": ""}, "event-types"},
 		{plugin.PluginTypeOutput, "slack", nil, "webhook-urls"},
 		{plugin.PluginTypeOutput, "matrix", nil, "homeserver-url"},
+		{plugin.PluginTypeOutput, "nats", map[string]any{"subject-prefix": "bad.*"}, "subject-prefix"},
 		{plugin.PluginTypeOutput, "push", nil, "service account"},
 		{plugin.PluginTypeOutput, "notify-json", nil, "config"},
 	} {
