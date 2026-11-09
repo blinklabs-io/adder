@@ -935,8 +935,9 @@ adder --filter-type input.governance \
 
 ## Additional Documentation
 
-- [Benchmarks](docs/benchmarks.md): measure pipeline event flow, Cardano
-  filtering, and event JSON serialization with allocation counts.
+- [Benchmarks and profiling](docs/benchmarks.md): measure pipeline event flow,
+  streaming backpressure, Cardano filtering, and event JSON serialization;
+  collect local CPU, memory, and execution trace profiles.
 - [Local CLI integration tests](docs/testing/local-integration.md): run
   `./scripts/test-integration.sh` to check logging thresholds, diagnostic
   levels, configuration precedence, filtering, startup failures, RPC recovery,
@@ -955,6 +956,10 @@ following:
   Compose and macOS Native container virtual machines).
 - [Governance Event Documentation](./docs/governance.md) — Detailed information
   about governance schemas, supported actions, and fields.
+- [Slack output](./docs/slack.md) — Configure event notifications through Slack
+  incoming webhooks.
+- [Telegram output controls](./docs/telegram.md) — Configure authorized bot
+  commands and persistent event notification preferences.
 - [Adder Tray Filtering and Notification Semantics](./docs/adder-tray-filtering.md)
   — Troubleshooting and detailed configuration guides for the system tray
   application.

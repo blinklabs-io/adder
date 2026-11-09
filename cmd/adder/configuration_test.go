@@ -38,6 +38,7 @@ func TestRegisteredFactories(t *testing.T) {
 		"push":        {"serviceAccountFilePath": credentials},
 		"telegram":    {"bot-token": "123:test-secret", "chat-id": "-123"},
 		"discord":     {"bot-token": "test-secret", "application-id": "123", "guild-id": "456", "channel-id": "789"},
+		"slack":       {"webhook-urls": "https://hooks.slack.com/services/test"},
 		"notify-json": {"config": notification},
 	}
 	for _, kind := range []plugin.PluginType{plugin.PluginTypeInput, plugin.PluginTypeFilter, plugin.PluginTypeOutput} {
@@ -81,6 +82,7 @@ func TestFactoryErrorsAreDescriptive(t *testing.T) {
 		{plugin.PluginTypeOutput, "discord", map[string]any{"bot-token": "test-secret", "application-id": "typo", "guild-id": "456", "channel-id": "789"}, "application-id"},
 		{plugin.PluginTypeOutput, "discord", map[string]any{"bot-token": "test-secret", "application-id": "123", "guild-id": "456", "channel-id": "789", "event-types": "unknown"}, "event-types"},
 		{plugin.PluginTypeOutput, "discord", map[string]any{"bot-token": "test-secret", "application-id": "123", "guild-id": "456", "channel-id": "789", "event-types": ""}, "event-types"},
+		{plugin.PluginTypeOutput, "slack", nil, "webhook-urls"},
 		{plugin.PluginTypeOutput, "push", nil, "service account"},
 		{plugin.PluginTypeOutput, "notify-json", nil, "config"},
 	} {
