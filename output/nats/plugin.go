@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"strings"
 
 	"github.com/blinklabs-io/adder/internal/logging"
 	"github.com/blinklabs-io/adder/plugin"
@@ -35,6 +36,11 @@ func newFromOptions(values plugin.Options) (plugin.ManagedPlugin, error) {
 		u, err := url.Parse(raw)
 		if err != nil || (u.Scheme != "nats" && u.Scheme != "tls") || u.Hostname() == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || (u.Path != "" && u.Path != "/") {
 			return nil, fmt.Errorf("servers entry %d must be a nats:// or tls:// URL without credentials or path", i+1)
+		}
+		if u.Port() != "" || strings.HasSuffix(u.Host, ":") {
+			if err := plugin.ValidateHostPort(u.Host); err != nil {
+				return nil, fmt.Errorf("servers entry %d port must be between 1 and 65535", i+1)
+			}
 		}
 	}
 	prefix := values.String("subject-prefix")

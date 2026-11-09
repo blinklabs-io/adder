@@ -192,6 +192,8 @@ func TestNATSFactoryRejectsInvalidConfig(t *testing.T) {
 	}{
 		{map[string]any{"servers": "https://example.org"}, "servers"},
 		{map[string]any{"servers": "nats://secret:password@example.org"}, "servers"},
+		{map[string]any{"servers": "nats://example.org:0"}, "port"},
+		{map[string]any{"servers": "nats://example.org:99999"}, "port"},
 		{map[string]any{"subject-prefix": "bad.*"}, "subject-prefix"},
 		{map[string]any{"event-types": "unknown"}, "event type"},
 	} {
