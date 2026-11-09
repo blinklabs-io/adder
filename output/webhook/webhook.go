@@ -375,6 +375,11 @@ func formatWebhook(e *event.Event, format string) ([]byte, error) {
 	return data, nil
 }
 
+// FormatDiscord formats an event as a Discord message using the existing webhook layout.
+func FormatDiscord(e *event.Event) ([]byte, error) {
+	return formatWebhook(e, "discord")
+}
+
 type DiscordWebhookEvent struct {
 	Content string                 `json:"content,omitempty"`
 	Embeds  []*DiscordMessageEmbed `json:"embeds,omitempty"`

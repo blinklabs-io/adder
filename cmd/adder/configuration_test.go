@@ -37,6 +37,7 @@ func TestRegisteredFactories(t *testing.T) {
 		"utxorpc":     {"url": "https://example.invalid"},
 		"push":        {"serviceAccountFilePath": credentials},
 		"telegram":    {"bot-token": "123:test-secret", "chat-id": "-123"},
+		"discord":     {"bot-token": "test-secret", "application-id": "123", "guild-id": "456", "channel-id": "789"},
 		"slack":       {"webhook-urls": "https://hooks.slack.com/services/test"},
 		"notify-json": {"config": notification},
 	}
@@ -78,6 +79,9 @@ func TestFactoryErrorsAreDescriptive(t *testing.T) {
 		{plugin.PluginTypeOutput, "log", map[string]any{"format": "typo"}, "format"},
 		{plugin.PluginTypeOutput, "webhook", map[string]any{"url": "https://secret:password@%"}, "url"},
 		{plugin.PluginTypeOutput, "telegram", map[string]any{"chat-id": "typo"}, "chat-id"},
+		{plugin.PluginTypeOutput, "discord", map[string]any{"bot-token": "test-secret", "application-id": "typo", "guild-id": "456", "channel-id": "789"}, "application-id"},
+		{plugin.PluginTypeOutput, "discord", map[string]any{"bot-token": "test-secret", "application-id": "123", "guild-id": "456", "channel-id": "789", "event-types": "unknown"}, "event-types"},
+		{plugin.PluginTypeOutput, "discord", map[string]any{"bot-token": "test-secret", "application-id": "123", "guild-id": "456", "channel-id": "789", "event-types": ""}, "event-types"},
 		{plugin.PluginTypeOutput, "slack", nil, "webhook-urls"},
 		{plugin.PluginTypeOutput, "push", nil, "service account"},
 		{plugin.PluginTypeOutput, "notify-json", nil, "config"},

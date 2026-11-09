@@ -331,6 +331,7 @@ delivery or per-endpoint identity.
 
 ### Webhook retry policy
 
+
 Webhook delivery makes one initial attempt and at most three retries by default.
 Transient transport failures and HTTP 408, 429, and 5xx responses use bounded
 exponential backoff (1s, 2s, 4s by default). A valid `Retry-After` can extend
@@ -954,6 +955,8 @@ following:
   about governance schemas, supported actions, and fields.
 - [Slack output](./docs/slack.md) — Configure event notifications through Slack
   incoming webhooks.
+- [Discord bot output](docs/discord.md) — Configure selected event delivery and
+  read-only slash commands.
 - [Telegram output controls](./docs/telegram.md) — Configure authorized bot
   commands and persistent event notification preferences.
 - [Adder Tray Filtering and Notification Semantics](./docs/adder-tray-filtering.md)
