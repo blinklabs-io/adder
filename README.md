@@ -952,6 +952,8 @@ following:
   Compose and macOS Native container virtual machines).
 - [Governance Event Documentation](./docs/governance.md) — Detailed information
   about governance schemas, supported actions, and fields.
+- [Slack output](./docs/slack.md) — Configure event notifications through Slack
+  incoming webhooks.
 - [Telegram output controls](./docs/telegram.md) — Configure authorized bot
   commands and persistent event notification preferences.
 - [Adder Tray Filtering and Notification Semantics](./docs/adder-tray-filtering.md)
