@@ -344,9 +344,6 @@ non-2xx responses fail immediately. After the retry limit,
 Adder discards the event and reports a terminal error. Retries and queued
 events remain in memory and can be lost on shutdown.
 
-For a Discord bot with selected event delivery and read-only slash commands,
-see [Discord bot output](docs/discord.md).
-
 With regular scrapes, `increase(adder_pipeline_received_events_total[10m])`
 estimates how much the received counter advanced over ten minutes. If it stays
 zero when events are expected, investigate the input; a legitimately idle source
@@ -958,6 +955,8 @@ following:
   about governance schemas, supported actions, and fields.
 - [Slack output](./docs/slack.md) — Configure event notifications through Slack
   incoming webhooks.
+- [Discord bot output](docs/discord.md) — Configure selected event delivery and
+  read-only slash commands.
 - [Telegram output controls](./docs/telegram.md) — Configure authorized bot
   commands and persistent event notification preferences.
 - [Adder Tray Filtering and Notification Semantics](./docs/adder-tray-filtering.md)

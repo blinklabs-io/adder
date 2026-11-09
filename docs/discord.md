@@ -51,7 +51,7 @@ and [Gateway documentation](https://docs.discord.com/developers/events/gateway).
 
 The bot sends heartbeats, resumes a Gateway session when possible, and
 reconnects with bounded backoff. HTTP requests honor Discord's rate-limit
-headers and retries rejected 429 requests up to three times. GET requests also
+headers and retry rejected 429 requests up to three times. GET requests also
 retry temporary server and transport failures. POST requests are not replayed
 after ambiguous failures, which could otherwise duplicate messages.
 A `Retry-After` cooldown longer than ten seconds causes the current delivery to
