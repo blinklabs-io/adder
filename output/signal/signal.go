@@ -46,7 +46,7 @@ func WithEventTypes(v map[string]bool) Option { return func(s *SignalOutput) { s
 func WithHTTPClient(v *http.Client) Option    { return func(s *SignalOutput) { s.client = v } }
 
 func New(opts ...Option) *SignalOutput {
-	s := &SignalOutput{endpoint: "http://127.0.0.1:8080/api/v1/rpc", selected: map[string]bool{event.TypeBlock: true, event.TypeRollback: true, event.TypeGovernance: true}, client: &http.Client{Timeout: 15 * time.Second}}
+	s := &SignalOutput{endpoint: "http://127.0.0.1:8081/api/v1/rpc", selected: map[string]bool{event.TypeBlock: true, event.TypeRollback: true, event.TypeGovernance: true}, client: &http.Client{Timeout: 15 * time.Second}}
 	for _, opt := range opts {
 		opt(s)
 	}
@@ -126,7 +126,9 @@ func (s *SignalOutput) deliver(ctx context.Context, evt event.Event) error {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := s.client.Do(req)
+	client := *s.client
+	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("signal RPC request: %w", err)
 	}

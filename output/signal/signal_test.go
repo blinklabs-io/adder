@@ -47,14 +47,14 @@ func TestDocumentedJSONRPCSend(t *testing.T) {
 
 func TestJSONRPCErrorsAndCorrelation(t *testing.T) {
 	for _, tc := range []struct {
-		name, body string
-		status     int
+		name, body, want string
+		status           int
 	}{
-		{"rpc-error", `{"jsonrpc":"2.0","error":{"code":-32602,"message":"bad recipient"},"id":%q}`, 200},
-		{"missing-result", `{"jsonrpc":"2.0","id":%q}`, 200},
-		{"wrong-id", `{"jsonrpc":"2.0","result":{"timestamp":999},"id":"wrong"}`, 200},
-		{"malformed", `{`, 200},
-		{"server-error", `failure`, 503},
+		{"rpc-error", `{"jsonrpc":"2.0","error":{"code":-32602,"message":"bad recipient"},"id":%q}`, "bad recipient", 200},
+		{"missing-result", `{"jsonrpc":"2.0","id":%q}`, "no timestamp", 200},
+		{"wrong-id", `{"jsonrpc":"2.0","result":{"timestamp":999},"id":"wrong"}`, "invalid Signal RPC response", 200},
+		{"malformed", `{`, "decode Signal RPC response", 200},
+		{"server-error", `failure`, "status 503", 503},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -63,11 +63,15 @@ func TestJSONRPCErrorsAndCorrelation(t *testing.T) {
 				}
 				_ = json.NewDecoder(r.Body).Decode(&req)
 				w.WriteHeader(tc.status)
-				_, _ = w.Write([]byte(fmt.Sprintf(tc.body, req.ID)))
+				body := tc.body
+				if tc.name == "rpc-error" || tc.name == "missing-result" {
+					body = fmt.Sprintf(tc.body, req.ID)
+				}
+				_, _ = w.Write([]byte(body))
 			}))
 			defer server.Close()
 			s := New(WithEndpoint(server.URL+"/api/v1/rpc"), WithRecipients("+15557654321"))
-			require.Error(t, s.deliver(context.Background(), event.New(event.TypeRollback, time.Now(), nil, event.RollbackEvent{})))
+			require.ErrorContains(t, s.deliver(context.Background(), event.New(event.TypeRollback, time.Now(), nil, event.RollbackEvent{})), tc.want)
 		})
 	}
 }
@@ -77,6 +81,23 @@ func TestValidateEndpoint(t *testing.T) {
 		require.Error(t, validateEndpoint(raw))
 	}
 	require.NoError(t, validateEndpoint("https://example.com/api/v1/rpc"))
+}
+
+func TestSignalDoesNotFollowRedirect(t *testing.T) {
+	forwarded := make(chan struct{}, 1)
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { forwarded <- struct{}{} }))
+	defer target.Close()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, target.URL, http.StatusTemporaryRedirect)
+	}))
+	defer server.Close()
+	s := New(WithEndpoint(server.URL+"/api/v1/rpc"), WithRecipients("+15557654321"), WithHTTPClient(&http.Client{Timeout: time.Second}))
+	require.ErrorContains(t, s.deliver(context.Background(), event.New(event.TypeRollback, time.Now(), nil, event.RollbackEvent{})), "status 307")
+	select {
+	case <-forwarded:
+		t.Fatal("redirect disclosed Signal message")
+	default:
+	}
 }
 
 func TestSignalSelectionAndErrorChannel(t *testing.T) {

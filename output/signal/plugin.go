@@ -5,6 +5,7 @@ package signal
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/blinklabs-io/adder/internal/logging"
 	"github.com/blinklabs-io/adder/plugin"
@@ -12,7 +13,7 @@ import (
 
 func init() {
 	plugin.Register(plugin.PluginEntry{Type: plugin.PluginTypeOutput, Name: "signal", Description: "send events through signal-cli JSON-RPC", NewFromOptionsFunc: newFromOptions, Options: []plugin.PluginOption{
-		{Name: "endpoint", Type: plugin.PluginOptionTypeString, Description: "signal-cli daemon HTTP JSON-RPC URL", DefaultValue: "http://127.0.0.1:8080/api/v1/rpc"},
+		{Name: "endpoint", Type: plugin.PluginOptionTypeString, Description: "signal-cli daemon HTTP JSON-RPC URL", DefaultValue: "http://127.0.0.1:8081/api/v1/rpc"},
 		{Name: "account", Type: plugin.PluginOptionTypeString, Description: "signal-cli account for multi-account daemon", DefaultValue: ""},
 		{Name: "recipients", Type: plugin.PluginOptionTypeString, Description: "comma-separated Signal recipient numbers or IDs", DefaultValue: ""},
 		{Name: "event-types", Type: plugin.PluginOptionTypeString, Description: "comma-separated selected event types", DefaultValue: "blocks,rollbacks,governance"},
@@ -29,7 +30,7 @@ func newFromOptions(v plugin.Options) (plugin.ManagedPlugin, error) {
 	}
 	selected := make(map[string]bool)
 	for _, name := range plugin.SplitAndTrim(v.String("event-types")) {
-		typ, ok := eventNames[name]
+		typ, ok := eventNames[strings.ToLower(name)]
 		if !ok {
 			return nil, fmt.Errorf("unsupported Signal event type %q", name)
 		}
