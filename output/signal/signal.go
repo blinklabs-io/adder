@@ -25,6 +25,23 @@ var eventNames = map[string]string{
 	"drep-update":       event.TypeDRepUpdate, "drep-retirement": event.TypeDRepRetirement,
 }
 
+type signalRecipientResult struct {
+	Type             string `json:"type"`
+	RecipientAddress struct {
+		Number string `json:"number"`
+		UUID   string `json:"uuid"`
+	} `json:"recipientAddress"`
+}
+
+func failedRecipient(results []signalRecipientResult) error {
+	for i, recipient := range results {
+		if recipient.Type != "SUCCESS" {
+			return fmt.Errorf("signal recipient %d: %s", i+1, recipient.Type)
+		}
+	}
+	return nil
+}
+
 // SignalOutput sends selected events through a local signal-cli JSON-RPC daemon.
 type SignalOutput struct {
 	plugin.Base
@@ -140,11 +157,17 @@ func (s *SignalOutput) deliver(ctx context.Context, evt event.Event) error {
 		JSONRPC string `json:"jsonrpc"`
 		ID      string `json:"id"`
 		Result  *struct {
-			Timestamp int64 `json:"timestamp"`
+			Timestamp int64                   `json:"timestamp"`
+			Results   []signalRecipientResult `json:"results"`
 		} `json:"result"`
 		Error *struct {
 			Code    int    `json:"code"`
 			Message string `json:"message"`
+			Data    struct {
+				Response struct {
+					Results []signalRecipientResult `json:"results"`
+				} `json:"response"`
+			} `json:"data"`
 		} `json:"error"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
@@ -154,10 +177,16 @@ func (s *SignalOutput) deliver(ctx context.Context, evt event.Event) error {
 		return errors.New("invalid Signal RPC response")
 	}
 	if result.Error != nil {
+		if err := failedRecipient(result.Error.Data.Response.Results); err != nil {
+			return err
+		}
 		return fmt.Errorf("signal RPC error %d: %s", result.Error.Code, result.Error.Message)
 	}
 	if result.Result == nil || result.Result.Timestamp == 0 {
 		return errors.New("signal RPC send returned no timestamp")
+	}
+	if err := failedRecipient(result.Result.Results); err != nil {
+		return err
 	}
 	return nil
 }

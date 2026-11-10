@@ -100,6 +100,31 @@ func TestSignalDoesNotFollowRedirect(t *testing.T) {
 	}
 }
 
+func TestSignalRecipientFailure(t *testing.T) {
+	for _, tc := range []struct {
+		name, result string
+		want         string
+	}{
+		{"partial", `"result":{"timestamp":999,"results":[{"type":"SUCCESS","recipientAddress":{"number":"+15551111111"}},{"type":"IDENTITY_FAILURE","recipientAddress":{"number":"+15552222222"}}]}`, "recipient 2: IDENTITY_FAILURE"},
+		{"rpc-error-data", `"error":{"code":-4,"message":"send failed","data":{"response":{"results":[{"type":"UNREGISTERED_FAILURE","recipientAddress":{"number":"+15552222222"}}]}}}`, "recipient 1: UNREGISTERED_FAILURE"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var req struct {
+					ID string `json:"id"`
+				}
+				require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+				_, _ = fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%q,%s}`, req.ID, tc.result)
+			}))
+			defer server.Close()
+			s := New(WithEndpoint(server.URL+"/api/v1/rpc"), WithRecipients("+15551111111", "+15552222222"))
+			err := s.deliver(context.Background(), event.New(event.TypeRollback, time.Now(), nil, event.RollbackEvent{}))
+			require.ErrorContains(t, err, tc.want)
+			require.NotContains(t, err.Error(), "+1555")
+		})
+	}
+}
+
 func TestSignalSelectionAndErrorChannel(t *testing.T) {
 	requests := make(chan struct{}, 2)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

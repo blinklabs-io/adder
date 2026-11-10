@@ -14,8 +14,10 @@ use HTTPS for a remote daemon. The default endpoint is
 `drep-update`, and `drep-retirement` are also available.
 
 Each message contains event JSON. An HTTP 200 response is accepted only when
-the JSON-RPC `send` result contains a timestamp and the response ID matches the
-request. Errors are reported through the output error channel. Requests are
+the JSON-RPC `send` result contains a timestamp, the response ID matches the
+request, and any per-recipient results report `SUCCESS`. A recipient failure
+is reported with its result type, without logging the message or address.
+Errors are reported through the output error channel. Requests are
 not automatically retried because a timeout can occur after Signal sends the
 message; retrying could duplicate it. Pending events are not retained across
 Adder restarts. A successful RPC result means signal-cli accepted the send,
