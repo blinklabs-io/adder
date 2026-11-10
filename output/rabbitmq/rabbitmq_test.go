@@ -4,6 +4,7 @@ package rabbitmq
 
 import (
 	"context"
+	"io"
 	"net"
 	"testing"
 	"time"
@@ -54,6 +55,7 @@ func TestRabbitMQURL(t *testing.T) {
 	}
 	require.NoError(t, validateURL("amqps://host/vhost"))
 }
+
 func TestPersistentBoolConfiguration(t *testing.T) {
 	p, err := plugin.GetPlugin(plugin.PluginTypeOutput, "rabbitmq", map[string]any{"persistent": false})
 	require.NoError(t, err)
@@ -70,4 +72,27 @@ func TestBoundedWriteAndStop(t *testing.T) {
 	r := New()
 	r.transport = left
 	require.NoError(t, r.close())
+}
+
+func TestCloseReleasesTransportLockBeforeConnectionLock(t *testing.T) {
+	left, right := net.Pipe()
+	defer right.Close()
+	r := New()
+	r.transport = left
+	r.mu.Lock()
+	done := make(chan error, 1)
+	go func() { done <- r.close() }()
+	_ = right.SetReadDeadline(time.Now().Add(time.Second))
+	_, err := right.Read(make([]byte, 1))
+	require.ErrorIs(t, err, io.EOF)
+	acquired := make(chan struct{})
+	go func() { r.transportMu.Lock(); r.transportMu.Unlock(); close(acquired) }()
+	select {
+	case <-acquired:
+	case <-time.After(time.Second):
+		r.mu.Unlock()
+		t.Fatal("close held transport lock while waiting for connection lock")
+	}
+	r.mu.Unlock()
+	require.NoError(t, <-done)
 }

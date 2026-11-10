@@ -170,6 +170,9 @@ func (r *RabbitMQOutput) connect(ctx context.Context) error {
 }
 
 func (r *RabbitMQOutput) close() error {
+	// Release transportMu before waiting for mu: connect holds mu while its
+	// dial callback briefly takes transportMu, and closing the raw socket must
+	// interrupt a blocked handshake before connect can release mu.
 	r.transportMu.Lock()
 	if r.transport != nil {
 		_ = r.transport.Close()
