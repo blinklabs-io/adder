@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/blinklabs-io/adder/plugin"
 	amqp "github.com/rabbitmq/amqp091-go"
 	"github.com/stretchr/testify/require"
 )
@@ -48,10 +49,15 @@ func TestPublisherConfirmTimeoutAndCancellation(t *testing.T) {
 }
 
 func TestRabbitMQURL(t *testing.T) {
-	for _, raw := range []string{"http://localhost", "amqp:///", "amqps://host/#fragment"} {
+	for _, raw := range []string{"http://localhost", "amqp:///", "amqps://host/#fragment", "amqp://127.0.0.1:99999/"} {
 		require.Error(t, validateURL(raw))
 	}
 	require.NoError(t, validateURL("amqps://host/vhost"))
+}
+func TestPersistentBoolConfiguration(t *testing.T) {
+	p, err := plugin.GetPlugin(plugin.PluginTypeOutput, "rabbitmq", map[string]any{"persistent": false})
+	require.NoError(t, err)
+	require.False(t, p.(*RabbitMQOutput).persistent)
 }
 
 func TestBoundedWriteAndStop(t *testing.T) {

@@ -4,6 +4,8 @@ package rabbitmq
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -71,7 +73,7 @@ func (r *RabbitMQOutput) start(ctx context.Context) error {
 	if r.routingKey == "" {
 		return errors.New("routing-key is required")
 	}
-	if err := r.connect(); err != nil {
+	if err := r.connect(ctx); err != nil {
 		return err
 	}
 	done, in := r.Done(), r.Input()
@@ -104,10 +106,15 @@ func validateURL(raw string) error {
 	if err != nil || u.Hostname() == "" || (u.Scheme != "amqp" && u.Scheme != "amqps") || u.Fragment != "" {
 		return errors.New("url must be an amqp:// or amqps:// broker URL")
 	}
+	if u.Port() != "" {
+		if err := plugin.ValidateHostPort(u.Host); err != nil {
+			return fmt.Errorf("invalid RabbitMQ port: %w", err)
+		}
+	}
 	return nil
 }
 
-func (r *RabbitMQOutput) connect() error {
+func (r *RabbitMQOutput) connect(ctx context.Context) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.channel != nil && !r.channel.IsClosed() {
@@ -119,13 +126,17 @@ func (r *RabbitMQOutput) connect() error {
 	}
 	var raw net.Conn
 	var setupTimer *time.Timer
+	var stopCancel func() bool
 	defer func() {
 		if setupTimer != nil {
 			setupTimer.Stop()
 		}
+		if stopCancel != nil {
+			stopCancel()
+		}
 	}()
 	conn, err := amqp.DialConfig(r.url, amqp.Config{Dial: func(network, addr string) (net.Conn, error) {
-		c, e := net.DialTimeout(network, addr, 5*time.Second)
+		c, e := (&net.Dialer{Timeout: 5 * time.Second}).DialContext(ctx, network, addr)
 		if e != nil {
 			return nil, e
 		}
@@ -136,6 +147,7 @@ func (r *RabbitMQOutput) connect() error {
 		r.transportMu.Unlock()
 		// The client clears handshake deadlines before channel.open and confirm.select.
 		setupTimer = time.AfterFunc(10*time.Second, func() { _ = c.Close() })
+		stopCancel = context.AfterFunc(ctx, func() { _ = c.Close() })
 		return boundedConn{c, 10 * time.Second}, nil
 	}})
 	if err != nil {
@@ -179,7 +191,7 @@ func (r *RabbitMQOutput) publish(ctx context.Context, evt event.Event) error {
 	if err != nil {
 		return fmt.Errorf("encode RabbitMQ event: %w", err)
 	}
-	if err := r.connect(); err != nil {
+	if err := r.connect(ctx); err != nil {
 		return err
 	}
 	r.mu.Lock()
@@ -190,7 +202,11 @@ func (r *RabbitMQOutput) publish(ctx context.Context, evt event.Event) error {
 		mode = amqp.Persistent
 	}
 	// One outstanding publish per channel keeps returns and confirmations correlated.
-	confirm, err := ch.PublishWithDeferredConfirmWithContext(ctx, r.exchange, r.routingKey, true, false, amqp.Publishing{ContentType: "application/json", DeliveryMode: mode, MessageId: fmt.Sprintf("adder-%d", time.Now().UnixNano()), Body: data})
+	var identity [16]byte
+	if _, err := rand.Read(identity[:]); err != nil {
+		return fmt.Errorf("create RabbitMQ message ID: %w", err)
+	}
+	confirm, err := ch.PublishWithDeferredConfirmWithContext(ctx, r.exchange, r.routingKey, true, false, amqp.Publishing{ContentType: "application/json", DeliveryMode: mode, MessageId: hex.EncodeToString(identity[:]), Body: data})
 	if err != nil {
 		_ = r.close()
 		return fmt.Errorf("publish RabbitMQ event: %w", err)

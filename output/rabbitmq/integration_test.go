@@ -29,7 +29,7 @@ func TestRabbitMQBrokerContract(t *testing.T) {
 	require.NoError(t, err)
 	defer ch.QueueDelete(queue.Name, false, false, false)
 	r := New(WithURL(broker), WithRoutingKey(queue.Name))
-	require.NoError(t, r.connect())
+	require.NoError(t, r.connect(context.Background()))
 	defer r.close()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
