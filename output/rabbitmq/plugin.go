@@ -5,20 +5,22 @@ package rabbitmq
 import (
 	"errors"
 	"fmt"
+	"strconv"
+
 	"github.com/blinklabs-io/adder/internal/logging"
 	"github.com/blinklabs-io/adder/plugin"
-	"strconv"
 )
 
 func init() {
 	plugin.Register(plugin.PluginEntry{Type: plugin.PluginTypeOutput, Name: "rabbitmq", Description: "publish selected events with broker confirms", NewFromOptionsFunc: newFromOptions, Options: []plugin.PluginOption{
-		{Name: "url", Type: plugin.PluginOptionTypeString, Description: "AMQP broker URL", DefaultValue: "amqp://guest:guest@127.0.0.1:5672/"},
+		{Name: "url", Type: plugin.PluginOptionTypeString, Description: "AMQP broker URL", DefaultValue: "amqp://127.0.0.1:5672/"},
 		{Name: "exchange", Type: plugin.PluginOptionTypeString, Description: "existing exchange; empty uses default exchange", DefaultValue: ""},
 		{Name: "routing-key", Type: plugin.PluginOptionTypeString, Description: "routing key or queue name for default exchange", DefaultValue: "adder.events"},
 		{Name: "persistent", Type: plugin.PluginOptionTypeString, Description: "publish persistent messages (true or false)", DefaultValue: "true"},
 		{Name: "event-types", Type: plugin.PluginOptionTypeString, Description: "comma-separated selected event types", DefaultValue: "blocks,rollbacks,governance"},
 	}})
 }
+
 func newFromOptions(v plugin.Options) (plugin.ManagedPlugin, error) {
 	if err := validateURL(v.String("url")); err != nil {
 		return nil, err

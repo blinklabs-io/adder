@@ -39,19 +39,20 @@ type boundedConn struct {
 }
 
 func (c boundedConn) Write(p []byte) (int, error) {
-	_ = c.Conn.SetWriteDeadline(time.Now().Add(c.timeout))
+	_ = c.SetWriteDeadline(time.Now().Add(c.timeout))
 	return c.Conn.Write(p)
 }
 
 type Option func(*RabbitMQOutput)
 
-func WithURL(v string) Option                 { return func(r *RabbitMQOutput) { r.url = v } }
-func WithExchange(v string) Option            { return func(r *RabbitMQOutput) { r.exchange = v } }
-func WithRoutingKey(v string) Option          { return func(r *RabbitMQOutput) { r.routingKey = v } }
+func WithURL(v string) Option        { return func(r *RabbitMQOutput) { r.url = v } }
+func WithExchange(v string) Option   { return func(r *RabbitMQOutput) { r.exchange = v } }
+func WithRoutingKey(v string) Option { return func(r *RabbitMQOutput) { r.routingKey = v } }
+
 func WithPersistent(v bool) Option            { return func(r *RabbitMQOutput) { r.persistent = v } }
 func WithEventTypes(v map[string]bool) Option { return func(r *RabbitMQOutput) { r.selected = v } }
 func New(opts ...Option) *RabbitMQOutput {
-	r := &RabbitMQOutput{url: "amqp://guest:guest@127.0.0.1:5672/", routingKey: "adder.events", persistent: true, selected: map[string]bool{event.TypeBlock: true, event.TypeRollback: true, event.TypeGovernance: true}}
+	r := &RabbitMQOutput{url: "amqp://127.0.0.1:5672/", routingKey: "adder.events", persistent: true, selected: map[string]bool{event.TypeBlock: true, event.TypeRollback: true, event.TypeGovernance: true}}
 	for _, opt := range opts {
 		opt(r)
 	}
@@ -62,6 +63,7 @@ func (r *RabbitMQOutput) Start() error            { return r.StartContext(contex
 func (r *RabbitMQOutput) StartContext(ctx context.Context) error {
 	return r.StartRun(ctx, plugin.BaseConfig{HasInput: true}, r.start, plugin.ShutdownHooks{BeforeWait: r.close})
 }
+
 func (r *RabbitMQOutput) start(ctx context.Context) error {
 	if err := validateURL(r.url); err != nil {
 		return err
@@ -94,7 +96,9 @@ func (r *RabbitMQOutput) start(ctx context.Context) error {
 	})
 	return nil
 }
+
 func (r *RabbitMQOutput) Stop() error { return r.Shutdown(plugin.ShutdownHooks{BeforeWait: r.close}) }
+
 func validateURL(raw string) error {
 	u, err := url.Parse(raw)
 	if err != nil || u.Hostname() == "" || (u.Scheme != "amqp" && u.Scheme != "amqps") || u.Fragment != "" {
@@ -102,6 +106,7 @@ func validateURL(raw string) error {
 	}
 	return nil
 }
+
 func (r *RabbitMQOutput) connect() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -151,6 +156,7 @@ func (r *RabbitMQOutput) connect() error {
 	r.returns = ch.NotifyReturn(make(chan amqp.Return, 1))
 	return nil
 }
+
 func (r *RabbitMQOutput) close() error {
 	r.transportMu.Lock()
 	if r.transport != nil {
@@ -167,6 +173,7 @@ func (r *RabbitMQOutput) close() error {
 	}
 	return nil
 }
+
 func (r *RabbitMQOutput) publish(ctx context.Context, evt event.Event) error {
 	data, err := json.Marshal(evt)
 	if err != nil {
@@ -198,6 +205,7 @@ func (r *RabbitMQOutput) publish(ctx context.Context, evt event.Event) error {
 	}
 	return nil
 }
+
 func awaitConfirm(ctx context.Context, done <-chan struct{}, acked func() bool, returns <-chan amqp.Return, timeout time.Duration) error {
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()
@@ -226,6 +234,7 @@ func awaitConfirm(ctx context.Context, done <-chan struct{}, acked func() bool, 
 		return ctx.Err()
 	}
 }
+
 func (r *RabbitMQOutput) reportError(err error) {
 	logger := r.Logger()
 	if logger == nil {

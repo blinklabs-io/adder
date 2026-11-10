@@ -4,11 +4,12 @@ package rabbitmq
 
 import (
 	"context"
-	amqp "github.com/rabbitmq/amqp091-go"
-	"github.com/stretchr/testify/require"
 	"net"
 	"testing"
 	"time"
+
+	amqp "github.com/rabbitmq/amqp091-go"
+	"github.com/stretchr/testify/require"
 )
 
 func TestPublisherConfirmContract(t *testing.T) {
@@ -36,6 +37,7 @@ func TestPublisherConfirmContract(t *testing.T) {
 		})
 	}
 }
+
 func TestPublisherConfirmTimeoutAndCancellation(t *testing.T) {
 	returns := make(chan amqp.Return)
 	done := make(chan struct{})
@@ -44,12 +46,14 @@ func TestPublisherConfirmTimeoutAndCancellation(t *testing.T) {
 	cancel()
 	require.ErrorIs(t, awaitConfirm(ctx, done, func() bool { return false }, returns, time.Second), context.Canceled)
 }
+
 func TestRabbitMQURL(t *testing.T) {
 	for _, raw := range []string{"http://localhost", "amqp:///", "amqps://host/#fragment"} {
 		require.Error(t, validateURL(raw))
 	}
 	require.NoError(t, validateURL("amqps://host/vhost"))
 }
+
 func TestBoundedWriteAndStop(t *testing.T) {
 	left, right := net.Pipe()
 	defer right.Close()
