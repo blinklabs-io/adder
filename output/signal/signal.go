@@ -58,15 +58,16 @@ func (s *SignalOutput) Start() error            { return s.StartContext(context.
 func (s *SignalOutput) StartContext(ctx context.Context) error {
 	return s.StartRun(ctx, plugin.BaseConfig{HasInput: true}, s.start, plugin.ShutdownHooks{})
 }
+
 func (s *SignalOutput) start(ctx context.Context) error {
 	if err := validateEndpoint(s.endpoint); err != nil {
 		return err
 	}
 	if len(s.recipients) == 0 {
-		return errors.New("Signal recipients are required")
+		return errors.New("signal recipients are required")
 	}
 	if s.client == nil {
-		return errors.New("Signal HTTP client is required")
+		return errors.New("signal HTTP client is required")
 	}
 	done, in := s.Done(), s.Input()
 	s.Go(func() {
@@ -103,7 +104,7 @@ func validateEndpoint(raw string) error {
 	if u.Scheme == "http" && (u.Hostname() == "localhost" || u.Hostname() == "127.0.0.1" || u.Hostname() == "::1") {
 		return nil
 	}
-	return errors.New("Signal endpoint requires HTTPS except on loopback")
+	return errors.New("signal endpoint requires HTTPS except on loopback")
 }
 
 func (s *SignalOutput) deliver(ctx context.Context, evt event.Event) error {
@@ -127,11 +128,11 @@ func (s *SignalOutput) deliver(ctx context.Context, evt event.Event) error {
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := s.client.Do(req)
 	if err != nil {
-		return fmt.Errorf("Signal RPC request: %w", err)
+		return fmt.Errorf("signal RPC request: %w", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("Signal RPC status %d", resp.StatusCode)
+		return fmt.Errorf("signal RPC status %d", resp.StatusCode)
 	}
 	var result struct {
 		JSONRPC string `json:"jsonrpc"`
@@ -151,13 +152,14 @@ func (s *SignalOutput) deliver(ctx context.Context, evt event.Event) error {
 		return errors.New("invalid Signal RPC response")
 	}
 	if result.Error != nil {
-		return fmt.Errorf("Signal RPC error %d: %s", result.Error.Code, result.Error.Message)
+		return fmt.Errorf("signal RPC error %d: %s", result.Error.Code, result.Error.Message)
 	}
 	if result.Result == nil || result.Result.Timestamp == 0 {
-		return errors.New("Signal RPC send returned no timestamp")
+		return errors.New("signal RPC send returned no timestamp")
 	}
 	return nil
 }
+
 func (s *SignalOutput) reportError(err error) {
 	logger := s.Logger()
 	if logger == nil {

@@ -5,6 +5,7 @@ package signal
 import (
 	"errors"
 	"fmt"
+
 	"github.com/blinklabs-io/adder/internal/logging"
 	"github.com/blinklabs-io/adder/plugin"
 )

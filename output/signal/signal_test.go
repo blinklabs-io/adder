@@ -6,12 +6,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/blinklabs-io/adder/event"
-	"github.com/stretchr/testify/require"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	"github.com/blinklabs-io/adder/event"
+	"github.com/stretchr/testify/require"
 )
 
 func TestDocumentedJSONRPCSend(t *testing.T) {
@@ -77,6 +78,7 @@ func TestValidateEndpoint(t *testing.T) {
 	}
 	require.NoError(t, validateEndpoint("https://example.com/api/v1/rpc"))
 }
+
 func TestSignalSelectionAndErrorChannel(t *testing.T) {
 	requests := make(chan struct{}, 2)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
