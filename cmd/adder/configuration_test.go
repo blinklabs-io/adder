@@ -33,19 +33,21 @@ func TestRegisteredFactories(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(notification, data, 0o600))
 	overrides := map[string]map[string]any{
-		"mempool":     {"socket-path": "/tmp/not-opened.sock"},
-		"utxorpc":     {"url": "https://example.invalid"},
-		"push":        {"serviceAccountFilePath": credentials},
-		"telegram":    {"bot-token": "123:test-secret", "chat-id": "-123"},
-		"discord":     {"bot-token": "test-secret", "application-id": "123", "guild-id": "456", "channel-id": "789"},
-		"slack":       {"webhook-urls": "https://hooks.slack.com/services/test"},
-		"signal":      {"recipients": "+15557654321"},
-		"matrix":      {"homeserver-url": "https://matrix.example.org", "access-token": "test-secret", "room-ids": "!room:example.org"},
-		"nats":        {"servers": "nats://127.0.0.1:4222"},
-		"s3":          {"region": "us-east-1", "bucket": "adder-test"},
-		"postgres":    {"database-url": "postgres://adder:secret@localhost:5432/adder?sslmode=require"},
-		"pubsub":      {"project-id": "test-project", "topic-id": "adder-events"},
-		"notify-json": {"config": notification},
+		"mempool":       {"socket-path": "/tmp/not-opened.sock"},
+		"utxorpc":       {"url": "https://example.invalid"},
+		"push":          {"serviceAccountFilePath": credentials},
+		"telegram":      {"bot-token": "123:test-secret", "chat-id": "-123"},
+		"discord":       {"bot-token": "test-secret", "application-id": "123", "guild-id": "456", "channel-id": "789"},
+		"slack":         {"webhook-urls": "https://hooks.slack.com/services/test"},
+		"signal":        {"recipients": "+15557654321"},
+		"matrix":        {"homeserver-url": "https://matrix.example.org", "access-token": "test-secret", "room-ids": "!room:example.org"},
+		"nats":          {"servers": "nats://127.0.0.1:4222"},
+		"s3":            {"region": "us-east-1", "bucket": "adder-test"},
+		"postgres":      {"database-url": "postgres://adder:secret@localhost:5432/adder?sslmode=require"},
+		"pubsub":        {"project-id": "test-project", "topic-id": "adder-events"},
+		"clickhouse":    {"url": "http://127.0.0.1:8123"},
+		"elasticsearch": {"url": "http://127.0.0.1:9200"},
+		"notify-json":   {"config": notification},
 	}
 	for _, kind := range []plugin.PluginType{plugin.PluginTypeInput, plugin.PluginTypeFilter, plugin.PluginTypeOutput} {
 		for _, entry := range plugin.GetPlugins(kind) {
