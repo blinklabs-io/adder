@@ -25,14 +25,22 @@ func TestElasticsearchRequestContract(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer r.Body.Close()
 		var body json.RawMessage
-		require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decode request: %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
 		mu.Lock()
 		paths = append(paths, r.URL.Path)
 		bodies = append(bodies, body)
 		count := len(paths)
 		mu.Unlock()
-		require.Equal(t, http.MethodPut, r.Method)
-		require.Equal(t, "application/json", r.Header.Get("Content-Type"))
+		if r.Method != http.MethodPut {
+			t.Errorf("method = %s, want PUT", r.Method)
+		}
+		if got := r.Header.Get("Content-Type"); got != "application/json" {
+			t.Errorf("content type = %q", got)
+		}
 		if count == 2 {
 			w.WriteHeader(http.StatusTooManyRequests)
 			return
