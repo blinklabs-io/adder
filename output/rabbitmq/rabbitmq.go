@@ -155,14 +155,20 @@ func (r *RabbitMQOutput) connect(ctx context.Context) error {
 	}
 	ch, err := conn.Channel()
 	if err != nil {
-		_ = raw.Close()
+		if raw != nil {
+			_ = raw.Close()
+		}
 		return fmt.Errorf("open RabbitMQ channel: %w", err)
 	}
 	if err = ch.Confirm(false); err != nil {
-		_ = raw.Close()
+		if raw != nil {
+			_ = raw.Close()
+		}
 		return fmt.Errorf("enable RabbitMQ confirms: %w", err)
 	}
-	_ = raw.SetReadDeadline(time.Time{})
+	if raw != nil {
+		_ = raw.SetReadDeadline(time.Time{})
+	}
 	r.conn = conn
 	r.channel = ch
 	r.returns = ch.NotifyReturn(make(chan amqp.Return, 1))
