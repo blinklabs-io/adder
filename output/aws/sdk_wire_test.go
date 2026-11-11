@@ -47,22 +47,26 @@ func TestOfficialSDKSignsAndSerializesRequests(t *testing.T) {
 		HTTPClient:  server.Client(),
 	}
 	evt := event.New(event.TypeRollback, time.Now(), nil, event.RollbackEvent{SlotNumber: 42})
-	q := NewSQS(WithRegion("us-east-1"), WithQueueURL(server.URL+"/123/queue"))
+	q := NewSQS(WithRegion("us-east-1"), WithQueueURL(server.URL+"/123/queue"), WithGroupID("tenant"))
 	q.sqsClient = sqs.NewFromConfig(cfg, func(o *sqs.Options) { o.BaseEndpoint = aws.String(server.URL) })
 	require.NoError(t, q.publish(context.Background(), evt))
-	s := NewSNS(WithRegion("us-east-1"), WithTopicARN("arn:aws:sns:us-east-1:123:topic"))
+	s := NewSNS(WithRegion("us-east-1"), WithTopicARN("arn:aws:sns:us-east-1:123:topic"), WithGroupID("tenant"))
 	s.snsClient = sns.NewFromConfig(cfg, func(o *sns.Options) { o.BaseEndpoint = aws.String(server.URL) })
 	require.NoError(t, s.publish(context.Background(), evt))
 	sqsRequest := <-requests
 	require.Contains(t, sqsRequest.header.Get("Authorization"), "AWS4-HMAC-SHA256")
 	require.Equal(t, "AmazonSQS.SendMessage", sqsRequest.header.Get("X-Amz-Target"))
 	var sqsBody struct {
-		QueueUrl    string
-		MessageBody string
+		QueueUrl               string
+		MessageBody            string
+		MessageGroupId         string
+		MessageDeduplicationId *string
 	}
 	require.NoError(t, json.Unmarshal([]byte(sqsRequest.body), &sqsBody))
 	require.Equal(t, server.URL+"/123/queue", sqsBody.QueueUrl)
 	require.Contains(t, sqsBody.MessageBody, "rollback")
+	require.Equal(t, "tenant", sqsBody.MessageGroupId)
+	require.Nil(t, sqsBody.MessageDeduplicationId)
 	snsRequest := <-requests
 	require.Contains(t, snsRequest.header.Get("Authorization"), "AWS4-HMAC-SHA256")
 	form, err := url.ParseQuery(snsRequest.body)
@@ -70,4 +74,6 @@ func TestOfficialSDKSignsAndSerializesRequests(t *testing.T) {
 	require.Equal(t, "Publish", form.Get("Action"))
 	require.Equal(t, "arn:aws:sns:us-east-1:123:topic", form.Get("TopicArn"))
 	require.Contains(t, form.Get("Message"), "rollback")
+	require.Equal(t, "tenant", form.Get("MessageGroupId"))
+	require.NotContains(t, form, "MessageDeduplicationId")
 }
