@@ -20,6 +20,7 @@ import (
 	_ "github.com/blinklabs-io/adder/output/discord"
 	_ "github.com/blinklabs-io/adder/output/log"
 	_ "github.com/blinklabs-io/adder/output/matrix"
+	_ "github.com/blinklabs-io/adder/output/mqtt"
 	_ "github.com/blinklabs-io/adder/output/nats"
 	_ "github.com/blinklabs-io/adder/output/notify"
 	_ "github.com/blinklabs-io/adder/output/notifyjson"
