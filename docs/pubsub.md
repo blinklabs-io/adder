@@ -16,6 +16,8 @@ plugins:
 
 The topic is `projects/{project-id}/topics/{topic-id}`. The output sends the
 complete Adder event JSON as message `Data` and sets the `event_type` attribute.
+The project identifier may be a [project ID or project number](https://cloud.google.com/pubsub/docs/pubsub-basics);
+legacy domain-scoped IDs such as `example.com:my-project` are also accepted.
 `transactions`, `drep-registration`, `drep-update`, and `drep-retirement` are
 additional selectable types. Rollbacks remain separate event records; consumers
 decide how they affect prior events.

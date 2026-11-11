@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -111,7 +112,7 @@ func (o *Output) start(ctx context.Context) error {
 }
 
 func (o *Output) validate() error {
-	if o.projectID == "" || strings.ContainsAny(o.projectID, "/ \t\r\n") {
+	if !validProjectID(o.projectID) {
 		return errors.New("project-id must identify one Google Cloud project")
 	}
 	id := o.topicID
@@ -125,6 +126,16 @@ func (o *Output) validate() error {
 		}
 	}
 	return nil
+}
+
+var (
+	projectIDPattern     = regexp.MustCompile(`^[a-z][a-z0-9-]{4,28}[a-z0-9]$`)
+	projectNumberPattern = regexp.MustCompile(`^[0-9]+$`)
+	domainProjectPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9.-]*:[a-z][a-z0-9-]{4,28}[a-z0-9]$`)
+)
+
+func validProjectID(id string) bool {
+	return projectIDPattern.MatchString(id) || projectNumberPattern.MatchString(id) || domainProjectPattern.MatchString(id)
 }
 func asciiLetter(b byte) bool { return b >= 'a' && b <= 'z' || b >= 'A' && b <= 'Z' }
 

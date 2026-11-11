@@ -152,6 +152,8 @@ func TestFactoryRejectsInvalidNames(t *testing.T) {
 		match  string
 	}{
 		{map[string]any{"project-id": "bad/project", "topic-id": "adder-events"}, "project-id"},
+		{map[string]any{"project-id": "Bad!Project", "topic-id": "adder-events"}, "project-id"},
+		{map[string]any{"project-id": "bad-", "topic-id": "adder-events"}, "project-id"},
 		{map[string]any{"project-id": "project", "topic-id": "1bad"}, "topic-id"},
 		{map[string]any{"project-id": "project", "topic-id": "goog-events"}, "topic-id"},
 		{map[string]any{"project-id": "project", "topic-id": strings.Repeat("a", 256)}, "topic-id"},
@@ -160,6 +162,15 @@ func TestFactoryRejectsInvalidNames(t *testing.T) {
 		p, err := plugin.GetPlugin(plugin.PluginTypeOutput, "pubsub", tc.values)
 		require.Nil(t, p)
 		require.ErrorContains(t, err, tc.match)
+	}
+}
+
+func TestPubSubProjectIdentifiers(t *testing.T) {
+	for _, id := range []string{"test-project", "123456789123", "example.com:my-project"} {
+		require.True(t, validProjectID(id), id)
+	}
+	for _, id := range []string{"Bad!Project", "bad/project", "-bad-project", "bad-project-", "a:b:c"} {
+		require.False(t, validProjectID(id), id)
 	}
 }
 
