@@ -5,6 +5,7 @@ go 1.26.10
 require (
 	connectrpc.com/connect v1.21.1
 	fyne.io/fyne/v2 v2.8.2
+	github.com/DATA-DOG/go-sqlmock v1.5.2
 	github.com/SundaeSwap-finance/kugo v1.3.2
 	github.com/SundaeSwap-finance/ogmigo/v6 v6.2.2
 	github.com/blinklabs-io/gouroboros v0.219.0
@@ -16,6 +17,7 @@ require (
 	github.com/go-telegram/bot v1.27.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/inconshreveable/mousetrap v1.1.0
+	github.com/jackc/pgx/v5 v5.12.0
 	github.com/kelseyhightower/envconfig v1.4.0
 	github.com/nats-io/nats.go v1.55.0
 	github.com/prometheus/client_golang v1.25.0
@@ -91,6 +93,9 @@ require (
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/hack-pad/go-indexeddb v0.3.2 // indirect
 	github.com/hack-pad/safejs v0.1.1 // indirect
+	github.com/jackc/pgpassfile v1.0.0 // indirect
+	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
+	github.com/jackc/puddle/v2 v2.2.3 // indirect
 	github.com/jackmordaunt/icns/v3 v3.0.1 // indirect
 	github.com/jeandeaual/go-locale v0.0.0-20250612000132-0ef82f21eade // indirect
 	github.com/jinzhu/copier v0.4.0 // indirect
