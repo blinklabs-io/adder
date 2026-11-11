@@ -30,6 +30,7 @@ import (
 	_ "github.com/blinklabs-io/adder/output/pubsub"
 	_ "github.com/blinklabs-io/adder/output/push"
 	_ "github.com/blinklabs-io/adder/output/rabbitmq"
+	_ "github.com/blinklabs-io/adder/output/redis"
 	_ "github.com/blinklabs-io/adder/output/s3"
 	_ "github.com/blinklabs-io/adder/output/signal"
 	_ "github.com/blinklabs-io/adder/output/slack"
