@@ -958,6 +958,7 @@ following:
 - [Matrix output](./docs/matrix.md) — Configure event notifications in Matrix rooms.
 - [NATS output](./docs/nats.md) — Publish selected events to Core NATS subjects.
 - [AWS SQS and SNS outputs](./docs/aws.md) — Send selected events to an SQS queue or SNS topic.
+- [Google Cloud Pub/Sub output](./docs/pubsub.md) — Publish selected events to a topic.
 - [MQTT output](./docs/mqtt.md) — Publish selected events to MQTT topics.
 - [RabbitMQ output](./docs/rabbitmq.md) — Configure confirmed event publishing and delivery behavior.
 - [Discord bot output](docs/discord.md) — Configure selected event delivery and
