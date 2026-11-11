@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -49,13 +50,14 @@ var eventNames = map[string]string{
 // Output writes bounded JSONEachRow batches to a ClickHouse MergeTree table.
 type Output struct {
 	plugin.Base
-	endpoint, username, password string
-	selected                     map[string]bool
-	client                       *http.Client
+	endpoint, database, username, password string
+	selected                               map[string]bool
+	client                                 *http.Client
 }
 type Option func(*Output)
 
 func WithURL(v string) Option                 { return func(o *Output) { o.endpoint = v } }
+func WithDatabase(v string) Option            { return func(o *Output) { o.database = v } }
 func WithUsername(v string) Option            { return func(o *Output) { o.username = v } }
 func WithPassword(v string) Option            { return func(o *Output) { o.password = v } }
 func WithEventTypes(v map[string]bool) Option { return func(o *Output) { o.selected = v } }
@@ -64,7 +66,7 @@ func New(opts ...Option) *Output {
 	for _, typ := range eventNames {
 		selected[typ] = true
 	}
-	o := &Output{endpoint: "http://127.0.0.1:8123", username: "default", selected: selected}
+	o := &Output{endpoint: "http://127.0.0.1:8123", database: "default", username: "default", selected: selected}
 	for _, opt := range opts {
 		opt(o)
 	}
@@ -174,7 +176,12 @@ func (o *Output) validate() error {
 	if o.username == "" {
 		return errors.New("username is required")
 	}
-	if o.password != "" && u.Scheme != "https" && u.Hostname() != "127.0.0.1" && u.Hostname() != "localhost" {
+	if o.database == "" || strings.ContainsAny(o.database, " \t\r\n/\\") {
+		return errors.New("database must name one ClickHouse database")
+	}
+	ip := net.ParseIP(u.Hostname())
+	loopback := u.Hostname() == "localhost" || (ip != nil && ip.IsLoopback())
+	if o.password != "" && u.Scheme != "https" && !loopback {
 		return errors.New("password requires https:// outside localhost")
 	}
 	return nil
@@ -197,10 +204,9 @@ func encodeRow(evt event.Event) ([]byte, error) {
 }
 
 func (o *Output) query(ctx context.Context, sql string, data []byte, insert bool) error {
-	params := url.Values{"query": {sql}, "wait_end_of_query": {"1"}}
+	params := url.Values{"query": {sql}, "wait_end_of_query": {"1"}, "deduplicate_insert": {"disable"}}
 	if insert {
 		params.Set("insert_deduplicate", "0")
-		params.Set("deduplicate_insert", "disable")
 		params.Set("async_insert", "0")
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimSuffix(o.endpoint, "/")+"/?"+params.Encode(), bytes.NewReader(data))
@@ -208,6 +214,7 @@ func (o *Output) query(ctx context.Context, sql string, data []byte, insert bool
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-ClickHouse-Database", o.database)
 	req.Header.Set("X-ClickHouse-User", o.username)
 	if o.password != "" {
 		req.Header.Set("X-ClickHouse-Key", o.password)

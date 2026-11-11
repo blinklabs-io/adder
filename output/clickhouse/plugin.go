@@ -14,6 +14,7 @@ import (
 func init() {
 	plugin.Register(plugin.PluginEntry{Type: plugin.PluginTypeOutput, Name: "clickhouse", Description: "batch events into ClickHouse", NewFromOptionsFunc: newFromOptions, Options: []plugin.PluginOption{
 		{Name: "url", Type: plugin.PluginOptionTypeString, Description: "ClickHouse HTTP origin", DefaultValue: "http://127.0.0.1:8123"},
+		{Name: "database", Type: plugin.PluginOptionTypeString, Description: "ClickHouse database", DefaultValue: "default"},
 		{Name: "username", Type: plugin.PluginOptionTypeString, Description: "ClickHouse user", DefaultValue: "default"},
 		{Name: "password", Type: plugin.PluginOptionTypeString, Description: "optional ClickHouse password", DefaultValue: ""},
 		{Name: "event-types", Type: plugin.PluginOptionTypeString, Description: "comma-separated event types", DefaultValue: "blocks,transactions,rollbacks,governance,drep-registration,drep-update,drep-retirement"},
@@ -32,7 +33,7 @@ func newFromOptions(v plugin.Options) (plugin.ManagedPlugin, error) {
 	if len(selected) == 0 {
 		return nil, errors.New("event-types must name at least one type")
 	}
-	o := New(WithURL(v.String("url")), WithUsername(v.String("username")), WithPassword(v.String("password")), WithEventTypes(selected))
+	o := New(WithURL(v.String("url")), WithDatabase(v.String("database")), WithUsername(v.String("username")), WithPassword(v.String("password")), WithEventTypes(selected))
 	if err := o.validate(); err != nil {
 		return nil, err
 	}

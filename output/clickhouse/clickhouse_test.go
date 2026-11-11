@@ -20,9 +20,9 @@ import (
 )
 
 type receivedBatch struct {
-	query              url.Values
-	body               []byte
-	username, password string
+	query                        url.Values
+	body                         []byte
+	username, password, database string
 }
 
 func TestClickHouseShutdownFlushAndRollback(t *testing.T) {
@@ -33,14 +33,16 @@ func TestClickHouseShutdownFlushAndRollback(t *testing.T) {
 			t.Errorf("read request: %v", err)
 		}
 		if strings.Contains(r.URL.Query().Get("query"), "INSERT") {
-			batches <- receivedBatch{r.URL.Query(), body, r.Header.Get("X-ClickHouse-User"), r.Header.Get("X-ClickHouse-Key")}
+			batches <- receivedBatch{r.URL.Query(), body, r.Header.Get("X-ClickHouse-User"), r.Header.Get("X-ClickHouse-Key"), r.Header.Get("X-ClickHouse-Database")}
 		} else if !strings.Contains(r.URL.Query().Get("query"), "CREATE TABLE") {
 			t.Errorf("unexpected query: %s", r.URL.Query().Get("query"))
+		} else if got := r.URL.Query().Get("deduplicate_insert"); got != "disable" {
+			t.Errorf("startup deduplication setting = %q", got)
 		}
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer server.Close()
-	o := New(WithURL(server.URL), WithUsername("adder"), WithEventTypes(map[string]bool{event.TypeBlock: true, event.TypeRollback: true}))
+	o := New(WithURL(server.URL), WithDatabase("analytics"), WithUsername("adder"), WithEventTypes(map[string]bool{event.TypeBlock: true, event.TypeRollback: true}))
 	o.client = server.Client()
 	require.NoError(t, o.Start())
 	stamp := time.Date(2026, 1, 2, 3, 4, 5, 123, time.UTC)
@@ -53,6 +55,7 @@ func TestClickHouseShutdownFlushAndRollback(t *testing.T) {
 	select {
 	case batch := <-batches:
 		require.Equal(t, "adder", batch.username)
+		require.Equal(t, "analytics", batch.database)
 		require.Empty(t, batch.password)
 		require.Equal(t, "1", batch.query.Get("wait_end_of_query"))
 		require.Equal(t, "0", batch.query.Get("insert_deduplicate"))
@@ -111,6 +114,7 @@ func TestClickHouseRowAndConfig(t *testing.T) {
 		{"url": "http://example.org:8123", "password": "secret"},
 		{"url": "http://127.0.0.1:8123", "event-types": "unknown"},
 		{"url": "http://127.0.0.1:8123", "event-types": ""},
+		{"url": "http://127.0.0.1:8123", "database": ""},
 	} {
 		_, err := plugin.GetPlugin(plugin.PluginTypeOutput, "clickhouse", v)
 		require.Error(t, err)
@@ -119,6 +123,7 @@ func TestClickHouseRowAndConfig(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, p.(*Output).selected[event.TypeRollback])
 	require.False(t, p.(*Output).selected[event.TypeBlock])
+	require.NoError(t, New(WithURL("http://[::1]:8123"), WithPassword("secret")).validate())
 }
 
 func TestClickHouseDoesNotForwardCredentialsOnRedirect(t *testing.T) {

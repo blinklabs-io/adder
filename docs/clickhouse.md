@@ -6,6 +6,9 @@ table has `schema_version UInt8`, `event_hash String`, `event_type
 LowCardinality(String)`, `event_time DateTime64(9, 'UTC')`, and `event_json
 String`, partitioned by event month in a MergeTree. The versioned table name
 reserves schema changes for a new table and explicit migration.
+It requires a ClickHouse release supporting the current `deduplicate_insert`
+setting; startup tests that setting when creating the table and fails early on
+older servers.
 
 ```yaml
 output: clickhouse
@@ -13,6 +16,7 @@ plugins:
   output:
     clickhouse:
       url: https://clickhouse.example.org:8443
+      database: analytics
       username: adder
       password: YOUR_PASSWORD
       event-types: blocks,transactions,rollbacks,governance
@@ -26,7 +30,7 @@ batch is logged and sent to the error channel when space is available; it is
 discarded locally. There is no durable queue. Ambiguous failures are not
 automatically retried because repeating a batch can add duplicate rows.
 
-Every received row is retained, including identical duplicates. The
+Every successfully inserted row is retained, including identical duplicates. The
 `event_hash` is SHA-256 of the full JSON for comparison, not a unique key.
 ClickHouse insert deduplication is disabled for this output, using the current
 `deduplicate_insert=disable` setting and the older `insert_deduplicate=0`
