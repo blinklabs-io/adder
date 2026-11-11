@@ -281,6 +281,31 @@ func TestDiscordGatewayCommands(t *testing.T) {
 	}
 }
 
+func TestDiscordCloseAfterGatewayShutdown(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := (&websocket.Upgrader{}).Upgrade(w, r, nil)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		defer conn.Close()
+		for {
+			if _, _, err := conn.ReadMessage(); err != nil {
+				return
+			}
+		}
+	}))
+	defer server.Close()
+	conn, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(server.URL, "http"), nil)
+	require.NoError(t, err)
+	d, err := New(WithCredentials("secret", "1", "2", "3"))
+	require.NoError(t, err)
+	d.conn = conn
+	require.NoError(t, conn.Close())
+	require.NoError(t, d.closeConnection())
+	require.NoError(t, d.closeConnection())
+}
+
 func TestDiscordRetryDelay(t *testing.T) {
 	for _, tt := range []struct {
 		header, body string
