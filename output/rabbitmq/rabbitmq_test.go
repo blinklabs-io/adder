@@ -74,6 +74,36 @@ func TestBoundedWriteAndStop(t *testing.T) {
 	require.NoError(t, r.close())
 }
 
+func TestConnectFailureReleasesTransport(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	defer listener.Close()
+	require.NoError(t, listener.(*net.TCPListener).SetDeadline(time.Now().Add(3*time.Second)))
+	r := New(WithURL("amqp://" + listener.Addr().String() + "/"))
+	connectDone := make(chan error, 1)
+	go func() { connectDone <- r.connect(context.Background()) }()
+	serverConn, err := listener.Accept()
+	require.NoError(t, err)
+	_, err = io.CopyN(io.Discard, serverConn, 8)
+	require.NoError(t, err)
+	r.transportMu.Lock()
+	transport := r.transport
+	r.transportMu.Unlock()
+	require.NotNil(t, transport)
+	require.NoError(t, serverConn.Close())
+	select {
+	case err := <-connectDone:
+		require.Error(t, err)
+	case <-time.After(3 * time.Second):
+		t.Fatal("RabbitMQ handshake did not stop after peer closed")
+	}
+	require.ErrorIs(t, transport.SetDeadline(time.Now()), net.ErrClosed)
+	r.transportMu.Lock()
+	transport = r.transport
+	r.transportMu.Unlock()
+	require.Nil(t, transport)
+}
+
 func TestCloseReleasesTransportLockBeforeConnectionLock(t *testing.T) {
 	left, right := net.Pipe()
 	defer right.Close()

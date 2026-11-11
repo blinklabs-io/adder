@@ -127,12 +127,21 @@ func (r *RabbitMQOutput) connect(ctx context.Context) error {
 	var raw net.Conn
 	var setupTimer *time.Timer
 	var stopCancel func() bool
+	var ready bool
 	defer func() {
 		if setupTimer != nil {
 			setupTimer.Stop()
 		}
 		if stopCancel != nil {
 			stopCancel()
+		}
+		if !ready && raw != nil {
+			_ = raw.Close()
+			r.transportMu.Lock()
+			if r.transport == raw {
+				r.transport = nil
+			}
+			r.transportMu.Unlock()
 		}
 	}()
 	conn, err := amqp.DialConfig(r.url, amqp.Config{Dial: func(network, addr string) (net.Conn, error) {
@@ -155,15 +164,9 @@ func (r *RabbitMQOutput) connect(ctx context.Context) error {
 	}
 	ch, err := conn.Channel()
 	if err != nil {
-		if raw != nil {
-			_ = raw.Close()
-		}
 		return fmt.Errorf("open RabbitMQ channel: %w", err)
 	}
 	if err = ch.Confirm(false); err != nil {
-		if raw != nil {
-			_ = raw.Close()
-		}
 		return fmt.Errorf("enable RabbitMQ confirms: %w", err)
 	}
 	if raw != nil {
@@ -172,6 +175,7 @@ func (r *RabbitMQOutput) connect(ctx context.Context) error {
 	r.conn = conn
 	r.channel = ch
 	r.returns = ch.NotifyReturn(make(chan amqp.Return, 1))
+	ready = true
 	return nil
 }
 
