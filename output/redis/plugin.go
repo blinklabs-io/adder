@@ -34,6 +34,9 @@ func newFromOptions(v plugin.Options) (plugin.ManagedPlugin, error) {
 	if v.String("stream") == "" {
 		return nil, errors.New("stream is required")
 	}
+	if (v.String("username") != "" || v.String("password") != "") && !v.Bool("tls") {
+		return nil, errors.New("tls must be enabled for Redis credentials")
+	}
 	selected := make(map[string]bool)
 	for _, name := range plugin.SplitAndTrim(v.String("event-types")) {
 		typ, ok := eventNames[name]

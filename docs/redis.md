@@ -3,8 +3,9 @@
 The `redis` output appends selected Adder events to a Redis Stream using
 [`XADD`](https://redis.io/docs/latest/commands/xadd/) and the
 [go-redis v9 client](https://github.com/redis/go-redis/releases/tag/v9.23.0).
-It works with Redis Open Source 5.0 or later; it does not require Redis 8.6
-idempotent producer extensions.
+`XADD` is available in Redis Open Source 5.0 and later. The optional ACL
+`username` requires Redis 6.0 or later (see [AUTH](https://redis.io/docs/latest/commands/auth/)), and this output does not require
+Redis 8.6 idempotent producer extensions.
 
 ```yaml
 output: redis
@@ -16,8 +17,10 @@ plugins:
       event-types: "blocks,rollbacks,governance"
 ```
 
-Set `username` and `password` for Redis ACL authentication. Set `tls: true`
-when connecting outside a trusted network. The default event types are
+Set `username` and `password` for Redis ACL authentication, or `password`
+alone for the default user. Credentials require `tls: true`; configure the
+server for [Redis TLS](https://redis.io/docs/latest/operate/oss_and_stack/management/security/encryption/).
+The default event types are
 `blocks,rollbacks,governance`; optional types are `transactions`,
 `drep-registration`, `drep-update`, and `drep-retirement`.
 

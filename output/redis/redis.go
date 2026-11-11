@@ -79,9 +79,13 @@ func (o *Output) start(ctx context.Context) error {
 	if o.stream == "" {
 		return errors.New("stream is required")
 	}
+	if (o.username != "" || o.password != "") && !o.tls {
+		return errors.New("tls must be enabled for Redis credentials")
+	}
 	options := &redisgo.Options{
 		Addr: o.address, Username: o.username, Password: o.password,
 		MaxRetries: -1, DialTimeout: o.timeout, ReadTimeout: o.timeout, WriteTimeout: o.timeout,
+		ContextTimeoutEnabled: true,
 	}
 	if o.tls {
 		options.TLSConfig = &tls.Config{MinVersion: tls.VersionTLS12}
@@ -127,7 +131,7 @@ func (o *Output) publish(ctx context.Context, evt event.Event) error {
 		Values: map[string]any{"type": evt.Type, "event": string(data)},
 	}).Result()
 	if err != nil {
-		return fmt.Errorf("append Redis stream event (delivery uncertain): %w", err)
+		return fmt.Errorf("append Redis stream event: %w", err)
 	}
 	return nil
 }

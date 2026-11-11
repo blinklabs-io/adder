@@ -52,7 +52,7 @@ func TestRedisErrorIsReportedWithoutRetry(t *testing.T) {
 	select {
 	case err := <-o.ErrorChan():
 		require.ErrorContains(t, err, "temporary outage")
-		require.ErrorContains(t, err, "delivery uncertain")
+		require.ErrorContains(t, err, "append Redis stream event")
 	case <-time.After(time.Second):
 		t.Fatal("Redis failure was not reported")
 	}
@@ -69,6 +69,7 @@ func TestFactoryRejectsInvalidConfiguration(t *testing.T) {
 		{map[string]any{"address": "redis.example.org"}, "address"},
 		{map[string]any{"address": "redis.example.org:0"}, "address"},
 		{map[string]any{"stream": ""}, "stream"},
+		{map[string]any{"password": "secret"}, "tls"},
 		{map[string]any{"event-types": "unknown"}, "event type"},
 		{map[string]any{"event-types": ""}, "event-types"},
 	} {
@@ -76,6 +77,11 @@ func TestFactoryRejectsInvalidConfiguration(t *testing.T) {
 		require.Nil(t, p)
 		require.ErrorContains(t, err, tc.message)
 	}
+}
+
+func TestDirectConstructionRejectsCleartextCredentials(t *testing.T) {
+	o := New(WithCredentials("user", "secret"))
+	require.ErrorContains(t, o.Start(), "tls")
 }
 
 func TestStartReportsConnectionFailure(t *testing.T) {
