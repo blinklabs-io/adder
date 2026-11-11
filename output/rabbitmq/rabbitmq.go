@@ -206,6 +206,9 @@ func (r *RabbitMQOutput) publish(ctx context.Context, evt event.Event) error {
 	r.mu.Lock()
 	ch, returns := r.channel, r.returns
 	r.mu.Unlock()
+	if ch == nil {
+		return errors.New("RabbitMQ connection closed")
+	}
 	mode := uint8(amqp.Transient)
 	if r.persistent {
 		mode = amqp.Persistent
