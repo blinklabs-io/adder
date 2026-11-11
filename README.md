@@ -957,6 +957,7 @@ following:
   incoming webhooks.
 - [Matrix output](./docs/matrix.md) — Configure event notifications in Matrix rooms.
 - [NATS output](./docs/nats.md) — Publish selected events to Core NATS subjects.
+- [Google Cloud Pub/Sub output](./docs/pubsub.md) — Publish selected events to a topic.
 - [MQTT output](./docs/mqtt.md) — Publish selected events to MQTT topics.
 - [RabbitMQ output](./docs/rabbitmq.md) — Configure confirmed event publishing and delivery behavior.
 - [S3 archive output](./docs/s3.md) — Archive events as JSON objects in S3.
