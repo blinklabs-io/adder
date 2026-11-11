@@ -42,6 +42,7 @@ func TestRegisteredFactories(t *testing.T) {
 		"signal":        {"recipients": "+15557654321"},
 		"matrix":        {"homeserver-url": "https://matrix.example.org", "access-token": "test-secret", "room-ids": "!room:example.org"},
 		"nats":          {"servers": "nats://127.0.0.1:4222"},
+		"s3":            {"region": "us-east-1", "bucket": "adder-test"},
 		"postgres":      {"database-url": "postgres://adder:secret@localhost:5432/adder?sslmode=require"},
 		"pubsub":        {"project-id": "test-project", "topic-id": "adder-events"},
 		"clickhouse":    {"url": "http://127.0.0.1:8123"},
