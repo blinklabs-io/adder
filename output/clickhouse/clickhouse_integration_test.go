@@ -28,7 +28,10 @@ func TestClickHouseIntegration(t *testing.T) {
 	if endpoint == "" {
 		t.Skip("set ADDER_TEST_CLICKHOUSE_URL for ClickHouse integration")
 	}
-	o := New(WithURL(endpoint), WithUsername(os.Getenv("ADDER_TEST_CLICKHOUSE_USER")), WithPassword(os.Getenv("ADDER_TEST_CLICKHOUSE_PASSWORD")))
+	database := os.Getenv("ADDER_TEST_CLICKHOUSE_DATABASE")
+	require.NotEmpty(t, database, "set ADDER_TEST_CLICKHOUSE_DATABASE to a dedicated test database")
+	require.NotEqual(t, "default", database, "use a dedicated test database, not default")
+	o := New(WithURL(endpoint), WithDatabase(database), WithUsername(os.Getenv("ADDER_TEST_CLICKHOUSE_USER")), WithPassword(os.Getenv("ADDER_TEST_CLICKHOUSE_PASSWORD")))
 	if o.username == "" {
 		o.username = "default"
 	}
@@ -53,10 +56,11 @@ func TestClickHouseIntegration(t *testing.T) {
 		EventHash string `json:"event_hash"`
 	}
 	require.NoError(t, json.Unmarshal(blockRow, &row))
-	query := url.Values{"query": {fmt.Sprintf("SELECT count() FROM adder_events_v1 WHERE event_hash = '%s'", row.EventHash)}}
+	query := url.Values{"query": {fmt.Sprintf("SELECT count() FROM adder_events_v1 WHERE event_hash = '%s' FORMAT TabSeparated", row.EventHash)}}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimSuffix(endpoint, "/")+"/?"+query.Encode(), nil)
 	require.NoError(t, err)
 	req.Header.Set("X-ClickHouse-User", o.username)
+	req.Header.Set("X-ClickHouse-Database", o.database)
 	if o.password != "" {
 		req.Header.Set("X-ClickHouse-Key", o.password)
 	}

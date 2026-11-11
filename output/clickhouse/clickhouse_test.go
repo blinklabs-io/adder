@@ -126,6 +126,40 @@ func TestClickHouseRowAndConfig(t *testing.T) {
 	require.NoError(t, New(WithURL("http://[::1]:8123"), WithPassword("secret")).validate())
 }
 
+func TestClickHouseRejectsOutOfRangeRowWithoutDroppingBatch(t *testing.T) {
+	batches := make(chan []byte, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Query().Get("query"), "INSERT") {
+			body, _ := io.ReadAll(r.Body)
+			batches <- body
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+	o := New(WithURL(server.URL))
+	o.client = server.Client()
+	require.NoError(t, o.Start())
+	valid := event.New(event.TypeBlock, time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC), nil, nil)
+	o.InputChan() <- valid
+	o.InputChan() <- event.New(event.TypeBlock, time.Date(2263, 1, 1, 0, 0, 0, 0, time.UTC), nil, nil)
+	o.InputChan() <- valid
+	select {
+	case err := <-o.ErrorChan():
+		require.ErrorContains(t, err, "outside the DateTime64(9) range")
+	case <-time.After(2 * time.Second):
+		t.Fatal("out-of-range timestamp was not reported")
+	}
+	require.NoError(t, o.Stop())
+	select {
+	case body := <-batches:
+		require.Len(t, strings.Split(strings.TrimSpace(string(body)), "\n"), 2)
+	case <-time.After(2 * time.Second):
+		t.Fatal("valid rows were not flushed")
+	}
+	_, err := encodeRow(event.New(event.TypeBlock, time.Time{}, nil, nil))
+	require.ErrorContains(t, err, "outside the DateTime64(9) range")
+}
+
 func TestClickHouseDoesNotForwardCredentialsOnRedirect(t *testing.T) {
 	forwarded := make(chan http.Header, 1)
 	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -6,6 +6,9 @@ table has `schema_version UInt8`, `event_hash String`, `event_type
 LowCardinality(String)`, `event_time DateTime64(9, 'UTC')`, and `event_json
 String`, partitioned by event month in a MergeTree. The versioned table name
 reserves schema changes for a new table and explicit migration.
+The [`DateTime64(9)` range](https://clickhouse.com/docs/reference/data-types/datetime64)
+limits accepted event timestamps. Out-of-range events are reported separately
+before batching so they cannot discard valid rows in the same batch.
 It requires a ClickHouse release supporting the current `deduplicate_insert`
 setting; startup tests that setting when creating the table and fails early on
 older servers.
@@ -50,3 +53,5 @@ The HTTP `wait_end_of_query=1` setting and response-body inspection detect
 late exceptions described in the HTTP API documentation. For a live check,
 start ClickHouse, select this output, publish a block and rollback, and query
 `SELECT event_type, event_json FROM adder_events_v1 ORDER BY event_time`.
+For the optional integration test, set `ADDER_TEST_CLICKHOUSE_URL` and
+`ADDER_TEST_CLICKHOUSE_DATABASE` to an existing, dedicated non-default database.

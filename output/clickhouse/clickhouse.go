@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"net/http"
 	"net/url"
@@ -46,6 +47,11 @@ var eventNames = map[string]string{
 	"drep-update":       event.TypeDRepUpdate,
 	"drep-retirement":   event.TypeDRepRetirement,
 }
+
+var (
+	minEventTime = time.Date(1677, 9, 21, 0, 12, 44, 0, time.UTC)
+	maxEventTime = time.Unix(0, math.MaxInt64).UTC()
+)
 
 // Output writes bounded JSONEachRow batches to a ClickHouse MergeTree table.
 type Output struct {
@@ -188,6 +194,10 @@ func (o *Output) validate() error {
 }
 
 func encodeRow(evt event.Event) ([]byte, error) {
+	eventTime := evt.Timestamp.UTC()
+	if eventTime.Before(minEventTime) || eventTime.After(maxEventTime) {
+		return nil, fmt.Errorf("ClickHouse event timestamp %s is outside the DateTime64(9) range", eventTime.Format(time.RFC3339Nano))
+	}
 	data, err := json.Marshal(evt)
 	if err != nil {
 		return nil, fmt.Errorf("encode ClickHouse event: %w", err)
@@ -199,7 +209,7 @@ func encodeRow(evt event.Event) ([]byte, error) {
 		EventType     string `json:"event_type"`
 		EventTime     string `json:"event_time"`
 		EventJSON     string `json:"event_json"`
-	}{1, hex.EncodeToString(sum[:]), evt.Type, evt.Timestamp.UTC().Format("2006-01-02 15:04:05.000000000"), string(data)}
+	}{1, hex.EncodeToString(sum[:]), evt.Type, eventTime.Format("2006-01-02 15:04:05.000000000"), string(data)}
 	return json.Marshal(row)
 }
 
