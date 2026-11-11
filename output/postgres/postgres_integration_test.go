@@ -16,7 +16,7 @@ import (
 )
 
 // Set ADDER_TEST_POSTGRES_URL to a dedicated PostgreSQL database to verify
-// schema creation and ordered rollback replay against a real server.
+// schema creation, insertion order, and duplicate retention against a real server.
 func TestPostgreSQLIntegration(t *testing.T) {
 	url := os.Getenv("ADDER_TEST_POSTGRES_URL")
 	if url == "" {
@@ -40,7 +40,7 @@ func TestPostgreSQLIntegration(t *testing.T) {
 	for _, evt := range []event.Event{block, rollback, block} {
 		data, err := json.Marshal(evt)
 		require.NoError(t, err)
-		_, err = tx.ExecContext(ctx, insertSQL, eventHash(data), evt.Type, evt.Timestamp, data)
+		_, err = tx.ExecContext(ctx, insertSQL, eventHash(data), evt.Type, evt.Timestamp, string(data))
 		require.NoError(t, err)
 	}
 	rows, err := tx.QueryContext(ctx, `SELECT event_type, event_hash FROM adder_events ORDER BY arrival_id DESC LIMIT 3`)
@@ -54,6 +54,8 @@ func TestPostgreSQLIntegration(t *testing.T) {
 	}
 	require.NoError(t, rows.Err())
 	require.Equal(t, []string{event.TypeBlock, event.TypeRollback, event.TypeBlock}, types)
-	if len(hashes) != 3 { t.Fatalf("expected three event hashes, got %d", len(hashes)) }
+	if len(hashes) != 3 {
+		t.Fatalf("expected three event hashes, got %d", len(hashes))
+	}
 	require.Equal(t, hashes[0], hashes[2])
 }

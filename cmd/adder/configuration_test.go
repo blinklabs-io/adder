@@ -42,7 +42,7 @@ func TestRegisteredFactories(t *testing.T) {
 		"signal":      {"recipients": "+15557654321"},
 		"matrix":      {"homeserver-url": "https://matrix.example.org", "access-token": "test-secret", "room-ids": "!room:example.org"},
 		"nats":        {"servers": "nats://127.0.0.1:4222"},
-		"postgres":    {"database-url": "postgres://adder:secret@localhost:5432/adder"},
+		"postgres":    {"database-url": "postgres://adder:secret@localhost:5432/adder?sslmode=require"},
 		"notify-json": {"config": notification},
 	}
 	for _, kind := range []plugin.PluginType{plugin.PluginTypeInput, plugin.PluginTypeFilter, plugin.PluginTypeOutput} {

@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/blinklabs-io/adder/event"
@@ -32,7 +33,7 @@ const (
 )`
 	indexSQL  = `CREATE INDEX IF NOT EXISTS adder_events_time_idx ON adder_events (event_time DESC)`
 	insertSQL = `INSERT INTO adder_events (event_hash, schema_version, event_type, event_time, event_json)
-VALUES ($1, 1, $2, $3, $4)`
+VALUES ($1, 1, $2, $3, $4::jsonb)`
 )
 
 var eventNames = map[string]string{
@@ -128,6 +129,16 @@ func validateURL(raw string) error {
 	if err != nil || config.Host == "" || config.Database == "" {
 		return errors.New("database-url must be a PostgreSQL connection string with host and database")
 	}
+	if config.Password != "" && !strings.HasPrefix(config.Host, "/") {
+		if config.TLSConfig == nil {
+			return errors.New("database-url with a password requires TLS (sslmode=require or stronger)")
+		}
+		for _, fallback := range config.Fallbacks {
+			if fallback.TLSConfig == nil {
+				return errors.New("database-url with a password must not permit a plaintext fallback")
+			}
+		}
+	}
 	return nil
 }
 
@@ -143,7 +154,7 @@ func (o *Output) persist(ctx context.Context, evt event.Event) error {
 	}
 	requestCtx, cancel := context.WithTimeout(ctx, requestTimeout)
 	defer cancel()
-	if _, err := o.db.ExecContext(requestCtx, insertSQL, eventHash(data), evt.Type, evt.Timestamp, data); err != nil {
+	if _, err := o.db.ExecContext(requestCtx, insertSQL, eventHash(data), evt.Type, evt.Timestamp, string(data)); err != nil {
 		return fmt.Errorf("insert PostgreSQL event: %w", err)
 	}
 	return nil

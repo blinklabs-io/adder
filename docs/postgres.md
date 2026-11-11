@@ -2,12 +2,15 @@
 
 The `postgres` output appends selected Adder events to `adder_events` in an
 existing PostgreSQL database. It creates the table and time index at startup.
+When a password is used over TCP, the connection string must require TLS;
+pgx's default `sslmode=prefer` can fall back to plaintext. For server identity
+verification, use `sslmode=verify-full` with an appropriate root certificate.
 
 ```yaml
 plugins:
   output:
     postgres:
-      database-url: postgres://adder:secret@localhost:5432/adder
+      database-url: postgres://adder:secret@localhost:5432/adder?sslmode=require
       event-types: blocks,transactions,rollbacks,governance
 ```
 
@@ -24,7 +27,8 @@ schema version and an explicit migration.
 Each event is one `INSERT` statement and thus one PostgreSQL transaction. There
 is no plugin batch or flush timer. The shared input channel buffers at most ten
 events; upstream sends then wait for space. The SHA-256 of the complete JSON
-is stored in `event_hash` for comparison. Every received event is retained,
+is stored in `event_hash` for comparison of the Go-encoded bytes; PostgreSQL
+`jsonb` normalizes the stored representation. Every received event is retained,
 including identical duplicates. This preserves a block that is reapplied after
 a rollback even if its JSON is identical to the earlier block. Adder receives
 no upstream occurrence ID that can distinguish retransmission from reapplication.
