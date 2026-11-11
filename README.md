@@ -961,6 +961,7 @@ following:
 - [MQTT output](./docs/mqtt.md) — Publish selected events to MQTT topics.
 - [RabbitMQ output](./docs/rabbitmq.md) — Configure confirmed event publishing and delivery behavior.
 - [S3 archive output](./docs/s3.md) — Archive events as JSON objects in S3.
+- [PostgreSQL output](./docs/postgres.md) — Persist queryable event history.
 - [Discord bot output](docs/discord.md) — Configure selected event delivery and
   read-only slash commands.
 - [Telegram output controls](./docs/telegram.md) — Configure authorized bot
