@@ -960,6 +960,7 @@ following:
 - [Google Cloud Pub/Sub output](./docs/pubsub.md) — Publish selected events to a topic.
 - [MQTT output](./docs/mqtt.md) — Publish selected events to MQTT topics.
 - [RabbitMQ output](./docs/rabbitmq.md) — Configure confirmed event publishing and delivery behavior.
+- [Elasticsearch output](./docs/elasticsearch.md) — Index versioned event documents for search.
 - [ClickHouse output](./docs/clickhouse.md) — Batch events for analytical queries.
 - [PostgreSQL output](./docs/postgres.md) — Persist queryable event history.
 - [Discord bot output](docs/discord.md) — Configure selected event delivery and
