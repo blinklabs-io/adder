@@ -42,6 +42,8 @@ func TestRegisteredFactories(t *testing.T) {
 		"signal":      {"recipients": "+15557654321"},
 		"matrix":      {"homeserver-url": "https://matrix.example.org", "access-token": "test-secret", "room-ids": "!room:example.org"},
 		"nats":        {"servers": "nats://127.0.0.1:4222"},
+		"sqs":         {"region": "us-east-1", "queue-url": "https://sqs.us-east-1.amazonaws.com/123456789012/adder"},
+		"sns":         {"region": "us-east-1", "topic-arn": "arn:aws:sns:us-east-1:123456789012:adder"},
 		"notify-json": {"config": notification},
 	}
 	for _, kind := range []plugin.PluginType{plugin.PluginTypeInput, plugin.PluginTypeFilter, plugin.PluginTypeOutput} {
