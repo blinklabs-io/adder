@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"strconv"
 	"sync"
@@ -184,7 +185,9 @@ func (d *DiscordOutput) closeConnection() error {
 	d.conn = nil
 	d.mu.Unlock()
 	if conn != nil {
-		return conn.Close()
+		if err := conn.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
+			return err
+		}
 	}
 	return nil
 }
