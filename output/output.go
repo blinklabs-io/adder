@@ -17,6 +17,7 @@ package output
 // We import the various plugins that we want to be auto-registered
 import (
 	_ "github.com/blinklabs-io/adder/output/discord"
+	_ "github.com/blinklabs-io/adder/output/elasticsearch"
 	_ "github.com/blinklabs-io/adder/output/log"
 	_ "github.com/blinklabs-io/adder/output/matrix"
 	_ "github.com/blinklabs-io/adder/output/mqtt"
