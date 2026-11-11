@@ -44,6 +44,7 @@ func TestRegisteredFactories(t *testing.T) {
 		"nats":          {"servers": "nats://127.0.0.1:4222"},
 		"postgres":      {"database-url": "postgres://adder:secret@localhost:5432/adder?sslmode=require"},
 		"pubsub":        {"project-id": "test-project", "topic-id": "adder-events"},
+		"clickhouse":    {"url": "http://127.0.0.1:8123"},
 		"elasticsearch": {"url": "http://127.0.0.1:9200"},
 		"notify-json":   {"config": notification},
 	}
