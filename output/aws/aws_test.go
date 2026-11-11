@@ -180,22 +180,36 @@ func TestMessageSizeLimitsUseEncodedBytes(t *testing.T) {
 }
 
 func TestStandardDestinationsOmitDeduplication(t *testing.T) {
-	sqsFake := &fakeSQS{calls: make(chan *sqs.SendMessageInput, 1)}
-	q := NewSQS(WithRegion("us-east-1"), WithQueueURL(strings.TrimSuffix(queueURL, ".fifo")))
-	q.sqsClient = sqsFake
-	require.NoError(t, q.Start())
-	t.Cleanup(func() { require.NoError(t, q.Stop()) })
-	evt := event.New(event.TypeRollback, time.Now(), nil, event.RollbackEvent{SlotNumber: 42})
-	require.NoError(t, q.publish(context.Background(), evt))
-	require.Nil(t, (<-sqsFake.calls).MessageDeduplicationId)
+	for _, tc := range []struct {
+		name, groupID string
+	}{
+		{"without group ID", ""},
+		{"with group ID", "tenant"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			evt := event.New(event.TypeRollback, time.Now(), nil, event.RollbackEvent{SlotNumber: 42})
 
-	snsFake := &fakeSNS{calls: make(chan *sns.PublishInput, 1)}
-	s := NewSNS(WithRegion("us-east-1"), WithTopicARN(strings.TrimSuffix(topicARN, ".fifo")))
-	s.snsClient = snsFake
-	require.NoError(t, s.Start())
-	t.Cleanup(func() { require.NoError(t, s.Stop()) })
-	require.NoError(t, s.publish(context.Background(), evt))
-	require.Nil(t, (<-snsFake.calls).MessageDeduplicationId)
+			sqsFake := &fakeSQS{calls: make(chan *sqs.SendMessageInput, 1)}
+			q := NewSQS(WithRegion("us-east-1"), WithQueueURL(strings.TrimSuffix(queueURL, ".fifo")), WithGroupID(tc.groupID))
+			q.sqsClient = sqsFake
+			require.NoError(t, q.Start())
+			t.Cleanup(func() { require.NoError(t, q.Stop()) })
+			require.NoError(t, q.publish(context.Background(), evt))
+			sqsInput := <-sqsFake.calls
+			require.Equal(t, tc.groupID, aws.ToString(sqsInput.MessageGroupId))
+			require.Nil(t, sqsInput.MessageDeduplicationId)
+
+			snsFake := &fakeSNS{calls: make(chan *sns.PublishInput, 1)}
+			s := NewSNS(WithRegion("us-east-1"), WithTopicARN(strings.TrimSuffix(topicARN, ".fifo")), WithGroupID(tc.groupID))
+			s.snsClient = snsFake
+			require.NoError(t, s.Start())
+			t.Cleanup(func() { require.NoError(t, s.Stop()) })
+			require.NoError(t, s.publish(context.Background(), evt))
+			snsInput := <-snsFake.calls
+			require.Equal(t, tc.groupID, aws.ToString(snsInput.MessageGroupId))
+			require.Nil(t, snsInput.MessageDeduplicationId)
+		})
+	}
 }
 
 func TestStopCancelsInFlightSend(t *testing.T) {

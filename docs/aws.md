@@ -42,7 +42,12 @@ FIFO destinations require `group-id`. The output supplies a SHA-256 digest of
 the complete event JSON as `MessageDeduplicationId`; identical event JSON can
 be deduplicated within the service's deduplication window. Only retries of
 the same event JSON deduplicate; an event re-emitted with a new timestamp has
-a different digest. Standard destinations may omit `group-id`. `transactions`,
+a different digest. Standard destinations may omit `group-id`. Setting it on a
+[standard SQS queue](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/APIReference/API_SendMessage.html)
+enables fair queues. On a
+[standard SNS topic](https://docs.aws.amazon.com/sns/latest/api/API_Publish.html),
+SNS forwards it only to standard SQS subscriptions for fair queues. It does not
+provide FIFO ordering or deduplication on standard destinations. `transactions`,
 `drep-registration`,
 `drep-update`, and `drep-retirement` are additional selectable event types.
 
