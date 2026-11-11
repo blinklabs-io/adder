@@ -17,7 +17,9 @@ package output
 // We import the various plugins that we want to be auto-registered
 import (
 	_ "github.com/blinklabs-io/adder/output/aws"
+	_ "github.com/blinklabs-io/adder/output/clickhouse"
 	_ "github.com/blinklabs-io/adder/output/discord"
+	_ "github.com/blinklabs-io/adder/output/elasticsearch"
 	_ "github.com/blinklabs-io/adder/output/log"
 	_ "github.com/blinklabs-io/adder/output/matrix"
 	_ "github.com/blinklabs-io/adder/output/mqtt"
@@ -28,6 +30,7 @@ import (
 	_ "github.com/blinklabs-io/adder/output/pubsub"
 	_ "github.com/blinklabs-io/adder/output/push"
 	_ "github.com/blinklabs-io/adder/output/rabbitmq"
+	_ "github.com/blinklabs-io/adder/output/s3"
 	_ "github.com/blinklabs-io/adder/output/signal"
 	_ "github.com/blinklabs-io/adder/output/slack"
 	_ "github.com/blinklabs-io/adder/output/telegram"
