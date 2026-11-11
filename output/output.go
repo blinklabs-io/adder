@@ -23,6 +23,7 @@ import (
 	_ "github.com/blinklabs-io/adder/output/notify"
 	_ "github.com/blinklabs-io/adder/output/notifyjson"
 	_ "github.com/blinklabs-io/adder/output/push"
+	_ "github.com/blinklabs-io/adder/output/rabbitmq"
 	_ "github.com/blinklabs-io/adder/output/signal"
 	_ "github.com/blinklabs-io/adder/output/slack"
 	_ "github.com/blinklabs-io/adder/output/telegram"

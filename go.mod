@@ -18,6 +18,7 @@ require (
 	github.com/kelseyhightower/envconfig v1.4.0
 	github.com/nats-io/nats.go v1.55.0
 	github.com/prometheus/client_golang v1.25.0
+	github.com/rabbitmq/amqp091-go v1.15.0
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.1.0
 	github.com/stretchr/testify v1.12.1
