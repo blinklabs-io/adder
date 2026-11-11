@@ -957,6 +957,7 @@ following:
   incoming webhooks.
 - [Matrix output](./docs/matrix.md) — Configure event notifications in Matrix rooms.
 - [NATS output](./docs/nats.md) — Publish selected events to Core NATS subjects.
+- [MQTT output](./docs/mqtt.md) — Publish selected events to MQTT topics.
 - [RabbitMQ output](./docs/rabbitmq.md) — Configure confirmed event publishing and delivery behavior.
 - [Discord bot output](docs/discord.md) — Configure selected event delivery and
   read-only slash commands.
