@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
@@ -122,6 +123,9 @@ func (o *Output) validate() error {
 	if strings.HasPrefix(o.prefix, "/") || strings.HasSuffix(o.prefix, "/") || strings.Contains(o.prefix, "//") || strings.Contains(o.prefix, "..") || strings.ContainsAny(o.prefix, "\x00\r\n") {
 		return errors.New("prefix must be a relative S3 key prefix without empty levels")
 	}
+	if !utf8.ValidString(o.prefix) || len(o.prefix) > 916 {
+		return errors.New("prefix must be valid UTF-8 and at most 916 bytes to fit the S3 key limit")
+	}
 	return nil
 }
 
@@ -142,8 +146,12 @@ func (o *Output) archive(ctx context.Context, evt event.Event) error {
 	}
 	requestCtx, cancel := context.WithTimeout(ctx, requestTimeout)
 	defer cancel()
+	key := objectKey(o.prefix, evt, data)
+	if len(key) > 1024 {
+		return errors.New("S3 object key exceeds 1024-byte limit")
+	}
 	_, err = o.client.PutObject(requestCtx, &awss3.PutObjectInput{
-		Bucket: aws.String(o.bucket), Key: aws.String(objectKey(o.prefix, evt, data)),
+		Bucket: aws.String(o.bucket), Key: aws.String(key),
 		Body: bytes.NewReader(data), ContentType: aws.String("application/json"),
 		ChecksumAlgorithm: types.ChecksumAlgorithmSha256,
 	})

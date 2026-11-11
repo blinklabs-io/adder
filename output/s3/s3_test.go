@@ -151,6 +151,7 @@ func TestS3Configuration(t *testing.T) {
 		{"region": "us-east-1", "bucket": "archive", "prefix": "../bad"},
 		{"region": "us-east-1", "bucket": "archive", "event-types": "unknown"},
 		{"region": "us-east-1", "bucket": "archive", "event-types": ""},
+		{"region": "us-east-1", "bucket": "archive", "prefix": strings.Repeat("é", 459)},
 	} {
 		_, err := plugin.GetPlugin(plugin.PluginTypeOutput, "s3", v)
 		require.Error(t, err)
@@ -159,6 +160,8 @@ func TestS3Configuration(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, p.(*Output).selected[event.TypeRollback])
 	require.False(t, p.(*Output).selected[event.TypeBlock])
+	require.NoError(t, New(WithRegion("us-east-1"), WithBucket("archive"), WithPrefix(strings.Repeat("a", 916))).validate())
+	require.Error(t, New(WithRegion("us-east-1"), WithBucket("archive"), WithPrefix(strings.Repeat("a", 917))).validate())
 }
 
 func TestS3SDKPutObjectRequest(t *testing.T) {
