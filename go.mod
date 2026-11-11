@@ -1,6 +1,6 @@
 module github.com/blinklabs-io/adder
 
-go 1.26.10
+go 1.26.11
 
 require (
 	cloud.google.com/go/pubsub/v2 v2.9.0
