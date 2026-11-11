@@ -40,6 +40,7 @@ type Output struct {
 	broker, clientID, username, password, topicPrefix string
 	qos                                               byte
 	timeout                                           time.Duration
+	publishTimeout                                    time.Duration
 	selected                                          map[string]bool
 	mu                                                sync.Mutex
 	client                                            *autopaho.ConnectionManager
@@ -88,7 +89,7 @@ func WithEventTypes(v map[string]bool) Option {
 func New(opts ...Option) *Output {
 	o := &Output{
 		broker: "mqtt://127.0.0.1:1883", clientID: "adder-output",
-		topicPrefix: "adder/events", qos: 1, timeout: operationTimeout,
+		topicPrefix: "adder/events", qos: 1, timeout: operationTimeout, publishTimeout: operationTimeout,
 		selected: map[string]bool{event.TypeBlock: true, event.TypeRollback: true, event.TypeGovernance: true},
 	}
 	for _, opt := range opts {
@@ -105,6 +106,9 @@ func (o *Output) StartContext(ctx context.Context) error {
 
 func (o *Output) start(ctx context.Context) error {
 	if err := validateBroker(o.broker); err != nil {
+		return err
+	}
+	if err := validateCredentials(o.broker, o.username, o.password); err != nil {
 		return err
 	}
 	if err := validateTopicPrefix(o.topicPrefix); err != nil {
@@ -217,7 +221,7 @@ func (o *Output) publish(ctx context.Context, evt event.Event) error {
 		return fmt.Errorf("encode MQTT event: %w", err)
 	}
 	topic := o.topicPrefix + "/" + strings.TrimPrefix(evt.Type, "input.")
-	requestCtx, cancel := context.WithTimeout(ctx, o.timeout)
+	requestCtx, cancel := context.WithTimeout(ctx, o.publishTimeout)
 	defer cancel()
 	o.mu.Lock()
 	client := o.client
@@ -234,6 +238,9 @@ func (o *Output) publish(ctx context.Context, evt event.Event) error {
 	}
 	if resp == nil {
 		return errors.New("MQTT broker returned no publish response")
+	}
+	if o.qos == 2 && resp.ReasonCode == 0x92 {
+		return errors.New("MQTT QoS 2 completion uncertain: packet identifier not found")
 	}
 	if resp.ReasonCode >= 0x80 {
 		return fmt.Errorf("MQTT broker rejected publication: reason code 0x%02x", resp.ReasonCode)
@@ -271,10 +278,17 @@ func validateBroker(raw string) error {
 	if err != nil || (u.Scheme != "mqtt" && u.Scheme != "tls") || u.Hostname() == "" || u.User != nil || u.Path != "" || u.RawQuery != "" || u.Fragment != "" {
 		return errors.New("broker must be a mqtt:// or tls:// URL without credentials or path")
 	}
-	if u.Port() != "" {
+	if u.Port() != "" || strings.HasSuffix(u.Host, ":") {
 		if err := plugin.ValidateHostPort(u.Host); err != nil {
 			return fmt.Errorf("invalid MQTT broker port: %w", err)
 		}
+	}
+	return nil
+}
+
+func validateCredentials(broker, username, password string) error {
+	if (username != "" || password != "") && strings.HasPrefix(broker, "mqtt://") {
+		return errors.New("MQTT credentials require a tls:// broker")
 	}
 	return nil
 }

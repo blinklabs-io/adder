@@ -50,6 +50,10 @@ func packet(r *bufio.Reader) (byte, []byte, error) {
 }
 
 func broker(t *testing.T, ack bool) (string, <-chan publication) {
+	return brokerWithQoS2Reason(t, ack, 0)
+}
+
+func brokerWithQoS2Reason(t *testing.T, ack bool, qos2Reason byte) (string, <-chan publication) {
 	t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
@@ -78,7 +82,11 @@ func broker(t *testing.T, ack bool) (string, <-chan publication) {
 				return
 			}
 			if h == 0x62 && ack && len(data) >= 2 {
-				_, _ = conn.Write([]byte{0x70, 0x02, data[0], data[1]}) // PUBCOMP
+				if qos2Reason == 0 {
+					_, _ = conn.Write([]byte{0x70, 0x02, data[0], data[1]}) // PUBCOMP success
+				} else {
+					_, _ = conn.Write([]byte{0x70, 0x04, data[0], data[1], qos2Reason, 0x00})
+				}
 				continue
 			}
 			if h>>4 != 3 || len(data) < 2 {
@@ -111,6 +119,15 @@ func broker(t *testing.T, ack bool) (string, <-chan publication) {
 		}
 	}()
 	return "mqtt://" + listener.Addr().String(), publications
+}
+
+func TestQoS2PacketIdentifierNotFoundIsUncertain(t *testing.T) {
+	url, _ := brokerWithQoS2Reason(t, true, 0x92)
+	o := New(WithBroker(url), WithQoS(2))
+	require.NoError(t, o.Start())
+	t.Cleanup(func() { require.NoError(t, o.Stop()) })
+	evt := event.New(event.TypeRollback, time.Now(), nil, event.RollbackEvent{SlotNumber: 42})
+	require.ErrorContains(t, o.publish(context.Background(), evt), "completion uncertain")
 }
 
 func TestQoS0AndQoS2CompleteAccordingToProtocol(t *testing.T) {
@@ -160,6 +177,8 @@ func TestFactoryRejectsInvalidConfiguration(t *testing.T) {
 	}{
 		{map[string]any{"broker": "https://example.org"}, "broker"},
 		{map[string]any{"broker": "mqtt://user:secret@example.org"}, "broker"},
+		{map[string]any{"broker": "mqtt://example.org", "username": "user", "password": "secret"}, "tls://"},
+		{map[string]any{"broker": "mqtt://example.org:"}, "port"},
 		{map[string]any{"topic-prefix": "bad/#"}, "topic-prefix"},
 		{map[string]any{"topic-prefix": string([]byte{0xff})}, "topic-prefix"},
 		{map[string]any{"topic-prefix": strings.Repeat("a", 65535)}, "65535"},
@@ -186,7 +205,7 @@ func TestTopicLimitCountsUTF8BytesAndEventSuffix(t *testing.T) {
 func TestMissingPUBACKReportsUncertainDelivery(t *testing.T) {
 	url, publications := broker(t, false)
 	o := New(WithBroker(url))
-	o.timeout = 100 * time.Millisecond
+	o.publishTimeout = 100 * time.Millisecond
 	require.NoError(t, o.Start())
 	t.Cleanup(func() { require.NoError(t, o.Stop()) })
 	o.InputChan() <- event.New(event.TypeRollback, time.Now(), nil, event.RollbackEvent{SlotNumber: 42})

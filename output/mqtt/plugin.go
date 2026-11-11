@@ -27,6 +27,9 @@ func newFromOptions(v plugin.Options) (plugin.ManagedPlugin, error) {
 	if err := validateBroker(v.String("broker")); err != nil {
 		return nil, err
 	}
+	if err := validateCredentials(v.String("broker"), v.String("username"), v.String("password")); err != nil {
+		return nil, err
+	}
 	if err := validateTopicPrefix(v.String("topic-prefix")); err != nil {
 		return nil, err
 	}
