@@ -40,8 +40,10 @@ records, leaving interpretation of earlier events to consumers.
 
 FIFO destinations require `group-id`. The output supplies a SHA-256 digest of
 the complete event JSON as `MessageDeduplicationId`; identical event JSON can
-be deduplicated within the service's deduplication window. Standard
-destinations may omit `group-id`. `transactions`, `drep-registration`,
+be deduplicated within the service's deduplication window. Only retries of
+the same event JSON deduplicate; an event re-emitted with a new timestamp has
+a different digest. Standard destinations may omit `group-id`. `transactions`,
+`drep-registration`,
 `drep-update`, and `drep-retirement` are additional selectable event types.
 
 SQS messages are limited to 1 MiB. SNS topics default to 256 KiB. The

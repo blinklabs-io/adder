@@ -5,9 +5,11 @@ package aws
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -51,14 +53,21 @@ func TestOfficialSDKSignsAndSerializesRequests(t *testing.T) {
 	s := NewSNS(WithRegion("us-east-1"), WithTopicARN("arn:aws:sns:us-east-1:123:topic"))
 	s.snsClient = sns.NewFromConfig(cfg, func(o *sns.Options) { o.BaseEndpoint = aws.String(server.URL) })
 	require.NoError(t, s.publish(context.Background(), evt))
-	for _, want := range []string{"SendMessage", "Publish"} {
-		select {
-		case req := <-requests:
-			require.Contains(t, req.header.Get("Authorization"), "AWS4-HMAC-SHA256")
-			require.Contains(t, req.body, "rollback")
-			require.True(t, strings.Contains(req.body, want) || strings.Contains(req.header.Get("X-Amz-Target"), want), "missing operation %s", want)
-		case <-time.After(time.Second):
-			t.Fatalf("no %s request", want)
-		}
+	sqsRequest := <-requests
+	require.Contains(t, sqsRequest.header.Get("Authorization"), "AWS4-HMAC-SHA256")
+	require.Equal(t, "AmazonSQS.SendMessage", sqsRequest.header.Get("X-Amz-Target"))
+	var sqsBody struct {
+		QueueUrl    string
+		MessageBody string
 	}
+	require.NoError(t, json.Unmarshal([]byte(sqsRequest.body), &sqsBody))
+	require.Equal(t, server.URL+"/123/queue", sqsBody.QueueUrl)
+	require.Contains(t, sqsBody.MessageBody, "rollback")
+	snsRequest := <-requests
+	require.Contains(t, snsRequest.header.Get("Authorization"), "AWS4-HMAC-SHA256")
+	form, err := url.ParseQuery(snsRequest.body)
+	require.NoError(t, err)
+	require.Equal(t, "Publish", form.Get("Action"))
+	require.Equal(t, "arn:aws:sns:us-east-1:123:topic", form.Get("TopicArn"))
+	require.Contains(t, form.Get("Message"), "rollback")
 }

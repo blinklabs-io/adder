@@ -127,6 +127,7 @@ func TestFactoryRejectsInvalidDestinations(t *testing.T) {
 		match  string
 	}{
 		{"sqs", map[string]any{"region": "us-east-1", "queue-url": "http://example.org/queue"}, "queue-url"},
+		{"sqs", map[string]any{"region": "us-west-2", "queue-url": queueURL, "group-id": "chain"}, "region"},
 		{"sqs", map[string]any{"region": "us-east-1", "queue-url": queueURL}, "group-id"},
 		{"sns", map[string]any{"region": "us-east-1", "topic-arn": "arn:aws:sqs:us-east-1:123:bad"}, "topic-arn"},
 		{"sns", map[string]any{"region": "us-east-1", "topic-arn": topicARN}, "group-id"},

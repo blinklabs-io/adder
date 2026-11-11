@@ -130,6 +130,13 @@ func (o *Output) validate() error {
 		if err != nil || u.Scheme != "https" || u.Hostname() == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || u.Path == "" || u.Path == "/" {
 			return errors.New("queue-url must be an HTTPS SQS queue URL")
 		}
+		host := u.Hostname()
+		if strings.HasPrefix(host, "sqs.") && (strings.HasSuffix(host, ".amazonaws.com") || strings.HasSuffix(host, ".amazonaws.com.cn")) {
+			queueRegion := strings.Split(host, ".")[1]
+			if queueRegion != o.region {
+				return errors.New("queue-url region must match region")
+			}
+		}
 	case "sns":
 		parts := strings.Split(o.topicARN, ":")
 		if len(parts) != 6 || parts[0] != "arn" || parts[2] != "sns" || parts[3] != o.region || parts[4] == "" || parts[5] == "" {
