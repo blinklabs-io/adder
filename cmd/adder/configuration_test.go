@@ -50,6 +50,7 @@ func TestRegisteredFactories(t *testing.T) {
 		"redis":         {"address": "127.0.0.1:6379", "stream": "adder.events"},
 		"clickhouse":    {"url": "http://127.0.0.1:8123"},
 		"elasticsearch": {"url": "http://127.0.0.1:9200"},
+		"kafka":         {"brokers": "127.0.0.1:9092", "topic": "adder.events"},
 		"notify-json":   {"config": notification},
 	}
 	for _, kind := range []plugin.PluginType{plugin.PluginTypeInput, plugin.PluginTypeFilter, plugin.PluginTypeOutput} {
