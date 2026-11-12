@@ -341,8 +341,10 @@ and 303 it changes POST to GET and drops the event body; a final 2xx response
 still counts as success. Use 307 or 308 to redirect a webhook POST with its
 body intact. A redirect that does not reach a final response fails. Other
 non-2xx responses fail immediately. After the retry limit,
-Adder discards the event and reports a terminal error. Retries and queued
-events remain in memory and can be lost on shutdown.
+Adder discards the event and reports a terminal error. Without `state-path`,
+retries and queued events remain in memory and can be lost on shutdown.
+Configure [restart-safe webhook delivery](./docs/webhook-durability.md) to
+persist entries that reach the webhook output and replay unacknowledged ones.
 
 With regular scrapes, `increase(adder_pipeline_received_events_total[10m])`
 estimates how much the received counter advanced over ten minutes. If it stays

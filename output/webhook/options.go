@@ -69,3 +69,11 @@ func WithRetryConfig(
 		}
 	}
 }
+
+// WithDurableQueue stores pending webhook deliveries in a SQLite database.
+func WithDurableQueue(path string, maxPending int) WebhookOptionFunc {
+	return func(o *WebhookOutput) {
+		o.statePath = path
+		o.maxPending = maxPending
+	}
+}
