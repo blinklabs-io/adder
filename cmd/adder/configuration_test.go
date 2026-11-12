@@ -47,6 +47,7 @@ func TestRegisteredFactories(t *testing.T) {
 		"s3":            {"region": "us-east-1", "bucket": "adder-test"},
 		"postgres":      {"database-url": "postgres://adder:secret@localhost:5432/adder?sslmode=require"},
 		"pubsub":        {"project-id": "test-project", "topic-id": "adder-events"},
+		"redis":         {"address": "127.0.0.1:6379", "stream": "adder.events"},
 		"clickhouse":    {"url": "http://127.0.0.1:8123"},
 		"elasticsearch": {"url": "http://127.0.0.1:9200"},
 		"notify-json":   {"config": notification},
