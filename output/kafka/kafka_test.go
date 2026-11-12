@@ -106,15 +106,17 @@ func TestStopCancelsInFlightProduce(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(cluster.Close)
 	o := New(WithBrokers(cluster.ListenAddrs()...))
-	o.timeout = time.Second
+	o.timeout = 5 * time.Second
 	require.NoError(t, o.Start())
 	entered := make(chan struct{}, 1)
+	release := make(chan struct{})
+	defer close(release)
 	cluster.ControlKey(int16(kmsg.Produce), func(kmsg.Request) (kmsg.Response, error, bool) {
 		select {
 		case entered <- struct{}{}:
 		default:
 		}
-		<-o.Done()
+		<-release
 		return nil, context.Canceled, true
 	})
 	o.InputChan() <- event.New(event.TypeRollback, time.Now(), nil, event.RollbackEvent{SlotNumber: 42})
@@ -129,7 +131,7 @@ func TestStopCancelsInFlightProduce(t *testing.T) {
 	case err := <-stopped:
 		require.NoError(t, err)
 	case <-time.After(2 * time.Second):
-		t.Fatal("Kafka output did not stop")
+		t.Fatal("Kafka output did not cancel the in-flight produce before its five-second deadline")
 	}
 }
 

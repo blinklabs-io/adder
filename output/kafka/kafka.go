@@ -97,7 +97,7 @@ func validateTopic(topic string) error {
 	return nil
 }
 
-func (o *Output) start(ctx context.Context) error {
+func (o *Output) validate() error {
 	if err := validateBrokers(o.brokers); err != nil {
 		return err
 	}
@@ -109,6 +109,13 @@ func (o *Output) start(ctx context.Context) error {
 	}
 	if o.username != "" && !o.tls {
 		return errors.New("tls must be enabled for SASL PLAIN credentials")
+	}
+	return nil
+}
+
+func (o *Output) start(ctx context.Context) error {
+	if err := o.validate(); err != nil {
+		return err
 	}
 	opts := []kgo.Opt{
 		kgo.WithContext(ctx), kgo.SeedBrokers(o.brokers...),

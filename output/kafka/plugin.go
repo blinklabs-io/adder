@@ -29,19 +29,7 @@ func init() {
 
 func newFromOptions(v plugin.Options) (plugin.ManagedPlugin, error) {
 	brokers := plugin.SplitAndTrim(v.String("brokers"))
-	if err := validateBrokers(brokers); err != nil {
-		return nil, err
-	}
-	if err := validateTopic(v.String("topic")); err != nil {
-		return nil, err
-	}
 	username, password := v.String("username"), v.String("password")
-	if (username == "") != (password == "") {
-		return nil, errors.New("username and password must both be set for SASL PLAIN")
-	}
-	if username != "" && !v.Bool("tls") {
-		return nil, errors.New("tls must be enabled for SASL PLAIN credentials")
-	}
 	selected := make(map[string]bool)
 	for _, name := range plugin.SplitAndTrim(v.String("event-types")) {
 		typ, ok := eventNames[name]
@@ -54,6 +42,9 @@ func newFromOptions(v plugin.Options) (plugin.ManagedPlugin, error) {
 		return nil, errors.New("event-types must name at least one supported type")
 	}
 	o := New(WithBrokers(brokers...), WithTopic(v.String("topic")), WithCredentials(username, password), WithTLS(v.Bool("tls")), WithEventTypes(selected))
+	if err := o.validate(); err != nil {
+		return nil, err
+	}
 	o.SetLogger(logging.GetLogger().With("plugin", "output.kafka"))
 	return o, nil
 }

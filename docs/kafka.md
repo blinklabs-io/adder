@@ -21,10 +21,12 @@ event types are `blocks,rollbacks,governance`; optional types are
 `transactions`, `drep-registration`, `drep-update`, and `drep-retirement`.
 
 Each record value is the complete Adder event JSON. The key is always
-`adder.events`, so records from one Adder producer go to one partition and
-retain their sequence across event types. Multiple Adder processes do not
-have a shared total order. The producer requests acknowledgement from all
-in-sync replicas (`acks=all`) and uses franz-go's idempotent producer for
+`adder.events`. With an unchanged topic partition count, records from one
+Adder producer go to one partition and retain their sequence across event
+types. Do not expand the topic's partitions while relying on that ordering.
+Multiple Adder processes do not have a shared total order. The producer
+requests acknowledgement from all in-sync replicas (`acks=all`) and uses
+franz-go's idempotent producer for
 its internal retries. See the current [Apache Kafka producer configuration](https://kafka.apache.org/44/configuration/producer-configs/)
 for the acknowledgement and idempotence semantics.
 
