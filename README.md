@@ -962,6 +962,7 @@ following:
 - [MQTT output](./docs/mqtt.md) — Publish selected events to MQTT topics.
 - [RabbitMQ output](./docs/rabbitmq.md) — Configure confirmed event publishing and delivery behavior.
 - [Redis Streams output](./docs/redis.md) — Append selected events to a Redis Stream.
+- [Kafka output](./docs/kafka.md) — Publish selected events to a Kafka topic.
 - [S3 archive output](./docs/s3.md) — Archive events as JSON objects in S3.
 - [Elasticsearch output](./docs/elasticsearch.md) — Index versioned event documents for search.
 - [ClickHouse output](./docs/clickhouse.md) — Batch events for analytical queries.
