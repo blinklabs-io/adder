@@ -107,6 +107,9 @@ func (w *WebhookOutput) start(ctx context.Context) error {
 		if err := w.openQueue(); err != nil {
 			return err
 		}
+		if err := w.replay(ctx); err != nil {
+			return fmt.Errorf("replay pending webhooks: %w", err)
+		}
 		w.Go(func() { w.runDurable(ctx) })
 		return nil
 	}

@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 
@@ -30,12 +31,55 @@ type queuedWebhook struct {
 	Body []byte `json:"body"`
 }
 
+func durableFileName(path string) (string, error) {
+	name, _, _ := strings.Cut(path, "?")
+	if name == ":memory:" || strings.HasPrefix(path, "file:") {
+		return "", errors.New("state-path must name a persistent SQLite file")
+	}
+	return name, nil
+}
+
+func secureStateFile(name string) error {
+	file, err := os.OpenFile(name, os.O_RDWR|os.O_CREATE, 0o600)
+	if err != nil {
+		return fmt.Errorf("open webhook state file: %w", err)
+	}
+	if err := file.Chmod(0o600); err != nil {
+		_ = file.Close()
+		return fmt.Errorf("restrict webhook state file: %w", err)
+	}
+	if err := file.Close(); err != nil {
+		return fmt.Errorf("close webhook state file: %w", err)
+	}
+	for _, suffix := range []string{"-wal", "-shm", "-journal"} {
+		sidecar := name + suffix
+		info, err := os.Lstat(sidecar)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return fmt.Errorf("inspect webhook state sidecar: %w", err)
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("webhook state sidecar %q must not be a symlink", sidecar)
+		}
+		if err := os.Chmod(sidecar, 0o600); err != nil {
+			return fmt.Errorf("restrict webhook state sidecar: %w", err)
+		}
+	}
+	return nil
+}
+
 func (w *WebhookOutput) openQueue() error {
-	if w.statePath == ":memory:" || strings.HasPrefix(w.statePath, "file:") {
-		return errors.New("state-path must name a persistent SQLite file")
+	name, err := durableFileName(w.statePath)
+	if err != nil {
+		return err
 	}
 	if w.maxPending < 11 {
 		return errors.New("max-pending must be at least 11 with state-path")
+	}
+	if err := secureStateFile(name); err != nil {
+		return err
 	}
 	store, err := state.NewSqliteStore(w.statePath)
 	if err != nil {
@@ -131,7 +175,6 @@ func validateDurableEvent(evt event.Event) error {
 }
 
 func (w *WebhookOutput) runDurable(ctx context.Context) {
-	w.handleReplayError(ctx, w.replay(ctx))
 	for evt := range w.Input() {
 		if err := validateDurableEvent(evt); err != nil {
 			w.reportError(w.log(), err)
@@ -151,6 +194,7 @@ func (w *WebhookOutput) runDurable(ctx context.Context) {
 			w.drainErr = errors.Join(w.drainErr, fmt.Errorf("webhook payload exceeds %d-byte durable queue limit", maxQueuedBytes))
 			if ctx.Err() == nil {
 				w.Fail(w.drainErr)
+				<-w.Done()
 			}
 			continue
 		}
@@ -158,11 +202,18 @@ func (w *WebhookOutput) runDurable(ctx context.Context) {
 			w.drainErr = errors.Join(w.drainErr, fmt.Errorf("persist webhook delivery: %w", err))
 			if ctx.Err() == nil {
 				w.Fail(w.drainErr)
+				<-w.Done()
 			}
 			continue
 		}
 		if ctx.Err() == nil {
-			w.handleReplayError(ctx, w.replay(ctx))
+			if err := w.replay(ctx); err != nil {
+				terminal := ctx.Err() == nil
+				w.handleReplayError(ctx, err)
+				if terminal {
+					<-w.Done()
+				}
+			}
 		}
 	}
 }

@@ -4,10 +4,13 @@
 package webhook
 
 import (
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -176,10 +179,95 @@ func TestDurableWebhookRequiresRoomToDrainInput(t *testing.T) {
 	require.ErrorContains(t, o.Start(), "max-pending")
 	_, err := plugin.GetPlugin(plugin.PluginTypeOutput, "webhook", map[string]any{"state-path": path, "max-pending": 10})
 	require.ErrorContains(t, err, "max-pending")
-	memory := New(WithDurableQueue(":memory:", 11))
-	require.ErrorContains(t, memory.Start(), "persistent SQLite file")
-	_, err = plugin.GetPlugin(plugin.PluginTypeOutput, "webhook", map[string]any{"state-path": ":memory:"})
-	require.ErrorContains(t, err, "persistent SQLite file")
+	for _, path := range []string{":memory:", ":memory:?cache=shared", "file::memory:?cache=shared"} {
+		memory := New(WithDurableQueue(path, 11))
+		require.ErrorContains(t, memory.Start(), "persistent SQLite file")
+		_, err = plugin.GetPlugin(plugin.PluginTypeOutput, "webhook", map[string]any{"state-path": path})
+		require.ErrorContains(t, err, "persistent SQLite file")
+	}
+}
+
+func TestDurableWebhookRestrictsStateFilePermissions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows does not expose Unix file permissions")
+	}
+	path := filepath.Join(t.TempDir(), "webhook.sqlite")
+	for _, name := range []string{path, path + "-wal", path + "-shm", path + "-journal"} {
+		require.NoError(t, os.WriteFile(name, nil, 0o644))
+		require.NoError(t, os.Chmod(name, 0o644))
+	}
+	require.NoError(t, secureStateFile(path))
+	for _, name := range []string{path, path + "-wal", path + "-shm", path + "-journal"} {
+		info, err := os.Stat(name)
+		require.NoError(t, err)
+		require.Equal(t, os.FileMode(0o600), info.Mode().Perm())
+	}
+}
+
+func TestDurableWebhookQueryPathUsesPrivateDiskFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "webhook.sqlite")
+	o := New(WithDurableQueue(path+"?cache=shared", 11))
+	require.NoError(t, o.Start())
+	require.NoError(t, o.Stop())
+	_, err := os.Stat(path)
+	require.NoError(t, err)
+	_, err = os.Stat(path + "?cache=shared")
+	require.ErrorIs(t, err, os.ErrNotExist)
+	if runtime.GOOS != "windows" {
+		info, err := os.Stat(path)
+		require.NoError(t, err)
+		require.Equal(t, os.FileMode(0o600), info.Mode().Perm())
+	}
+}
+
+func TestDurableWebhookNewWALSidecarsArePrivate(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows does not expose Unix file permissions")
+	}
+	path := filepath.Join(t.TempDir(), "webhook.sqlite")
+	require.NoError(t, secureStateFile(path))
+	db, err := sql.Open("sqlite", path)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, db.Close()) })
+	_, err = db.Exec("PRAGMA journal_mode=WAL")
+	require.NoError(t, err)
+	_, err = db.Exec("CREATE TABLE test (value TEXT); INSERT INTO test(value) VALUES ('body')")
+	require.NoError(t, err)
+	for _, name := range []string{path, path + "-wal", path + "-shm"} {
+		info, err := os.Stat(name)
+		require.NoError(t, err)
+		require.Equal(t, os.FileMode(0o600), info.Mode().Perm())
+	}
+}
+
+func TestDurableWebhookFullQueueReplaysBeforeAcceptingInput(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	t.Cleanup(server.Close)
+	path := filepath.Join(t.TempDir(), "webhook.sqlite")
+	newOutput := func() *WebhookOutput {
+		return New(WithUrl(server.URL, false), WithDurableQueue(path, 11), WithRetryConfig(0, time.Millisecond, time.Millisecond))
+	}
+	first := newOutput()
+	require.NoError(t, first.Start())
+	require.NoError(t, first.Stop())
+	store, err := state.NewSqliteStore(path)
+	require.NoError(t, err)
+	rollback := rollbackEvent(42)
+	body, err := formatWebhook(&rollback, "adder")
+	require.NoError(t, err)
+	value, err := json.Marshal(queuedWebhook{Type: rollback.Type, Body: body})
+	require.NoError(t, err)
+	for range 11 {
+		_, err := store.Enqueue(queueName, value, 11)
+		require.NoError(t, err)
+	}
+	require.NoError(t, store.Close())
+	second := newOutput()
+	require.ErrorContains(t, second.Start(), "replay pending webhooks")
+	require.Nil(t, second.InputChan())
+	require.Equal(t, 11, pendingCount(t, path))
 }
 
 func TestDurableWebhookRejectsOversizedEntry(t *testing.T) {

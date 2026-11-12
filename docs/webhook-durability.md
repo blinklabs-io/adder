@@ -19,8 +19,9 @@ SQLite, and then sends it. The append is a [SQLite transaction](https://www.sqli
 After an HTTP 2xx response, the output explicitly removes that entry. An
 HTTP 2xx response means the receiver accepted the request according to
 [HTTP Semantics](https://www.rfc-editor.org/rfc/rfc9110.html); it does not
-prove that the receiver finished downstream work. Entries are replayed in
-their original order before new events are sent after a restart.
+prove that the receiver finished downstream work. On restart, `Start` replays
+pending entries in their original order before it returns. If replay cannot
+complete, startup fails and the pending entries remain in SQLite.
 Durable mode rejects redirects that change POST to a bodyless GET; 307 and
 308 redirects can preserve the request body.
 
@@ -37,6 +38,8 @@ append one atomic transaction.
 The queue has a hard `max-pending` entry limit (minimum 11, default 1024)
 and a 16 MiB limit per encoded entry. `state-path` must be an on-disk SQLite
 file, not an in-memory database.
+Adder restricts the database and any existing SQLite journal sidecars to
+owner-only file permissions before opening the store.
 When it fills or SQLite cannot persist an event, the output fails rather than
 silently discarding it. Pending entries have no automatic age expiry; they
 remain until a 2xx acknowledgement or explicit operator removal. A delivered
@@ -56,6 +59,8 @@ apply the rollback to their own state.
 To verify recovery, configure a test receiver to return 500, send an event,
 and confirm the output fails while the entry remains in the SQLite file.
 Restart with the receiver returning 200, then check it receives the same
-`X-Adder-Delivery-ID` and the pending count reaches zero. The package tests
-cover this sequence, graceful buffered-event persistence, destination
-identity, and ordered SQLite replay without an external service.
+`X-Adder-Delivery-ID`. Query the SQLite file with
+`SELECT COUNT(*) FROM queue WHERE name = 'webhook.pending';` and confirm it
+returns zero. The package tests cover this sequence, graceful persistence of
+buffered events, destination identity, and ordered SQLite replay without an
+external service.

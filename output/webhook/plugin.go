@@ -17,7 +17,6 @@ package webhook
 import (
 	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/blinklabs-io/adder/internal/logging"
 	"github.com/blinklabs-io/adder/plugin"
@@ -79,8 +78,8 @@ func newFromOptions(values plugin.Options) (plugin.ManagedPlugin, error) {
 	if values.String("state-path") != "" && values.Int("max-pending") < 11 {
 		return nil, errors.New("max-pending must be at least 11 with state-path")
 	}
-	if values.String("state-path") == ":memory:" || strings.HasPrefix(values.String("state-path"), "file:") {
-		return nil, errors.New("state-path must name a persistent SQLite file")
+	if _, err := durableFileName(values.String("state-path")); err != nil {
+		return nil, err
 	}
 
 	p := New(
