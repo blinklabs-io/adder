@@ -204,6 +204,57 @@ func TestDurableWebhookRestrictsStateFilePermissions(t *testing.T) {
 	}
 }
 
+func TestDurableWebhookRejectsMainStateSymlink(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("creating symlinks requires additional Windows privileges")
+	}
+	for _, dangling := range []bool{false, true} {
+		name := "existing"
+		if dangling {
+			name = "dangling"
+		}
+		t.Run(name, func(t *testing.T) {
+			parent := t.TempDir()
+			target := filepath.Join(parent, "target.sqlite")
+			var before []byte
+			if !dangling {
+				store, err := state.NewSqliteStore(target)
+				require.NoError(t, err)
+				require.NoError(t, store.Close())
+				before, err = os.ReadFile(target)
+				require.NoError(t, err)
+				require.NoError(t, os.Chmod(target, 0o644))
+			}
+			link := filepath.Join(parent, "webhook.sqlite")
+			require.NoError(t, os.Symlink(target, link))
+			o := New(WithDurableQueue(link, 11))
+			require.ErrorContains(t, o.Start(), "not a symlink")
+			if dangling {
+				_, err := os.Stat(target)
+				require.ErrorIs(t, err, os.ErrNotExist)
+			} else {
+				data, err := os.ReadFile(target)
+				require.NoError(t, err)
+				require.Equal(t, before, data)
+				info, err := os.Stat(target)
+				require.NoError(t, err)
+				require.Equal(t, os.FileMode(0o644), info.Mode().Perm())
+			}
+		})
+	}
+}
+
+func TestDurableWebhookRejectsWritableStateDirectory(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows directory permissions are ACL based")
+	}
+	parent := filepath.Join(t.TempDir(), "shared")
+	require.NoError(t, os.Mkdir(parent, 0o700))
+	require.NoError(t, os.Chmod(parent, 0o777))
+	o := New(WithDurableQueue(filepath.Join(parent, "webhook.sqlite"), 11))
+	require.ErrorContains(t, o.Start(), "directory must not be a symlink or writable")
+}
+
 func TestDurableWebhookQueryPathUsesPrivateDiskFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "webhook.sqlite")
 	o := New(WithDurableQueue(path+"?cache=shared", 11))

@@ -12,6 +12,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 
@@ -40,7 +42,37 @@ func durableFileName(path string) (string, error) {
 }
 
 func secureStateFile(name string) error {
-	file, err := os.OpenFile(name, os.O_RDWR|os.O_CREATE, 0o600)
+	if runtime.GOOS != "windows" {
+		parent, err := os.Lstat(filepath.Dir(name))
+		if err != nil {
+			return fmt.Errorf("inspect state-path directory: %w", err)
+		}
+		if !parent.IsDir() || parent.Mode().Perm()&0o022 != 0 {
+			return errors.New("state-path directory must not be a symlink or writable by group or others")
+		}
+	}
+	// Exclusive creation never follows an existing symlink. For an existing
+	// database, inspect the path before opening and verify the opened file is
+	// still the same regular file.
+	file, err := os.OpenFile(name, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0o600)
+	if errors.Is(err, os.ErrExist) {
+		info, statErr := os.Lstat(name)
+		if statErr != nil {
+			return fmt.Errorf("inspect webhook state file: %w", statErr)
+		}
+		if !info.Mode().IsRegular() {
+			return errors.New("state-path must name a regular file, not a symlink")
+		}
+		file, err = os.OpenFile(name, os.O_RDWR, 0)
+		if err == nil {
+			opened, openErr := file.Stat()
+			current, pathErr := os.Lstat(name)
+			if openErr != nil || pathErr != nil || !os.SameFile(opened, current) {
+				_ = file.Close()
+				return errors.New("state-path changed while opening the SQLite file")
+			}
+		}
+	}
 	if err != nil {
 		return fmt.Errorf("open webhook state file: %w", err)
 	}

@@ -38,8 +38,11 @@ append one atomic transaction.
 The queue has a hard `max-pending` entry limit (minimum 11, default 1024)
 and a 16 MiB limit per encoded entry. `state-path` must be an on-disk SQLite
 file, not an in-memory database.
-Adder restricts the database and any existing SQLite journal sidecars to
-owner-only file permissions before opening the store.
+On Unix, place the state file in a directory that is not group- or
+world-writable. Adder restricts the database and any existing SQLite journal
+sidecars to owner-only file permissions before opening the store and rejects
+a symlink as the immediate parent directory. The database file itself cannot
+be a symlink on any platform.
 When it fills or SQLite cannot persist an event, the output fails rather than
 silently discarding it. Pending entries have no automatic age expiry; they
 remain until a 2xx acknowledgement or explicit operator removal. A delivered
