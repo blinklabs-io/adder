@@ -13,7 +13,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 
@@ -34,75 +33,107 @@ type queuedWebhook struct {
 }
 
 func durableFileName(path string) (string, error) {
+	if strings.HasSuffix(path, "/") || strings.HasSuffix(path, "\\") {
+		return "", errors.New("state-path must name a file, not a directory")
+	}
 	name, _, _ := strings.Cut(path, "?")
 	if name == ":memory:" || strings.HasPrefix(path, "file:") {
 		return "", errors.New("state-path must name a persistent SQLite file")
 	}
-	return name, nil
+	for _, part := range strings.FieldsFunc(name, func(r rune) bool { return r == '/' || r == '\\' }) {
+		if part == ".." {
+			return "", errors.New("state-path must not contain parent-directory components")
+		}
+	}
+	// The SQLite driver interprets some DSN parameters (including _pragma
+	// and vfs) before the caller can configure durability or inspect the
+	// database. A state path is a filename, not a driver DSN.
+	if strings.Contains(path, "?") {
+		return "", errors.New("state-path must not contain SQLite query parameters")
+	}
+	return path, nil
 }
 
-func secureStateFile(name string) error {
-	if runtime.GOOS != "windows" {
-		parent, err := os.Lstat(filepath.Dir(name))
-		if err != nil {
-			return fmt.Errorf("inspect state-path directory: %w", err)
-		}
-		if !parent.IsDir() || parent.Mode().Perm()&0o022 != 0 {
-			return errors.New("state-path directory must not be a symlink or writable by group or others")
-		}
+func restrictExistingStateFile(name string) error {
+	initial, err := os.Lstat(name)
+	if err != nil {
+		return err
+	}
+	return restrictOpenedStateFile(name, initial)
+}
+
+func restrictOpenedStateFile(name string, initial os.FileInfo) error {
+	if !initial.Mode().IsRegular() {
+		return errors.New("state-path must name a regular file, not a symlink")
+	}
+	file, err := os.OpenFile(name, os.O_RDWR, 0)
+	if err != nil {
+		return err
+	}
+	opened, openErr := file.Stat()
+	current, pathErr := os.Lstat(name)
+	if openErr != nil || pathErr != nil || !opened.Mode().IsRegular() ||
+		!os.SameFile(initial, opened) || !os.SameFile(opened, current) {
+		_ = file.Close()
+		return errors.New("state-path changed while opening the SQLite file")
+	}
+	if err := file.Chmod(0o600); err != nil {
+		_ = file.Close()
+		return err
+	}
+	return file.Close()
+}
+
+func secureStateFile(name string) (string, error) {
+	parent, err := validateStateDirectory(filepath.Dir(name))
+	if err != nil {
+		return "", fmt.Errorf("inspect state-path directory: %w", err)
+	}
+	name = filepath.Join(parent, filepath.Base(name))
+	if _, err := durableFileName(name); err != nil {
+		return "", fmt.Errorf("resolved state-path: %w", err)
 	}
 	// Exclusive creation never follows an existing symlink. For an existing
 	// database, inspect the path before opening and verify the opened file is
 	// still the same regular file.
 	file, err := os.OpenFile(name, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0o600)
 	if errors.Is(err, os.ErrExist) {
-		info, statErr := os.Lstat(name)
-		if statErr != nil {
-			return fmt.Errorf("inspect webhook state file: %w", statErr)
+		if err := restrictExistingStateFile(name); err != nil {
+			return "", fmt.Errorf("restrict webhook state file: %w", err)
 		}
-		if !info.Mode().IsRegular() {
-			return errors.New("state-path must name a regular file, not a symlink")
-		}
-		file, err = os.OpenFile(name, os.O_RDWR, 0)
-		if err == nil {
-			opened, openErr := file.Stat()
-			current, pathErr := os.Lstat(name)
-			if openErr != nil || pathErr != nil || !os.SameFile(opened, current) {
-				_ = file.Close()
-				return errors.New("state-path changed while opening the SQLite file")
-			}
-		}
+		file = nil
+		err = nil
 	}
 	if err != nil {
-		return fmt.Errorf("open webhook state file: %w", err)
+		return "", fmt.Errorf("open webhook state file: %w", err)
 	}
-	if err := file.Chmod(0o600); err != nil {
-		_ = file.Close()
-		return fmt.Errorf("restrict webhook state file: %w", err)
-	}
-	if err := file.Close(); err != nil {
-		return fmt.Errorf("close webhook state file: %w", err)
+	if file != nil {
+		if err := file.Chmod(0o600); err != nil {
+			_ = file.Close()
+			return "", fmt.Errorf("restrict webhook state file: %w", err)
+		}
+		if err := file.Close(); err != nil {
+			return "", fmt.Errorf("close webhook state file: %w", err)
+		}
 	}
 	for _, suffix := range []string{"-wal", "-shm", "-journal"} {
 		sidecar := name + suffix
-		info, err := os.Lstat(sidecar)
+		err := restrictExistingStateFile(sidecar)
 		if errors.Is(err, os.ErrNotExist) {
 			continue
 		}
 		if err != nil {
-			return fmt.Errorf("inspect webhook state sidecar: %w", err)
-		}
-		if info.Mode()&os.ModeSymlink != 0 {
-			return fmt.Errorf("webhook state sidecar %q must not be a symlink", sidecar)
-		}
-		if err := os.Chmod(sidecar, 0o600); err != nil {
-			return fmt.Errorf("restrict webhook state sidecar: %w", err)
+			return "", fmt.Errorf("restrict webhook state sidecar %q: %w", sidecar, err)
 		}
 	}
-	return nil
+	return name, nil
 }
 
 func (w *WebhookOutput) openQueue() error {
+	return w.openQueueWith(state.NewSqliteStore)
+}
+
+func (w *WebhookOutput) openQueueWith(openStore func(string) (*state.SqliteStore, error)) error {
 	name, err := durableFileName(w.statePath)
 	if err != nil {
 		return err
@@ -110,10 +141,11 @@ func (w *WebhookOutput) openQueue() error {
 	if w.maxPending < 11 {
 		return errors.New("max-pending must be at least 11 with state-path")
 	}
-	if err := secureStateFile(name); err != nil {
+	name, err = secureStateFile(name)
+	if err != nil {
 		return err
 	}
-	store, err := state.NewSqliteStore(w.statePath)
+	store, err := openStore(name)
 	if err != nil {
 		return fmt.Errorf("open webhook state: %w", err)
 	}

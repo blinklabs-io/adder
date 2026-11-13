@@ -4,6 +4,7 @@
 package webhook
 
 import (
+	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
 	"net/http"
@@ -196,7 +197,8 @@ func TestDurableWebhookRestrictsStateFilePermissions(t *testing.T) {
 		require.NoError(t, os.WriteFile(name, nil, 0o644))
 		require.NoError(t, os.Chmod(name, 0o644))
 	}
-	require.NoError(t, secureStateFile(path))
+	_, err := secureStateFile(path)
+	require.NoError(t, err)
 	for _, name := range []string{path, path + "-wal", path + "-shm", path + "-journal"} {
 		info, err := os.Stat(name)
 		require.NoError(t, err)
@@ -205,9 +207,6 @@ func TestDurableWebhookRestrictsStateFilePermissions(t *testing.T) {
 }
 
 func TestDurableWebhookRejectsMainStateSymlink(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("creating symlinks requires additional Windows privileges")
-	}
 	for _, dangling := range []bool{false, true} {
 		name := "existing"
 		if dangling {
@@ -226,7 +225,12 @@ func TestDurableWebhookRejectsMainStateSymlink(t *testing.T) {
 				require.NoError(t, os.Chmod(target, 0o644))
 			}
 			link := filepath.Join(parent, "webhook.sqlite")
-			require.NoError(t, os.Symlink(target, link))
+			if err := os.Symlink(target, link); err != nil {
+				if runtime.GOOS == "windows" {
+					t.Skipf("symlinks require Windows privileges: %v", err)
+				}
+				require.NoError(t, err)
+			}
 			o := New(WithDurableQueue(link, 11))
 			require.ErrorContains(t, o.Start(), "not a symlink")
 			if dangling {
@@ -236,9 +240,11 @@ func TestDurableWebhookRejectsMainStateSymlink(t *testing.T) {
 				data, err := os.ReadFile(target)
 				require.NoError(t, err)
 				require.Equal(t, before, data)
-				info, err := os.Stat(target)
-				require.NoError(t, err)
-				require.Equal(t, os.FileMode(0o644), info.Mode().Perm())
+				if runtime.GOOS != "windows" {
+					info, err := os.Stat(target)
+					require.NoError(t, err)
+					require.Equal(t, os.FileMode(0o644), info.Mode().Perm())
+				}
 			}
 		})
 	}
@@ -252,22 +258,199 @@ func TestDurableWebhookRejectsWritableStateDirectory(t *testing.T) {
 	require.NoError(t, os.Mkdir(parent, 0o700))
 	require.NoError(t, os.Chmod(parent, 0o777))
 	o := New(WithDurableQueue(filepath.Join(parent, "webhook.sqlite"), 11))
-	require.ErrorContains(t, o.Start(), "directory must not be a symlink or writable")
+	require.ErrorContains(t, o.Start(), "writable by another user")
 }
 
-func TestDurableWebhookQueryPathUsesPrivateDiskFile(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "webhook.sqlite")
-	o := New(WithDurableQueue(path+"?cache=shared", 11))
-	require.NoError(t, o.Start())
-	require.NoError(t, o.Stop())
-	_, err := os.Stat(path)
+func TestDurableWebhookRejectsWritableAncestor(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows directory permissions are ACL based")
+	}
+	ancestor := filepath.Join(t.TempDir(), "shared")
+	require.NoError(t, os.Mkdir(ancestor, 0o700))
+	require.NoError(t, os.Chmod(ancestor, 0o777))
+	parent := filepath.Join(ancestor, "private")
+	require.NoError(t, os.Mkdir(parent, 0o700))
+	o := New(WithDurableQueue(filepath.Join(parent, "webhook.sqlite"), 11))
+	require.ErrorContains(t, o.Start(), "writable by another user")
+}
+
+func TestDurableWebhookRejectsStickyImmediateParent(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows directory permissions are ACL based")
+	}
+	shared, err := filepath.EvalSymlinks("/tmp")
 	require.NoError(t, err)
-	_, err = os.Stat(path + "?cache=shared")
+	info, err := os.Stat(shared)
+	require.NoError(t, err)
+	if info.Mode()&os.ModeSticky == 0 || info.Mode().Perm()&0o022 == 0 {
+		t.Skip("/tmp is not a sticky shared directory")
+	}
+	_, err = validateStateDirectory(shared)
+	require.ErrorContains(t, err, "writable by another user")
+}
+
+func TestDurableWebhookOpensCanonicalStatePathAfterAliasSwap(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix directory checks and symlinks")
+	}
+	root := t.TempDir()
+	safe := filepath.Join(root, "safe", "child")
+	require.NoError(t, os.MkdirAll(safe, 0o700))
+	shared := filepath.Join(root, "shared")
+	require.NoError(t, os.Mkdir(shared, 0o700))
+	require.NoError(t, os.Chmod(shared, 0o777))
+	redirect := filepath.Join(shared, "redirect")
+	require.NoError(t, os.Symlink(filepath.Dir(safe), redirect))
+	alias := filepath.Join(root, "alias")
+	require.NoError(t, os.Symlink(redirect, alias))
+	configured := filepath.Join(alias, "child", "webhook.sqlite")
+	realSafe, err := filepath.EvalSymlinks(safe)
+	require.NoError(t, err)
+
+	attacker := filepath.Join(root, "attacker", "child")
+	require.NoError(t, os.MkdirAll(attacker, 0o700))
+	target := filepath.Join(attacker, "webhook.sqlite")
+	sentinel, err := state.NewSqliteStore(target)
+	require.NoError(t, err)
+	require.NoError(t, sentinel.Set("sentinel", []byte("untouched")))
+	require.NoError(t, sentinel.Close())
+	before, err := os.ReadFile(target)
+	require.NoError(t, err)
+	o := New(WithDurableQueue(configured, 11))
+	var openedPath string
+	err = o.openQueueWith(func(opened string) (*state.SqliteStore, error) {
+		openedPath = opened
+		require.NoError(t, os.Remove(redirect))
+		require.NoError(t, os.Symlink(filepath.Dir(attacker), redirect))
+		return state.NewSqliteStore(opened)
+	})
+	require.NoError(t, err)
+	require.NoError(t, o.closeQueue())
+	data, err := os.ReadFile(target)
+	require.NoError(t, err)
+	require.Equal(t, sha256.Sum256(before), sha256.Sum256(data))
+	require.Equal(t, filepath.Join(realSafe, "webhook.sqlite"), openedPath)
+}
+
+func TestDurableWebhookRejectsCanonicalPathWithSQLiteQuery(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows filenames cannot contain question marks")
+	}
+	root := t.TempDir()
+	target := filepath.Join(root, "private?cache=shared")
+	require.NoError(t, os.Mkdir(target, 0o700))
+	alias := filepath.Join(root, "alias")
+	require.NoError(t, os.Symlink(target, alias))
+	configured := filepath.Join(alias, "child", "webhook.sqlite")
+	require.NoError(t, os.Mkdir(filepath.Join(target, "child"), 0o700))
+	_, err := secureStateFile(configured)
+	require.ErrorContains(t, err, "query parameters")
+	_, err = os.Stat(filepath.Join(target, "child", "webhook.sqlite"))
 	require.ErrorIs(t, err, os.ErrNotExist)
-	if runtime.GOOS != "windows" {
-		info, err := os.Stat(path)
+	_, err = os.Stat(filepath.Join(root, "private"))
+	require.ErrorIs(t, err, os.ErrNotExist)
+}
+
+func TestDurableWebhookRejectsParentTraversal(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "alias") + string(os.PathSeparator) + ".." + string(os.PathSeparator) + "webhook.sqlite"
+	_, err := durableFileName(path)
+	require.ErrorContains(t, err, "parent-directory components")
+	require.ErrorContains(t, New(WithDurableQueue(path, 11)).Start(), "parent-directory components")
+}
+
+func TestDurableWebhookRejectsDirectoryStatePath(t *testing.T) {
+	parent := t.TempDir()
+	path := parent + string(os.PathSeparator)
+	require.ErrorContains(t, New(WithDurableQueue(path, 11)).Start(), "file, not a directory")
+	_, err := os.Stat(filepath.Join(parent, filepath.Base(parent)))
+	require.ErrorIs(t, err, os.ErrNotExist)
+}
+
+func TestDurableWebhookRejectsSQLiteDSNParameters(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "webhook.sqlite")
+	for _, suffix := range []string{
+		"?cache=shared",
+		"?_pragma=synchronous(OFF)",
+		"?_pragma=journal_mode(OFF)",
+		"?vfs=unknown",
+	} {
+		t.Run(suffix, func(t *testing.T) {
+			name := path + suffix
+			o := New(WithDurableQueue(name, 11))
+			require.ErrorContains(t, o.Start(), "query parameters")
+			_, err := plugin.GetPlugin(plugin.PluginTypeOutput, "webhook", map[string]any{"state-path": name})
+			require.ErrorContains(t, err, "query parameters")
+			_, err = os.Stat(path)
+			require.ErrorIs(t, err, os.ErrNotExist)
+		})
+	}
+}
+
+func TestDurableWebhookRejectsSidecarSymlinkWithoutTouchingTarget(t *testing.T) {
+	parent := t.TempDir()
+	target := filepath.Join(parent, "target")
+	require.NoError(t, os.WriteFile(target, []byte("unchanged"), 0o644))
+	require.NoError(t, os.Chmod(target, 0o644))
+	path := filepath.Join(parent, "webhook.sqlite")
+	if err := os.Symlink(target, path+"-wal"); err != nil {
+		if runtime.GOOS == "windows" {
+			t.Skipf("symlinks require Windows privileges: %v", err)
+		}
 		require.NoError(t, err)
-		require.Equal(t, os.FileMode(0o600), info.Mode().Perm())
+	}
+	require.ErrorContains(t, New(WithDurableQueue(path, 11)).Start(), "not a symlink")
+	data, err := os.ReadFile(target)
+	require.NoError(t, err)
+	require.Equal(t, []byte("unchanged"), data)
+	if runtime.GOOS != "windows" {
+		info, err := os.Stat(target)
+		require.NoError(t, err)
+		require.Equal(t, os.FileMode(0o644), info.Mode().Perm())
+	}
+}
+
+func TestRestrictExistingStateFileDetectsReplacementBeforeOpen(t *testing.T) {
+	for _, replacement := range []string{"regular", "symlink"} {
+		t.Run(replacement, func(t *testing.T) {
+			parent := t.TempDir()
+			path := filepath.Join(parent, "webhook.sqlite-wal")
+			target := filepath.Join(parent, "target")
+			require.NoError(t, os.WriteFile(path, []byte("original"), 0o600))
+			require.NoError(t, os.WriteFile(target, []byte("unchanged"), 0o644))
+			require.NoError(t, os.Chmod(target, 0o644))
+			before, err := os.Stat(target)
+			require.NoError(t, err)
+			initial, err := os.Lstat(path)
+			require.NoError(t, err)
+			require.NoError(t, os.Rename(path, path+".old"))
+			if replacement == "symlink" {
+				if err := os.Symlink(target, path); err != nil {
+					if runtime.GOOS == "windows" {
+						t.Skipf("symlinks require Windows privileges: %v", err)
+					}
+					require.NoError(t, err)
+				}
+			} else {
+				require.NoError(t, os.WriteFile(path, []byte("replacement"), 0o644))
+			}
+			replacementBefore, err := os.Lstat(path)
+			require.NoError(t, err)
+			require.ErrorContains(t, restrictOpenedStateFile(path, initial), "changed while opening")
+			replacementAfter, err := os.Lstat(path)
+			require.NoError(t, err)
+			require.Equal(t, replacementBefore.Mode().Perm(), replacementAfter.Mode().Perm())
+			if replacement == "regular" {
+				data, err := os.ReadFile(path)
+				require.NoError(t, err)
+				require.Equal(t, []byte("replacement"), data)
+			}
+			data, err := os.ReadFile(target)
+			require.NoError(t, err)
+			require.Equal(t, []byte("unchanged"), data)
+			after, err := os.Stat(target)
+			require.NoError(t, err)
+			require.Equal(t, before.Mode().Perm(), after.Mode().Perm())
+		})
 	}
 }
 
@@ -276,7 +459,8 @@ func TestDurableWebhookNewWALSidecarsArePrivate(t *testing.T) {
 		t.Skip("Windows does not expose Unix file permissions")
 	}
 	path := filepath.Join(t.TempDir(), "webhook.sqlite")
-	require.NoError(t, secureStateFile(path))
+	_, err := secureStateFile(path)
+	require.NoError(t, err)
 	db, err := sql.Open("sqlite", path)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, db.Close()) })
