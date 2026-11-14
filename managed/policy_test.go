@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -107,6 +108,9 @@ func TestManagedWebhookDoesNotFollowRedirect(t *testing.T) {
 }
 
 func TestManagedCredentialFilePermissions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod tests Unix file modes; Windows ACLs are tested in restrictedfile")
+	}
 	b := newAcceptanceBundle(t)
 	c := localCustomer("u1")
 	d := b.webhook(t, "u1", "remote", "http://127.0.0.1:43210/secret", 1)

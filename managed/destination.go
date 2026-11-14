@@ -50,7 +50,7 @@ func (r *Router) prepareDestination(ctx context.Context, customer string, spec p
 		return nil, errors.New("plugin instance budget exceeded")
 	}
 	weight := int64(r.options.DestinationQueue+plugin.DefaultEventBuffer+1) * 256
-	queueBudget := r.queueCapacity(r.options.DestinationQueue)
+	queueBudget := r.destinationCapacity()
 	if !r.reserveCapacity(queueBudget) {
 		r.instances.Add(-1)
 		return nil, errors.New("destination queue budget exceeded")
@@ -109,11 +109,6 @@ func (r *Router) prepareDestination(ctx context.Context, customer string, spec p
 		r.groupMu.Lock()
 		group := r.groups[spec.config.LimitGroup]
 		interval := time.Duration(spec.config.IntervalMS) * time.Millisecond
-		if group != nil && group.interval != interval {
-			r.groupMu.Unlock()
-			cleanup()
-			return nil, errors.New("shared limit group interval mismatch")
-		}
 		if group == nil {
 			group = &limitGroup{interval: interval}
 			r.groups[spec.config.LimitGroup] = group
@@ -121,7 +116,7 @@ func (r *Router) prepareDestination(ctx context.Context, customer string, spec p
 		group.refs++
 		r.groupMu.Unlock()
 		d.transport = r.transport(group)
-		p.SetHTTPClient(&http.Client{Transport: d.transport, Timeout: 5 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return errors.New("managed redirects forbidden") }})
+		p.SetHTTPClient(&http.Client{Transport: d.transport, CheckRedirect: func(*http.Request, []*http.Request) error { return errors.New("managed redirects forbidden") }})
 		p.SetLogger(slog.New(slog.NewTextHandler(io.Discard, nil)))
 		p.SetProcessingObserver(observer)
 	default:
@@ -163,7 +158,7 @@ func (d *destination) releaseResources() {
 	if d.refs.Load() == 0 && d.stopped.Load() {
 		d.released.Do(func() {
 			d.router.releaseMemory(d.weight)
-			d.router.capacity.Add(-d.router.queueCapacity(d.router.options.DestinationQueue))
+			d.router.capacity.Add(-d.router.destinationCapacity())
 			d.router.instances.Add(-1)
 		})
 	}
@@ -252,6 +247,29 @@ func (d *destination) process(s submission, errorsCh *<-chan error) {
 	defer d.retained.Add(-s.weight)
 	timer := time.NewTimer(d.router.options.SendTimeout)
 	defer timer.Stop()
+	started := time.Now()
+	var quotaChanged <-chan struct{}
+	var initialWait time.Duration
+	if d.transport != nil {
+		initialWait, _ = d.transport.quotaTime()
+		quotaChanged = d.transport.changed
+	}
+	budgetExpired := func() bool {
+		remaining := d.router.options.SendTimeout - time.Since(started)
+		if d.transport != nil {
+			waited, waiting := d.transport.quotaTime()
+			remaining += waited - initialWait
+			if waiting {
+				timer.Stop()
+				return false
+			}
+		}
+		if remaining > 0 {
+			timer.Reset(remaining)
+			return false
+		}
+		return true
+	}
 	d.mu.Lock()
 	if d.revoked || d.ctx.Err() != nil {
 		d.mu.Unlock()
@@ -276,7 +294,10 @@ func (d *destination) process(s submission, errorsCh *<-chan error) {
 
 	defer d.pending.Store(0)
 	for {
+		expired := false
 		select {
+		case <-quotaChanged:
+			expired = budgetExpired()
 		case <-d.completed:
 			return
 		case err, ok := <-*errorsCh:
@@ -293,6 +314,9 @@ func (d *destination) process(s submission, errorsCh *<-chan error) {
 			d.router.record("submission_uncertain", d.customer, d.spec.config.ID, s.occurrence, s.revision, s.rules)
 			return
 		case <-timer.C:
+			expired = budgetExpired()
+		}
+		if expired {
 			d.degraded.Store(true)
 			d.revoke()
 			d.router.record("submission_uncertain", d.customer, d.spec.config.ID, s.occurrence, s.revision, s.rules)

@@ -12,6 +12,7 @@ import (
 	"github.com/blinklabs-io/gouroboros/ledger"
 	"github.com/blinklabs-io/gouroboros/ledger/common"
 	mockledger "github.com/blinklabs-io/ouroboros-mock/ledger"
+	"github.com/btcsuite/btcd/btcutil/bech32"
 	"github.com/stretchr/testify/require"
 )
 
@@ -102,6 +103,71 @@ func TestCompiledMatcherRejectsMalformedCriteria(t *testing.T) {
 		_, err := Compile(event.TypeTransaction, c)
 		require.Error(t, err)
 		require.NotContains(t, err.Error(), "secret-sentinel")
+	}
+}
+
+func TestCompiledMatcherRejectsBech32mAssetFingerprint(t *testing.T) {
+	const fingerprint = "asset1e58wmplshqdkkq97tz02chq980456wgt35tfjr"
+	hrp, data, version, err := bech32.DecodeGeneric(fingerprint)
+	require.NoError(t, err)
+	require.Equal(t, bech32.Version0, version)
+	bech32m, err := bech32.EncodeM(hrp, data)
+	require.NoError(t, err)
+	_, err = Compile(event.TypeTransaction, Criteria{AssetFingerprints: []string{fingerprint}})
+	require.NoError(t, err)
+	_, err = Compile(event.TypeTransaction, Criteria{AssetFingerprints: []string{bech32m}})
+	require.ErrorContains(t, err, "invalid asset criterion")
+}
+
+func TestCompiledMatcherCanonicalizesUppercaseAddresses(t *testing.T) {
+	const payment = "addr_test1qz2fxv2umyhttkxyxp8x0dlpdt3k6cwng5pxj3jhsydzer3jcu5d8ps7zex2k2xt3uqxgjqnnj83ws8lhrn648jjxtwq2ytjqp"
+	const reward = "stake1uyehkck0lajq8gr28t9uxnuvgcqrc6070x3k9r8048z8y5gh6ffgw"
+	output, err := mockledger.NewTransactionOutputBuilder().WithAddress(payment).Build()
+	require.NoError(t, err)
+	transaction, err := Compile(event.TypeTransaction, Criteria{Addresses: []string{strings.ToUpper(payment)}})
+	require.NoError(t, err)
+	require.True(t, transaction.Match(event.Event{
+		Type: event.TypeTransaction, Payload: event.TransactionEvent{Outputs: []ledger.TransactionOutput{output}},
+	}))
+	governance, err := Compile(event.TypeGovernance, Criteria{Addresses: []string{strings.ToUpper(reward)}})
+	require.NoError(t, err)
+	require.True(t, governance.Match(event.Event{
+		Type: event.TypeGovernance, Payload: event.GovernanceEvent{
+			ProposalProcedures: []event.ProposalProcedureData{{RewardAccount: reward}},
+		},
+	}))
+	_, err = Compile(event.TypeGovernance, Criteria{Addresses: []string{"STAKE" + reward[5:]}})
+	require.ErrorContains(t, err, "invalid address criterion")
+}
+
+func TestCompiledMatcherDRepIdentifierHeaders(t *testing.T) {
+	hash := []byte(strings.Repeat("a", 28))
+	for _, tc := range []struct {
+		name, prefix string
+		payload      []byte
+		valid        bool
+	}{
+		{"legacy key", "drep", hash, true},
+		{"legacy script", "drep_script", hash, true},
+		{"CIP-129 key", "drep", append([]byte{0x22}, hash...), true},
+		{"CIP-129 script", "drep", append([]byte{0x23}, hash...), true},
+		{"committee header", "drep", append([]byte{0x02}, hash...), false},
+		{"reserved DRep header", "drep", append([]byte{0x24}, hash...), false},
+		{"CIP-129 key with legacy script prefix", "drep_script", append([]byte{0x22}, hash...), false},
+		{"CIP-129 script with legacy script prefix", "drep_script", append([]byte{0x23}, hash...), false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fiveBit, err := bech32.ConvertBits(tc.payload, 8, 5, true)
+			require.NoError(t, err)
+			identifier, err := bech32.Encode(tc.prefix, fiveBit)
+			require.NoError(t, err)
+			_, err = Compile(event.TypeDRepRegistration, Criteria{DRepIDs: []string{identifier}})
+			if tc.valid {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, "invalid drep criterion")
+			}
+		})
 	}
 }
 

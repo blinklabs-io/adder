@@ -6,6 +6,7 @@ package managed
 import (
 	"context"
 	"errors"
+	"io"
 	"net"
 	"net/http"
 	"net/netip"
@@ -73,7 +74,41 @@ func supports(name, typ string) bool {
 	return name == "webhook" && (typ == event.TypeBlock || typ == event.TypeTransaction || typ == event.TypeRollback || typ == event.TypeGovernance)
 }
 
+func validateDestinationFields(d Destination) error {
+	switch d.Plugin {
+	case "log":
+		if len(d.Credentials) != 0 {
+			return errors.New("log credentials are not permitted")
+		}
+		for key := range d.Options {
+			if key != "path" && key != "format" {
+				return errors.New("log option not permitted")
+			}
+		}
+	case "webhook":
+		if len(d.Credentials) > 3 {
+			return errors.New("credential option budget exceeded")
+		}
+		for key := range d.Credentials {
+			if key != "url" && key != "username" && key != "password" {
+				return errors.New("credential option not permitted")
+			}
+		}
+		for key := range d.Options {
+			if key != "format" {
+				return errors.New("webhook secrets require credential references; only format is a plain option")
+			}
+		}
+	default:
+		return errors.New("plugin has no supported managed adapter")
+	}
+	return nil
+}
+
 func (r *Router) validateDestination(customer string, d Destination, values map[string]any) error {
+	if err := validateDestinationFields(d); err != nil {
+		return err
+	}
 	switch d.Plugin {
 	case "log":
 		if len(d.Credentials) > 0 || d.LimitGroup != "" || d.IntervalMS != 0 {
@@ -196,6 +231,7 @@ func (r *Router) allowedIP(ip netip.Addr) bool {
 type limitGroup struct {
 	mu       sync.Mutex
 	next     time.Time
+	last     time.Time
 	interval time.Duration
 	refs     int
 }
@@ -206,6 +242,7 @@ func (g *limitGroup) wait(ctx context.Context) error {
 		now := time.Now()
 		wait := g.next.Sub(now)
 		if wait <= 0 {
+			g.last = now
 			g.next = now.Add(g.interval)
 			g.mu.Unlock()
 			return nil
@@ -238,21 +275,75 @@ func (g *limitGroup) pause(header string) {
 }
 
 type limitedTransport struct {
-	base   *http.Transport
-	group  *limitGroup
-	router *Router
+	base        *http.Transport
+	group       *limitGroup
+	router      *Router
+	waitMu      sync.Mutex
+	waitStarted time.Time
+	waited      time.Duration
+	changed     chan struct{}
+}
+
+func (t *limitedTransport) quotaTime() (time.Duration, bool) {
+	t.waitMu.Lock()
+	defer t.waitMu.Unlock()
+	if !t.waitStarted.IsZero() {
+		return t.waited + time.Since(t.waitStarted), true
+	}
+	return t.waited, false
+}
+
+func (t *limitedTransport) wait(ctx context.Context) error {
+	t.waitMu.Lock()
+	t.waitStarted = time.Now()
+	t.waitMu.Unlock()
+	t.notifyWait()
+	err := t.group.wait(ctx)
+	t.waitMu.Lock()
+	t.waited += time.Since(t.waitStarted)
+	t.waitStarted = time.Time{}
+	t.waitMu.Unlock()
+	t.notifyWait()
+	return err
+}
+
+func (t *limitedTransport) notifyWait() {
+	select {
+	case t.changed <- struct{}{}:
+	default:
+	}
+}
+
+type cancelBody struct {
+	io.ReadCloser
+	cancel context.CancelFunc
+}
+
+func (b *cancelBody) Close() error {
+	defer b.cancel()
+	return b.ReadCloser.Close()
 }
 
 func (t *limitedTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if err := t.router.allowedURL(req.URL); err != nil {
 		return nil, err
 	}
-	if err := t.group.wait(req.Context()); err != nil {
+	if err := t.wait(req.Context()); err != nil {
 		return nil, err
 	}
-	response, err := t.base.RoundTrip(req)
+	// Provider quota waits do not spend the actual HTTP attempt's deadline.
+	ctx, cancel := context.WithTimeout(req.Context(), 5*time.Second)
+	response, err := t.base.RoundTrip(req.Clone(ctx))
+	if err != nil {
+		cancel()
+	} else {
+		response.Body = &cancelBody{ReadCloser: response.Body, cancel: cancel}
+	}
 	if response != nil && response.StatusCode == http.StatusTooManyRequests {
 		t.group.pause(response.Header.Get("Retry-After"))
+		// This shared limiter owns the provider pause. The plugin still applies
+		// its bounded retry backoff, but must not wait for this quota twice.
+		response.Header.Del("Retry-After")
 	}
 	return response, err
 }
@@ -268,14 +359,38 @@ func (r *Router) transport(group *limitGroup) *limitedTransport {
 		if err != nil || len(ips) == 0 {
 			return nil, errors.New("target resolution failed")
 		}
-		for _, ip := range ips {
-			if !r.allowedIP(ip) {
-				return nil, errors.New("resolved address forbidden")
-			}
-		}
-		dialer := net.Dialer{Timeout: 5 * time.Second}
-		// Dial the checked address directly so a second DNS lookup cannot rebind it.
-		return dialer.DialContext(ctx, network, net.JoinHostPort(ips[0].String(), port))
+		dialer := net.Dialer{}
+		return r.dialResolved(ctx, network, port, ips, dialer.DialContext)
 	}
-	return &limitedTransport{transport, group, r}
+	return &limitedTransport{base: transport, group: group, router: r, changed: make(chan struct{}, 1)}
+}
+
+func (r *Router) dialResolved(ctx context.Context, network, port string, ips []netip.Addr, dial func(context.Context, string, string) (net.Conn, error)) (net.Conn, error) {
+	for _, ip := range ips {
+		if !r.allowedIP(ip) {
+			return nil, errors.New("resolved address forbidden")
+		}
+	}
+	if len(ips) == 0 {
+		return nil, errors.New("target resolution failed")
+	}
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	deadline, _ := ctx.Deadline()
+	var lastErr error
+	for i, ip := range ips {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		// Share the remaining budget so one blackholed address cannot starve
+		// the other validated addresses. Never resolve the name again here.
+		attempt, cancelAttempt := context.WithTimeout(ctx, time.Until(deadline)/time.Duration(len(ips)-i))
+		conn, err := dial(attempt, network, net.JoinHostPort(ip.String(), port))
+		cancelAttempt()
+		if err == nil {
+			return conn, nil
+		}
+		lastErr = err
+	}
+	return nil, lastErr
 }

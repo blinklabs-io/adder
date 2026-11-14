@@ -727,7 +727,11 @@ func TestManagedRateLimitGroupDoesNotBlockAnotherOrigin(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("unrelated limit group did not progress")
 	}
-	b.diagnostics.await(t, func(records []routeRecord) bool { return countAction(records, "submission_uncertain", "") == 2 })
+	b.diagnostics.await(t, func(records []routeRecord) bool {
+		return countAction(records, "submission_uncertain", "") >= 1 &&
+			countAction(records, "submitted_to_plugin", "") == 3
+	})
+	r.cancel()
 	require.NoError(t, r.Stop())
 	require.Len(t, slowAttempts, 1, "Retry-After must suppress the shared group's second customer and retries")
 	require.Equal(t, uint64(3), r.Status().Counters.SubmittedToPlugin)

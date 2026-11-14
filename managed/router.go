@@ -90,6 +90,7 @@ type diagnosticEntry struct {
 type Router struct {
 	revisionState
 	capacity        atomic.Int64
+	cleanupDone     chan struct{}
 	diagnosticMu    sync.Mutex
 	diagnostics     chan diagnosticEntry
 	diagnosticsDone chan struct{}
@@ -134,11 +135,15 @@ func (r *Router) Role() plugin.PluginType { return plugin.PluginTypeOutput }
 // StartContext validates and applies the initial bundle before accepting events.
 func (r *Router) StartContext(ctx context.Context) error {
 	return r.StartRun(ctx, plugin.BaseConfig{HasInput: true, DrainOnStop: true}, func(ctx context.Context) error {
+		if r.cleanupPending() {
+			return errCleanupPending
+		}
 		if err := r.startDiagnostics(ctx); err != nil {
 			return err
 		}
 		r.stopping.Store(false)
 		r.mu.Lock()
+		r.cleanupDone = nil
 		r.lanes = map[string]*customerLane{}
 		r.groups = map[string]*limitGroup{}
 		r.revisionState = revisionState{}
@@ -162,7 +167,7 @@ func (r *Router) StartContext(ctx context.Context) error {
 			}
 		})
 		return nil
-	}, r.shutdownHooks())
+	}, r.shutdownHooks()) //nolint:contextcheck // Cleanup uses the router lifetime and must survive setup cancellation.
 }
 
 func (r *Router) reserveCapacity(weight int64) bool {
@@ -187,6 +192,11 @@ func (r *Router) reserve(weight int64) bool {
 func (r *Router) releaseMemory(weight int64) { r.memory.Add(-weight); r.capacity.Add(-weight) }
 func (r *Router) queueCapacity(size int) int64 {
 	return min(int64(size+1)*(r.options.MaxEventSize*8+256), r.options.MaxQueueRetainedSize)
+}
+
+func (r *Router) destinationCapacity() int64 {
+	weight := r.options.MaxEventSize*8 + 256 + int64(r.options.MaxRules)*80
+	return min(int64(r.options.DestinationQueue+1)*weight, r.options.MaxQueueRetainedSize)
 }
 
 func reserveQueue(counter *atomic.Int64, weight, limit int64) bool {
@@ -349,8 +359,11 @@ func (c *customerLane) process(i item) {
 	}
 	for d, rules := range routes {
 		sort.Strings(rules)
-		s := submission{i.event, i.occurrence, i.config.prepared.config.Revision, rules, i.weight}
-		if !reserveQueue(&d.retained, s.weight, r.queueCapacity(r.options.DestinationQueue)) {
+		// Exact capacity bounds the retained slice after its configuration is released.
+		retainedRules := make([]string, len(rules))
+		copy(retainedRules, rules)
+		s := submission{i.event, i.occurrence, i.config.prepared.config.Revision, retainedRules, i.weight + 80*int64(len(rules))}
+		if !reserveQueue(&d.retained, s.weight, r.destinationCapacity()) {
 			d.drop(s, false)
 			continue
 		}
@@ -391,7 +404,106 @@ func (r *Router) configured(customer string, revision uint64, rule Rule) {
 }
 
 // Stop drains router-owned work for a bounded period, then cancels pending work.
-func (r *Router) Stop() error { return r.Shutdown(r.shutdownHooks()) }
+// An error reports cleanup that still owns resources; restart waits for that cleanup.
+func (r *Router) Stop() error {
+	if err := r.Shutdown(r.shutdownHooks()); err != nil {
+		return err
+	}
+	if r.cleanupPending() {
+		return errCleanupPending
+	}
+	return nil
+}
+
+func (r *Router) cleanupPending() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.cleanupDone == nil {
+		return false
+	}
+	select {
+	case <-r.cleanupDone:
+		return false
+	default:
+		return true
+	}
+}
+
+func (r *Router) beginCleanup() (<-chan struct{}, context.Context) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.cleanupDone != nil {
+		return r.cleanupDone, r.runCtx
+	}
+	done := make(chan struct{})
+	r.cleanupDone = done
+	go func() {
+		defer close(done)
+		r.reload <- struct{}{}
+		defer func() { <-r.reload }()
+		r.mu.Lock()
+		lanes := r.lanes
+		r.lanes = map[string]*customerLane{}
+		for _, lane := range lanes {
+			close(lane.input)
+		}
+		r.mu.Unlock()
+		for _, lane := range lanes {
+			<-lane.done
+		}
+		unique := map[*destination]bool{}
+		for _, lane := range lanes {
+			for _, d := range lane.active.destinations {
+				unique[d] = true
+			}
+		}
+		for d := range unique {
+			d.drain()
+		}
+		// A plugin may be stuck in a filesystem write. Keep its ownership and
+		// budget until Stop really joins the worker and closes its file.
+		r.workers.Wait()
+		r.stopDiagnostics()
+		for _, lane := range lanes {
+			lane.active.release()
+		}
+		r.releaseMemory(r.historyWeight)
+		r.historyWeight = 0
+		r.history = nil
+		if r.cancel != nil {
+			r.cancel()
+		}
+	}()
+	return done, r.runCtx
+}
+
+func (r *Router) awaitCleanup(done <-chan struct{}, ctx context.Context) error {
+	var canceled <-chan struct{}
+	if ctx != nil {
+		canceled = ctx.Done()
+	}
+	drain := time.NewTimer(r.options.ShutdownTimeout)
+	defer drain.Stop()
+	select {
+	case <-done:
+		return nil
+	case <-canceled:
+	case <-drain.C:
+	}
+	grace := time.NewTimer(min(r.options.ShutdownTimeout, 5*time.Second))
+	defer grace.Stop()
+	select {
+	case <-done:
+		return nil
+	case <-grace.C:
+		select {
+		case <-done:
+			return nil
+		default:
+			return errCleanupPending
+		}
+	}
+}
 
 func (r *Router) shutdownHooks() plugin.ShutdownHooks {
 	return plugin.ShutdownHooks{
@@ -407,39 +519,7 @@ func (r *Router) shutdownHooks() plugin.ShutdownHooks {
 			return nil
 		},
 		AfterWait: func() error {
-			r.reload <- struct{}{}
-			defer func() { <-r.reload }()
-			r.mu.Lock()
-			lanes := r.lanes
-			r.lanes = map[string]*customerLane{}
-			for _, lane := range lanes {
-				close(lane.input)
-			}
-			r.mu.Unlock()
-			for _, lane := range lanes {
-				<-lane.done
-			}
-			unique := map[*destination]bool{}
-			for _, lane := range lanes {
-				for _, d := range lane.active.destinations {
-					unique[d] = true
-				}
-			}
-			for d := range unique {
-				d.drain()
-			}
-			r.workers.Wait()
-			r.stopDiagnostics()
-			for _, lane := range lanes {
-				lane.active.release()
-			}
-			r.releaseMemory(r.historyWeight)
-			r.historyWeight = 0
-			r.history = nil
-			if r.cancel != nil {
-				r.cancel()
-			}
-			return nil
+			return r.awaitCleanup(r.beginCleanup())
 		},
 	}
 }
@@ -499,6 +579,7 @@ func (r *Router) Status() Status {
 }
 
 var (
-	_          plugin.ManagedPlugin = (*Router)(nil)
-	errStopped                      = errors.New("managed router stopped")
+	_                 plugin.ManagedPlugin = (*Router)(nil)
+	errStopped                             = errors.New("managed router stopped")
+	errCleanupPending                      = errors.New("managed router cleanup pending")
 )

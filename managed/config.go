@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/blinklabs-io/adder/filter/cardano"
+	"github.com/blinklabs-io/adder/internal/restrictedfile"
 )
 
 // Options sets operator policy independently of customer configuration.
@@ -186,8 +187,8 @@ func readFile(dir, name string, limit int64, secret bool) ([]byte, error) {
 	if err != nil || !st.Mode().IsRegular() || st.Size() > limit {
 		return nil, errors.New("invalid configuration file")
 	}
-	if secret && st.Mode().Perm()&0o077 != 0 {
-		return nil, errors.New("credential file must have mode 0600 or stricter")
+	if secret && restrictedfile.Check(f) != nil {
+		return nil, errors.New("credential file must have mode 0600 or an owner-only ACL")
 	}
 	data, err := io.ReadAll(io.LimitReader(f, limit+1))
 	if err != nil || int64(len(data)) > limit {
@@ -233,9 +234,27 @@ func (r *Router) loadManifest() (Manifest, [32]byte, error) {
 	return m, digest, nil
 }
 
-func (r *Router) loadCustomer(ref CustomerRef) (*preparedCustomer, error) {
+type preparationBudget struct {
+	router *Router
+	held   int64
+}
+
+func (b *preparationBudget) reserve(weight int64) error {
+	if !b.router.reserve(weight) {
+		return errors.New("retained configuration preparation budget exceeded")
+	}
+	b.held += weight
+	return nil
+}
+
+func (b *preparationBudget) release() { b.router.releaseMemory(b.held) }
+
+func (r *Router) loadCustomer(ref CustomerRef, budget *preparationBudget) (*preparedCustomer, error) {
 	data, err := readFile(r.options.ConfigDir, ref.File, r.options.MaxFileSize, false)
 	if err != nil {
+		return nil, err
+	}
+	if err := budget.reserve(int64(len(data)) * 8); err != nil {
 		return nil, err
 	}
 	p := &preparedCustomer{credentials: map[CredentialRef][32]byte{}, size: int64(len(data)), specs: map[string]preparedDestination{}}
@@ -249,6 +268,19 @@ func (r *Router) loadCustomer(ref CustomerRef) (*preparedCustomer, error) {
 	if len(c.Destinations) < 1 || len(c.Destinations) > r.options.MaxDestinations || len(c.Filters) < 1 || len(c.Filters) > r.options.MaxRules {
 		return nil, errors.New("customer rule or destination budget exceeded")
 	}
+	if err := budget.reserve(int64(len(c.Filters)) * 256); err != nil {
+		return nil, err
+	}
+	for _, d := range c.Destinations {
+		if err := validateDestinationFields(d); err != nil {
+			return nil, err
+		}
+	}
+	type cachedCredential struct {
+		value string
+		hash  [32]byte
+	}
+	credentials := map[CredentialRef]cachedCredential{}
 	digest := sha256.New()
 	_, _ = digest.Write(data)
 	for _, d := range c.Destinations {
@@ -267,18 +299,27 @@ func (r *Router) loadCustomer(ref CustomerRef) (*preparedCustomer, error) {
 			if ref.Version == 0 {
 				return nil, errors.New("credential version must be positive")
 			}
-			b, err := readFile(r.options.CredentialsDir, ref.File, r.options.MaxFileSize, true)
-			if err != nil {
-				return nil, err
+			cached, exists := credentials[ref]
+			if !exists {
+				b, err := readFile(r.options.CredentialsDir, ref.File, r.options.MaxFileSize, true)
+				if err != nil {
+					return nil, err
+				}
+				// Charge decoded retention before allocating or retaining secret values.
+				if err := budget.reserve(int64(len(b)) * 8); err != nil {
+					return nil, err
+				}
+				var cred credential
+				if err = decode(b, &cred); err != nil || cred.CustomerID != c.ID || cred.Version != ref.Version || cred.Value == "" {
+					return nil, errors.New("credential owner or version mismatch")
+				}
+				cached = cachedCredential{value: cred.Value, hash: sha256.Sum256(b)}
+				credentials[ref] = cached
+				p.credentials[ref] = cached.hash
+				p.size += int64(len(b))
 			}
-			var cred credential
-			if err = decode(b, &cred); err != nil || cred.CustomerID != c.ID || cred.Version != ref.Version || cred.Value == "" {
-				return nil, errors.New("credential owner or version mismatch")
-			}
-			p.credentials[ref] = sha256.Sum256(b)
-			p.size += int64(len(b))
-			_, _ = digest.Write(b)
-			values[key] = cred.Value
+			_, _ = digest.Write(cached.hash[:])
+			values[key] = cached.value
 		}
 		if err := r.validateDestination(c.ID, d, values); err != nil {
 			return nil, fmt.Errorf("destination %s: %w", d.ID, err)

@@ -44,7 +44,15 @@ func Compile(eventType string, criteria Criteria) (*Matcher, error) {
 	}
 	c := New()
 	if len(criteria.Addresses) > 0 {
-		WithAddresses(criteria.Addresses)(c)
+		addresses := make([]string, len(criteria.Addresses))
+		for i, value := range criteria.Addresses {
+			address, err := ledger.NewAddress(value)
+			if err != nil {
+				return nil, errors.New("invalid address criterion")
+			}
+			addresses[i] = address.String()
+		}
+		WithAddresses(addresses)(c)
 	}
 	if len(criteria.Policies) > 0 {
 		WithPolicies(criteria.Policies)(c)
@@ -132,7 +140,14 @@ func validPolicy(value string) bool {
 }
 
 func validAsset(value string) bool {
-	data, err := decodeID(value, "asset")
+	if value != strings.ToLower(value) {
+		return false
+	}
+	prefix, encoded, version, err := bech32.DecodeGeneric(value)
+	if err != nil || prefix != "asset" || version != bech32.Version0 {
+		return false
+	}
+	data, err := bech32.ConvertBits(encoded, 5, 8, false)
 	return err == nil && len(data) == 20
 }
 
@@ -148,8 +163,22 @@ func validDRep(value string) bool {
 	if validPolicy(value) {
 		return true
 	}
-	data, err := decodeID(value, "drep", "drep_script")
-	return err == nil && (len(data) == 28 || len(data) == 29)
+	if value != strings.ToLower(value) {
+		return false
+	}
+	prefix, encoded, err := bech32.Decode(value)
+	if err != nil {
+		return false
+	}
+	data, err := bech32.ConvertBits(encoded, 5, 8, false)
+	if err != nil {
+		return false
+	}
+	if len(data) == 28 {
+		return prefix == "drep" || prefix == "drep_script"
+	}
+	return len(data) == 29 && prefix == "drep" &&
+		(data[0] == 0x22 || data[0] == 0x23)
 }
 
 func decodeID(value string, prefixes ...string) ([]byte, error) {

@@ -6,8 +6,10 @@ package webhook
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -15,6 +17,24 @@ import (
 	"github.com/blinklabs-io/adder/event"
 	"github.com/stretchr/testify/require"
 )
+
+type deadlinePolicyTransport struct {
+	sawDeadline bool
+}
+
+func (p *deadlinePolicyTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	_, p.sawDeadline = req.Context().Deadline()
+	return &http.Response{StatusCode: http.StatusNoContent, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(""))}, nil
+}
+
+func TestInjectedHTTPPolicyOwnsRequestDeadline(t *testing.T) {
+	policy := &deadlinePolicyTransport{}
+	p := New()
+	p.SetHTTPClient(&http.Client{Transport: policy})
+	result := p.sendWebhookData(context.Background(), event.TypeRollback, []byte("{}"), "")
+	require.NoError(t, result.err)
+	require.False(t, policy.sawDeadline, "an injected policy may wait for quota before applying its request timeout")
+}
 
 func TestInstanceHTTPPolicyAndProcessingCompletion(t *testing.T) {
 	var targetCalls atomic.Int64

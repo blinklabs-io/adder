@@ -86,6 +86,8 @@ func (r *Router) reloadConfig(parent context.Context, id string, expected uint64
 			}
 		}
 	}
+	budget := &preparationBudget{router: r}
+	defer budget.release()
 	prepared := map[string]*preparedCustomer{}
 	for _, ref := range manifest.Customers {
 		if id != "" && ref.ID != id {
@@ -97,12 +99,16 @@ func (r *Router) reloadConfig(parent context.Context, id string, expected uint64
 		if ctx.Err() != nil {
 			return result, errors.New("reload deadline exceeded")
 		}
-		p, err := r.loadCustomer(ref)
+		p, err := r.loadCustomer(ref, budget)
 		if err != nil {
 			return result, fmt.Errorf("customer %s: %w", ref.ID, err)
 		}
 
 		prepared[ref.ID] = p
+	}
+	intervals, err := r.quotaIntervals(id, prepared)
+	if err != nil {
+		return result, err
 	}
 	nextHistory, historyWeight, err := advanceHistory(r.history, prepared, r.options)
 	if err != nil {
@@ -163,9 +169,9 @@ func (r *Router) reloadConfig(parent context.Context, id string, expected uint64
 			continue
 		}
 		weight := p.size*8 + int64(len(p.rules))*256
-		if !r.reserve(weight) {
-			return result, errors.New("retained configuration budget exceeded")
-		}
+		// Transfer the prepared configuration's existing reservation to its
+		// applied lifetime; unchanged preparations are released by the loader.
+		budget.held -= weight
 		a := &appliedCustomer{prepared: p, destinations: map[string]*destination{}, router: r, weight: weight}
 		a.refs.Store(1)
 		staged[id] = a
@@ -213,6 +219,19 @@ func (r *Router) reloadConfig(parent context.Context, id string, expected uint64
 		r.mu.Unlock()
 		return result, errStopped
 	}
+	r.groupMu.Lock()
+	for authority, interval := range intervals {
+		if group := r.groups[authority]; group != nil {
+			group.mu.Lock()
+			group.interval = interval
+			// An interval change must not erase an existing provider pause.
+			if next := group.last.Add(interval); next.After(group.next) {
+				group.next = next
+			}
+			group.mu.Unlock()
+		}
+	}
+	r.groupMu.Unlock()
 	for customer, lane := range r.lanes {
 		if id != "" && id != customer {
 			continue
@@ -266,6 +285,39 @@ func (r *Router) reloadConfig(parent context.Context, id string, expected uint64
 	}
 	r.mu.Unlock()
 	return result, nil
+}
+
+func (r *Router) quotaIntervals(id string, prepared map[string]*preparedCustomer) (map[string]time.Duration, error) {
+	intervals := map[string]time.Duration{}
+	add := func(p *preparedCustomer) error {
+		for _, spec := range p.specs {
+			d := spec.config
+			if d.Plugin != "webhook" {
+				continue
+			}
+			interval := time.Duration(d.IntervalMS) * time.Millisecond
+			if previous, exists := intervals[d.LimitGroup]; exists && previous != interval {
+				return errors.New("shared limit group interval mismatch")
+			}
+			intervals[d.LimitGroup] = interval
+		}
+		return nil
+	}
+	for _, p := range prepared {
+		if err := add(p); err != nil {
+			return nil, err
+		}
+	}
+	if id != "" {
+		for customer, lane := range r.lanes {
+			if customer != id {
+				if err := add(lane.active.prepared); err != nil {
+					return nil, err
+				}
+			}
+		}
+	}
+	return intervals, nil
 }
 
 func (r *Router) destinationActive(d *destination) bool {

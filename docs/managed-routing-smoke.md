@@ -18,7 +18,9 @@ file. No customer webhook credentials are needed.
 The run succeeds only after all 15 rules were configured, a single live block
 occurrence matched all five customers, and the same mainnet block hash appears
 at the corresponding position in every customer's event file. Receipt order,
-event types, and counts are reconciled against matched occurrence IDs. Duplicate,
+event types, and counts are reconciled against matched occurrence IDs. After
+shutdown, all five customers must have identical ordered
+`(occurrence_id, rule_id, event_type)` sequences for their identical filters. Duplicate,
 extra, missing, or reordered local receipts cause failure. The script sends
 SIGTERM to its own Adder process, allows graceful draining, and checks the final
 files. Dispatch diagnostics and exact customer/occurrence/destination/rule/revision
@@ -67,3 +69,12 @@ node. A Dingo test on another network can use `--network preview` or the relevan
 configured network; that run is recorded separately and does not satisfy the
 public-mainnet criterion. `--source-address` may also override the public mainnet
 peer while retaining `--source-kind public-mainnet`.
+
+## Smoke verifier regression tests
+
+Run the Python standard-library tests from the repository root; no Adder build
+or network connection is needed:
+
+```sh
+python3 -B -m unittest discover -s scripts -p 'test_managed_mainnet.py' -v
+```

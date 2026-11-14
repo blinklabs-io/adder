@@ -19,6 +19,7 @@ import (
 
 	"github.com/blinklabs-io/adder/input/chainsync"
 	"github.com/blinklabs-io/adder/internal/logging"
+	"github.com/blinklabs-io/adder/internal/restrictedfile"
 	"github.com/blinklabs-io/adder/managed"
 	"github.com/blinklabs-io/adder/pipeline"
 	"github.com/blinklabs-io/adder/plugin"
@@ -73,7 +74,7 @@ func managedToken(path string) (string, error) {
 	}
 	defer f.Close()
 	st, err := f.Stat()
-	if err != nil || !st.Mode().IsRegular() || st.Mode().Perm()&0o077 != 0 || st.Size() > 4096 {
+	if err != nil || !st.Mode().IsRegular() || st.Size() > 4096 || restrictedfile.Check(f) != nil {
 		return "", errors.New("operator token must be a restricted regular file")
 	}
 	data := make([]byte, st.Size())

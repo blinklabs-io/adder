@@ -6,6 +6,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/blinklabs-io/adder/internal/config"
@@ -42,6 +43,9 @@ func TestManagedRejectsGlobalFiltersAndDurableOrHistoricalSource(t *testing.T) {
 }
 
 func TestManagedTokenRequiresRestrictedRegularFile(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod tests Unix file modes; Windows ACLs are tested in restrictedfile")
+	}
 	dir := t.TempDir()
 	path := filepath.Join(dir, "operator.token")
 	require.NoError(t, os.WriteFile(path, []byte("0123456789abcdef0123456789abcdef\n"), 0o600))

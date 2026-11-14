@@ -106,6 +106,7 @@ def observations(root, *, complete=False):
 
 
 def verify(configured, matched, events, *, network, complete=False):
+    """Preview an aligned live prefix; reconcile every receipt only after stop."""
     expected = {(customer, rule) for customer in CUSTOMERS for rule in RULES}
     loaded = [(record["customer_id"], record["rule_id"]) for record in configured]
     if len(loaded) != len(set(loaded)):
@@ -119,12 +120,16 @@ def verify(configured, matched, events, *, network, complete=False):
         occurrences = [record["occurrence_id"] for record in matches]
         if occurrences != sorted(set(occurrences)):
             raise ValueError(f"{customer} matched an occurrence twice or out of order")
-        if len(receipts) > len(matches) or (complete and len(receipts) != len(matches)):
+        # The asynchronous diagnostic sink can lag receipts, and each file is
+        # sampled at a different time. Only stopped files share a final boundary.
+        if complete and len(receipts) != len(matches):
             raise ValueError(f"{customer} plugin receipts do not reconcile with rule matches")
         by_occurrence = {}
         for match, receipt in zip(matches, receipts):
             if receipt.get("type") != match["event_type"]:
-                raise ValueError(f"{customer} plugin receipt is out of order or has an unexpected event type")
+                if complete:
+                    raise ValueError(f"{customer} plugin receipt is out of order or has an unexpected event type")
+                break
             if receipt["type"] == "input.block":
                 payload = receipt.get("payload", {})
                 if not isinstance(payload, dict):
@@ -143,12 +148,27 @@ def verify(configured, matched, events, *, network, complete=False):
             "matched_occurrences": len(matches),
             "local_log_receipts": len(receipts),
         }
+    if complete:
+        reference_customer = CUSTOMERS[0]
+        reference = [
+            (record["occurrence_id"], record["rule_id"], record["event_type"])
+            for record in matched[reference_customer]
+        ]
+        for customer in CUSTOMERS[1:]:
+            sequence = [
+                (record["occurrence_id"], record["rule_id"], record["event_type"])
+                for record in matched[customer]
+            ]
+            if sequence != reference:
+                raise ValueError(f"{customer} ordered rule matches differ from {reference_customer}")
     common = set.intersection(*(set(blocks[customer]) for customer in CUSTOMERS))
     witnesses = []
     for occurrence in sorted(common):
         hashes = {blocks[customer][occurrence] for customer in CUSTOMERS}
         if len(hashes) != 1:
-            raise ValueError("customers received different block hashes for the same occurrence")
+            if complete:
+                raise ValueError("customers received different block hashes for the same occurrence")
+            continue
         witnesses.append({"occurrence_id": occurrence, "block_hash": hashes.pop()})
     return {
         "passed": ready and bool(witnesses),
@@ -269,13 +289,13 @@ def run(args):
                     write_json(root / "status-last.json", last_status)
                 except (urllib.error.URLError, TimeoutError, OSError):
                     pass
-                summary = verify(*observations(root), network=args.network)
+                summary = verify(*observations(root), network=args.network, complete=False)
                 if summary["passed"] and last_status is not None:
                     verify_status(last_status)
                     break
                 time.sleep(0.25)
             else:
-                raise TimeoutError("no reconciled shared block before the smoke deadline")
+                raise TimeoutError("no shared block witness before the smoke deadline")
         except (Exception, KeyboardInterrupt) as error:
             failure = type(error).__name__ + ": " + str(error)
         finally:

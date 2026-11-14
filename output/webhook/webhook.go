@@ -501,8 +501,11 @@ func (w *WebhookOutput) sendWebhookData(ctx context.Context, eventType string, d
 		return deliveryAttempt{err: errors.New("invalid webhook URL")}
 	}
 	// Setup request
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
+	if w.httpClient == nil {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+	}
 	req, err := http.NewRequestWithContext(
 		ctx,
 		http.MethodPost,
@@ -797,7 +800,9 @@ func (w *WebhookOutput) Stop() error {
 var _ plugin.ManagedPlugin = (*WebhookOutput)(nil)
 
 // SetHTTPClient supplies an instance-owned HTTP policy. Call before Start.
-// The client must enforce any required destination and redirect restrictions.
+// The client must enforce request deadlines and any required destination and
+// redirect restrictions, including response body reads. An injected transport
+// may wait for a provider quota before starting its request deadline.
 func (w *WebhookOutput) SetHTTPClient(client *http.Client) { w.httpClient = client }
 
 // SetProcessingObserver observes completion of each supported event's processing.
