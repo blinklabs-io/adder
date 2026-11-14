@@ -35,6 +35,7 @@ import (
 	"github.com/blinklabs-io/adder/internal/logging"
 	"github.com/blinklabs-io/adder/internal/version"
 	"github.com/blinklabs-io/adder/plugin"
+	"github.com/blinklabs-io/adder/state"
 )
 
 const (
@@ -57,6 +58,11 @@ type WebhookOutput struct {
 	maxBackoff      time.Duration
 	backoffFactor   float64
 	metricsObserver plugin.DeliveryMetricsObserver
+	statePath       string
+	maxPending      int
+	queue           *state.SqliteStore
+	queueID         string
+	drainErr        error
 }
 
 func New(options ...WebhookOptionFunc) *WebhookOutput {
@@ -68,6 +74,7 @@ func New(options ...WebhookOptionFunc) *WebhookOutput {
 		initialBackoff: defaultInitialBackoff,
 		maxBackoff:     defaultMaxBackoff,
 		backoffFactor:  defaultBackoffFactor,
+		maxPending:     1024,
 	}
 	for _, option := range options {
 		option(w)
@@ -87,15 +94,25 @@ func (w *WebhookOutput) Start() error {
 // Call Stop to wait for workers and release resources, including after cancellation.
 func (w *WebhookOutput) StartContext(ctx context.Context) error {
 	return w.StartRun(ctx,
-		plugin.BaseConfig{HasInput: true},
+		plugin.BaseConfig{HasInput: true, DrainOnStop: w.statePath != ""},
 		w.start,
-		plugin.ShutdownHooks{},
+		plugin.ShutdownHooks{AfterWait: w.closeQueue},
 	)
 }
 
 func (w *WebhookOutput) start(ctx context.Context) error {
 	logger := logging.GetLogger()
 	logger.Info("starting webhook server")
+	if w.statePath != "" {
+		if err := w.openQueue(); err != nil {
+			return err
+		}
+		if err := w.replay(ctx); err != nil {
+			return fmt.Errorf("replay pending webhooks: %w", err)
+		}
+		w.Go(func() { w.runDurable(ctx) })
+		return nil
+	}
 	doneChan, eventChan := w.Done(), w.Input()
 	w.Go(func() {
 		for {
@@ -193,7 +210,7 @@ func (w *WebhookOutput) start(ctx context.Context) error {
 					continue
 				}
 				// Send webhook with retry logic and exponential backoff
-				w.sendWebhookWithRetry(ctx, doneChan, &evt)
+				_ = w.sendWebhookWithRetry(ctx, doneChan, &evt)
 			}
 		}
 	})
@@ -452,16 +469,22 @@ type deliveryAttempt struct {
 	retryAfter string
 }
 
+var errRedirectDropsBody = errors.New("webhook redirect discarded POST body")
+
 func (w *WebhookOutput) sendWebhook(
 	ctx context.Context,
 	e *event.Event,
 ) deliveryAttempt {
-	logger := w.log()
-	logger.Info("sending event", "type", e.Type, "url", sanitizeURL(w.url))
 	data, err := formatWebhook(e, w.format)
 	if err != nil {
 		return deliveryAttempt{err: err}
 	}
+	return w.sendWebhookData(ctx, e.Type, data, "")
+}
+
+func (w *WebhookOutput) sendWebhookData(ctx context.Context, eventType string, data []byte, deliveryID string) deliveryAttempt {
+	logger := w.log()
+	logger.Info("sending event", "type", eventType, "url", sanitizeURL(w.url))
 	parsedURL, err := url.Parse(w.url)
 	if err != nil ||
 		(parsedURL.Scheme != "http" && parsedURL.Scheme != "https") ||
@@ -481,6 +504,9 @@ func (w *WebhookOutput) sendWebhook(
 		return deliveryAttempt{err: err}
 	}
 	req.Header.Add("Content-Type", "application/json")
+	if deliveryID != "" {
+		req.Header.Set("X-Adder-Delivery-ID", deliveryID)
+	}
 	req.Header.Add(
 		"User-Agent",
 		"Adder/"+version.GetVersionString(),
@@ -509,6 +535,17 @@ func (w *WebhookOutput) sendWebhook(
 	// Preserve the HTTP client's existing redirect behavior, including its
 	// default limit of 10 redirects and POST-to-GET conversion for 301/302/303.
 	client := &http.Client{Transport: customTransport}
+	if w.statePath != "" {
+		client.CheckRedirect = func(next *http.Request, via []*http.Request) error {
+			if len(via) >= 10 {
+				return errors.New("webhook exceeded 10 redirects")
+			}
+			if next.Method != http.MethodPost || next.Body == nil {
+				return errRedirectDropsBody
+			}
+			return nil
+		}
+	}
 	defer customTransport.CloseIdleConnections()
 	// Send payload
 	// #nosec G704 -- Webhook URL is user-configured and intentionally allowed.
@@ -527,7 +564,7 @@ func (w *WebhookOutput) sendWebhook(
 	if err != nil {
 		return deliveryAttempt{
 			err:       err,
-			retryable: !permanentTransportError(err),
+			retryable: !permanentTransportError(err) && !errors.Is(err, errRedirectDropsBody),
 		}
 	}
 	if resp == nil {
@@ -627,7 +664,18 @@ func (w *WebhookOutput) sendWebhookWithRetry(
 	ctx context.Context,
 	doneChan <-chan struct{},
 	e *event.Event,
-) {
+) error {
+	return w.sendWithRetry(ctx, doneChan, e.Type, func(ctx context.Context) deliveryAttempt {
+		return w.sendWebhook(ctx, e)
+	})
+}
+
+func (w *WebhookOutput) sendWithRetry(
+	ctx context.Context,
+	doneChan <-chan struct{},
+	eventType string,
+	send func(context.Context) deliveryAttempt,
+) error {
 	logger := w.log()
 	backoff := w.initialBackoff
 
@@ -640,9 +688,9 @@ func (w *WebhookOutput) sendWebhookWithRetry(
 	)
 
 	for attempt := 0; attempt <= w.maxRetries; attempt++ {
-		result := w.sendWebhook(ctx, e)
+		result := send(ctx)
 		if ctx.Err() != nil {
-			return
+			return ctx.Err()
 		}
 		if result.err == nil {
 			w.recordOutcome("success")
@@ -654,10 +702,10 @@ func (w *WebhookOutput) sendWebhookWithRetry(
 					"url",
 					sanitizeURL(w.url),
 					"event_type",
-					e.Type,
+					eventType,
 				)
 			}
-			return
+			return nil
 		}
 		terminalOutcome := !result.retryable
 		delay := min(backoff, w.maxBackoff)
@@ -681,21 +729,20 @@ func (w *WebhookOutput) sendWebhookWithRetry(
 				"url",
 				sanitizeURL(w.url),
 				"event_type",
-				e.Type,
+				eventType,
 				"error",
 				result.err,
 			)
-			if !w.TrySendError(
-				fmt.Errorf(
-					"webhook delivery to %s failed after %d attempts: %w",
-					sanitizeURL(w.url),
-					attempt+1,
-					result.err,
-				),
-			) {
+			deliveryErr := fmt.Errorf(
+				"webhook delivery to %s failed after %d attempts: %w",
+				sanitizeURL(w.url),
+				attempt+1,
+				result.err,
+			)
+			if w.statePath == "" && !w.TrySendError(deliveryErr) {
 				logger.Warn("could not send error to error channel (full)")
 			}
-			return
+			return deliveryErr
 		}
 		logger.Warn(
 			"webhook delivery failed, retrying",
@@ -708,7 +755,7 @@ func (w *WebhookOutput) sendWebhookWithRetry(
 			"url",
 			sanitizeURL(w.url),
 			"event_type",
-			e.Type,
+			eventType,
 			"error",
 			result.err,
 		)
@@ -716,10 +763,10 @@ func (w *WebhookOutput) sendWebhookWithRetry(
 		select {
 		case <-ctx.Done():
 			timer.Stop()
-			return
+			return ctx.Err()
 		case <-doneChan:
 			timer.Stop()
-			return
+			return context.Canceled
 		case <-timer.C:
 		}
 		backoff = min(
@@ -727,11 +774,12 @@ func (w *WebhookOutput) sendWebhookWithRetry(
 			w.maxBackoff,
 		)
 	}
+	return nil
 }
 
 // Stop the webhook output
 func (w *WebhookOutput) Stop() error {
-	return w.Shutdown(plugin.ShutdownHooks{})
+	return w.Shutdown(plugin.ShutdownHooks{AfterWait: w.closeQueue})
 }
 
 var _ plugin.ManagedPlugin = (*WebhookOutput)(nil)

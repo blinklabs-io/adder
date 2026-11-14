@@ -60,6 +60,8 @@ func init() {
 					Description:  "specifies the password for basic auth",
 					DefaultValue: "",
 				},
+				{Name: "state-path", Type: plugin.PluginOptionTypeString, Description: "SQLite path for restart-safe pending deliveries", DefaultValue: ""},
+				{Name: "max-pending", Type: plugin.PluginOptionTypeInt, Description: "maximum persisted pending deliveries", DefaultValue: 1024},
 			},
 		},
 	)
@@ -73,6 +75,12 @@ func newFromOptions(values plugin.Options) (plugin.ManagedPlugin, error) {
 	if err := plugin.ValidateHTTPURL(values.String("url")); err != nil {
 		return nil, fmt.Errorf("url: %w", err)
 	}
+	if values.String("state-path") != "" && values.Int("max-pending") < 11 {
+		return nil, errors.New("max-pending must be at least 11 with state-path")
+	}
+	if _, err := durableFileName(values.String("state-path")); err != nil {
+		return nil, err
+	}
 
 	p := New(
 		WithLogger(
@@ -81,6 +89,7 @@ func newFromOptions(values plugin.Options) (plugin.ManagedPlugin, error) {
 		WithUrl(values.String("url"), values.Bool("tls-skip-verify")),
 		WithBasicAuth(values.String("username"), values.String("password")),
 		WithFormat(values.String("format")),
+		WithDurableQueue(values.String("state-path"), values.Int("max-pending")),
 	)
 	return p, nil
 }
