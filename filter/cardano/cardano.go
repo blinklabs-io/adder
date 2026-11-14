@@ -17,13 +17,12 @@ package cardano
 import (
 	"context"
 
-	"github.com/blinklabs-io/adder/event"
 	"github.com/blinklabs-io/adder/plugin"
 )
 
 type Cardano struct {
 	plugin.Base
-	filterSet      filterSet
+	filterSet
 	onDrop         func()
 	pipelineOnDrop func()
 }
@@ -99,138 +98,6 @@ func (c *Cardano) processEvents(ctx context.Context) {
 			}
 		}
 	}
-}
-
-// filterEvent returns true if the event should be passed through
-func (c *Cardano) filterEvent(evt event.Event) bool {
-	switch v := evt.Payload.(type) {
-	case event.BlockEvent:
-		return c.filterBlockEvent(v)
-	case event.TransactionEvent:
-		return c.filterTransactionEvent(v)
-	case event.GovernanceEvent:
-		return c.filterGovernanceEvent(v)
-	case event.DRepCertificateEvent:
-		return c.filterDRepCertificateEvent(v)
-	default:
-		// Pass through events we don't filter
-		return true
-	}
-}
-
-// filterBlockEvent checks pool filter for block events using O(1) lookup
-func (c *Cardano) filterBlockEvent(be event.BlockEvent) bool {
-	if !c.filterSet.hasPoolFilter {
-		return true
-	}
-
-	// O(1) lookup using pre-computed hexToBech32 map
-	// Check if the issuer vkey (hex) maps to a filtered pool
-	if _, exists := c.filterSet.pools.hexToBech32[be.IssuerVkey]; exists {
-		return true
-	}
-
-	// Also check direct hex match in hexPoolIds
-	if _, exists := c.filterSet.pools.hexPoolIds[be.IssuerVkey]; exists {
-		return true
-	}
-
-	// Also check direct match in bech32PoolIds for bech32 format pool IDs
-	if _, exists := c.filterSet.pools.bech32PoolIds[be.IssuerVkey]; exists {
-		return true
-	}
-
-	return false
-}
-
-// filterTransactionEvent checks all applicable filters with early exit on match
-func (c *Cardano) filterTransactionEvent(te event.TransactionEvent) bool {
-	// Check address filter
-	if c.filterSet.hasAddressFilter {
-		if !c.matchAddressFilter(te) {
-			return false
-		}
-	}
-
-	// Check policy ID filter
-	if c.filterSet.hasPolicyFilter {
-		if !c.matchPolicyFilter(te) {
-			return false
-		}
-	}
-
-	// Check asset fingerprint filter
-	if c.filterSet.hasAssetFilter {
-		if !c.matchAssetFilter(te) {
-			return false
-		}
-	}
-
-	// Pool and DRep IDs identify independent actors. When both are configured,
-	// pass transactions involving either followed identity.
-	if c.filterSet.hasPoolFilter && c.filterSet.hasDRepFilter {
-		if !c.matchPoolFilterTx(te) && !c.matchDRepFilterTx(te) {
-			return false
-		}
-	} else if c.filterSet.hasPoolFilter {
-		if !c.matchPoolFilterTx(te) {
-			return false
-		}
-	} else if c.filterSet.hasDRepFilter {
-		if !c.matchDRepFilterTx(te) {
-			return false
-		}
-	}
-
-	return true
-}
-
-// filterDRepCertificateEvent checks DRep filter for DRep certificate events
-func (c *Cardano) filterDRepCertificateEvent(
-	de event.DRepCertificateEvent,
-) bool {
-	if !c.filterSet.hasDRepFilter {
-		return true
-	}
-
-	if _, exists := c.filterSet.dreps.hexDRepIds[de.Certificate.DRepHash]; exists {
-		return true
-	}
-
-	if _, exists := c.filterSet.dreps.bech32DRepIds[de.Certificate.DRepId]; exists {
-		return true
-	}
-
-	return false
-}
-
-// filterGovernanceEvent checks all applicable filters for governance events
-func (c *Cardano) filterGovernanceEvent(ge event.GovernanceEvent) bool {
-	// Check address filter
-	if c.filterSet.hasAddressFilter {
-		if !c.matchAddressFilterGovernance(ge) {
-			return false
-		}
-	}
-
-	// Pool and DRep IDs identify independent actors. When both are configured,
-	// pass governance events involving either followed identity.
-	if c.filterSet.hasPoolFilter && c.filterSet.hasDRepFilter {
-		if !c.matchPoolFilterGovernance(ge) &&
-			!c.matchDRepFilterGovernance(ge) {
-			return false
-		}
-	} else if c.filterSet.hasPoolFilter {
-		if !c.matchPoolFilterGovernance(ge) {
-			return false
-		}
-	} else if c.filterSet.hasDRepFilter {
-		if !c.matchDRepFilterGovernance(ge) {
-			return false
-		}
-	}
-
-	return true
 }
 
 // Stop the cardano filter

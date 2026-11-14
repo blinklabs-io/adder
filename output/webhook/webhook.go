@@ -58,6 +58,8 @@ type WebhookOutput struct {
 	maxBackoff      time.Duration
 	backoffFactor   float64
 	metricsObserver plugin.DeliveryMetricsObserver
+	httpClient      *http.Client
+	processed       func()
 	statePath       string
 	maxPending      int
 	queue           *state.SqliteStore
@@ -126,95 +128,102 @@ func (w *WebhookOutput) start(ctx context.Context) error {
 				if !ok {
 					return
 				}
-				payload := evt.Payload
-				if payload == nil {
-					w.reportError(
-						logger,
-						fmt.Errorf(
-							"received event with nil payload (type %q)",
-							evt.Type,
-						),
-					)
-					continue
-				}
-				context := evt.Context
-				switch evt.Type {
-				case event.TypeBlock:
-					if context == nil {
-						w.reportError(
-							logger,
-							fmt.Errorf(
-								"received %q event with nil context",
-								evt.Type,
-							),
-						)
-						continue
-					}
-					if _, ok := payload.(event.BlockEvent); !ok {
-						w.reportError(
-							logger,
-							unexpectedPayloadErr(evt.Type, payload),
-						)
-						continue
-					}
-					if _, ok := context.(event.BlockContext); !ok {
-						w.reportError(
-							logger,
-							unexpectedContextErr(evt.Type, context),
-						)
-						continue
-					}
-				case event.TypeRollback:
-					if _, ok := payload.(event.RollbackEvent); !ok {
-						w.reportError(
-							logger,
-							unexpectedPayloadErr(evt.Type, payload),
-						)
-						continue
-					}
-				case event.TypeTransaction:
-					if _, ok := payload.(event.TransactionEvent); !ok {
-						w.reportError(
-							logger,
-							unexpectedPayloadErr(evt.Type, payload),
-						)
-						continue
-					}
-					if _, ok := context.(event.TransactionContext); !ok {
-						w.reportError(
-							logger,
-							unexpectedContextErr(evt.Type, context),
-						)
-						continue
-					}
-				case event.TypeGovernance:
-					if _, ok := payload.(event.GovernanceEvent); !ok {
-						w.reportError(
-							logger,
-							unexpectedPayloadErr(evt.Type, payload),
-						)
-						continue
-					}
-					if _, ok := context.(event.GovernanceContext); !ok {
-						w.reportError(
-							logger,
-							unexpectedContextErr(evt.Type, context),
-						)
-						continue
-					}
-				default:
-					w.reportError(
-						logger,
-						fmt.Errorf("received unknown event type %q", evt.Type),
-					)
-					continue
-				}
-				// Send webhook with retry logic and exponential backoff
-				_ = w.sendWebhookWithRetry(ctx, doneChan, &evt)
+				w.processEvent(ctx, doneChan, evt, logger)
 			}
 		}
 	})
 	return nil
+}
+
+func (w *WebhookOutput) processEvent(ctx context.Context, doneChan <-chan struct{}, evt event.Event, logger plugin.Logger) {
+	if w.processed != nil {
+		defer w.processed()
+	}
+	payload := evt.Payload
+	if payload == nil {
+		w.reportError(
+			logger,
+			fmt.Errorf(
+				"received event with nil payload (type %q)",
+				evt.Type,
+			),
+		)
+		return
+	}
+	context := evt.Context
+	switch evt.Type {
+	case event.TypeBlock:
+		if context == nil {
+			w.reportError(
+				logger,
+				fmt.Errorf(
+					"received %q event with nil context",
+					evt.Type,
+				),
+			)
+			return
+		}
+		if _, ok := payload.(event.BlockEvent); !ok {
+			w.reportError(
+				logger,
+				unexpectedPayloadErr(evt.Type, payload),
+			)
+			return
+		}
+		if _, ok := context.(event.BlockContext); !ok {
+			w.reportError(
+				logger,
+				unexpectedContextErr(evt.Type, context),
+			)
+			return
+		}
+	case event.TypeRollback:
+		if _, ok := payload.(event.RollbackEvent); !ok {
+			w.reportError(
+				logger,
+				unexpectedPayloadErr(evt.Type, payload),
+			)
+			return
+		}
+	case event.TypeTransaction:
+		if _, ok := payload.(event.TransactionEvent); !ok {
+			w.reportError(
+				logger,
+				unexpectedPayloadErr(evt.Type, payload),
+			)
+			return
+		}
+		if _, ok := context.(event.TransactionContext); !ok {
+			w.reportError(
+				logger,
+				unexpectedContextErr(evt.Type, context),
+			)
+			return
+		}
+	case event.TypeGovernance:
+		if _, ok := payload.(event.GovernanceEvent); !ok {
+			w.reportError(
+				logger,
+				unexpectedPayloadErr(evt.Type, payload),
+			)
+			return
+		}
+		if _, ok := context.(event.GovernanceContext); !ok {
+			w.reportError(
+				logger,
+				unexpectedContextErr(evt.Type, context),
+			)
+			return
+		}
+	default:
+		w.reportError(
+			logger,
+			fmt.Errorf("received unknown event type %q", evt.Type),
+		)
+		return
+	}
+	// Send webhook with retry logic and exponential backoff
+	_ = w.sendWebhookWithRetry(ctx, doneChan, &evt)
 }
 
 // reportError surfaces an error on the plugin error channel without
@@ -547,6 +556,9 @@ func (w *WebhookOutput) sendWebhookData(ctx context.Context, eventType string, d
 		}
 	}
 	defer customTransport.CloseIdleConnections()
+	if w.httpClient != nil {
+		client = w.httpClient
+	}
 	// Send payload
 	// #nosec G704 -- Webhook URL is user-configured and intentionally allowed.
 	started := time.Now()
@@ -783,3 +795,12 @@ func (w *WebhookOutput) Stop() error {
 }
 
 var _ plugin.ManagedPlugin = (*WebhookOutput)(nil)
+
+// SetHTTPClient supplies an instance-owned HTTP policy. Call before Start.
+// The client must enforce any required destination and redirect restrictions.
+func (w *WebhookOutput) SetHTTPClient(client *http.Client) { w.httpClient = client }
+
+// SetProcessingObserver observes completion of each supported event's processing.
+// It does not acknowledge external delivery. Configure before Start; the callback
+// must not block, mutate the plugin, or call Stop.
+func (w *WebhookOutput) SetProcessingObserver(observer func()) { w.processed = observer }
