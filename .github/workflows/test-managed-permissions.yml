@@ -12,6 +12,7 @@ jobs:
   windows-acl:
     runs-on: windows-latest
     strategy:
+      fail-fast: false
       matrix:
         go: ['1.26.x', '1.27.x']
     steps:
@@ -21,4 +22,5 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: ${{ matrix.go }}
+          check-latest: true
       - run: go test -v ./internal/restrictedfile
