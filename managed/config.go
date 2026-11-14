@@ -188,7 +188,7 @@ func readFile(dir, name string, limit int64, secret bool) ([]byte, error) {
 		return nil, errors.New("invalid configuration file")
 	}
 	if secret && restrictedfile.Check(f) != nil {
-		return nil, errors.New("credential file must have mode 0600 or an owner-only ACL")
+		return nil, errors.New("credential file must have mode 0600 or a restricted Windows ACL")
 	}
 	data, err := io.ReadAll(io.LimitReader(f, limit+1))
 	if err != nil || int64(len(data)) > limit {

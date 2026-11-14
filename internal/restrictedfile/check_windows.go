@@ -13,7 +13,7 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-var errUnrestricted = errors.New("file ACL grants access outside its owner or trusted administrators")
+var errUnrestricted = errors.New("file ACL grants access outside the running account or trusted administrators")
 
 // Check verifies the owner and DACL of the already opened file handle.
 func Check(f *os.File) error {
@@ -65,6 +65,7 @@ func Check(f *os.File) error {
 			}
 			if !trustee.IsValid() ||
 				(!trustee.Equals(owner) &&
+					!trustee.Equals(user.User.Sid) &&
 					!trustee.IsWellKnown(windows.WinLocalSystemSid) &&
 					!trustee.IsWellKnown(windows.WinBuiltinAdministratorsSid)) {
 				return errUnrestricted

@@ -36,6 +36,18 @@ func TestCheckWindowsACL(t *testing.T) {
 		t.Fatal(err)
 	}
 	owner := user.User.Sid.String()
+	descriptor, err := windows.GetSecurityInfo(handle, windows.SE_FILE_OBJECT, windows.OWNER_SECURITY_INFORMATION)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fileOwner, _, err := descriptor.Owner()
+	if err != nil || fileOwner == nil {
+		t.Fatal("file owner unavailable", err)
+	}
+	t.Logf("file owner: process user=%v administrators=%v system=%v",
+		fileOwner.Equals(user.User.Sid),
+		fileOwner.IsWellKnown(windows.WinBuiltinAdministratorsSid),
+		fileOwner.IsWellKnown(windows.WinLocalSystemSid))
 	setACL := func(sddl string) {
 		t.Helper()
 		descriptor, err := windows.SecurityDescriptorFromString(sddl)
@@ -55,7 +67,7 @@ func TestCheckWindowsACL(t *testing.T) {
 	protected := "D:P(A;;GA;;;" + owner + ")(A;;GA;;;SY)(A;;GA;;;BA)"
 	setACL(protected)
 	if err := Check(file); err != nil {
-		t.Fatalf("owner-only ACL rejected: %v", err)
+		t.Fatalf("restricted process-account ACL rejected: %v", err)
 	}
 	setACL(protected + "(A;;GR;;;WD)")
 	if err := Check(file); err == nil {
