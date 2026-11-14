@@ -23,16 +23,16 @@ import (
 )
 
 // matchPoolFilterGovernance checks if governance event contains matching pool IDs
-func (c *Cardano) matchPoolFilterGovernance(ge event.GovernanceEvent) bool {
+func (c *filterSet) matchPoolFilterGovernance(ge event.GovernanceEvent) bool {
 	// Check voting procedures (votes cast BY an SPO / pool)
 	for _, vote := range ge.VotingProcedures {
 		if vote.VoterType == "SPO" && vote.VoterHash != "" {
-			if _, exists := c.filterSet.pools.hexPoolIds[vote.VoterHash]; exists {
+			if _, exists := c.pools.hexPoolIds[vote.VoterHash]; exists {
 				return true
 			}
 			// Also check bytes lookup for consistency with tx path (hex decode)
 			if hexBytes, err := hex.DecodeString(vote.VoterHash); err == nil {
-				if _, exists := c.filterSet.pools.bytesLookup[string(hexBytes)]; exists {
+				if _, exists := c.pools.bytesLookup[string(hexBytes)]; exists {
 					return true
 				}
 			}
@@ -42,11 +42,11 @@ func (c *Cardano) matchPoolFilterGovernance(ge event.GovernanceEvent) bool {
 	// Check vote delegation certificates that reference a pool (PoolKeyHash)
 	for _, cert := range ge.VoteDelegationCertificates {
 		if cert.PoolKeyHash != "" {
-			if _, exists := c.filterSet.pools.hexPoolIds[cert.PoolKeyHash]; exists {
+			if _, exists := c.pools.hexPoolIds[cert.PoolKeyHash]; exists {
 				return true
 			}
 			if hexBytes, err := hex.DecodeString(cert.PoolKeyHash); err == nil {
-				if _, exists := c.filterSet.pools.bytesLookup[string(hexBytes)]; exists {
+				if _, exists := c.pools.bytesLookup[string(hexBytes)]; exists {
 					return true
 				}
 			}
@@ -57,7 +57,7 @@ func (c *Cardano) matchPoolFilterGovernance(ge event.GovernanceEvent) bool {
 }
 
 // matchPoolFilterTx checks transaction certificates against pool filters
-func (c *Cardano) matchPoolFilterTx(te event.TransactionEvent) bool {
+func (c *filterSet) matchPoolFilterTx(te event.TransactionEvent) bool {
 	for _, certificate := range te.Certificates {
 		var poolKeyHash []byte
 
@@ -73,7 +73,7 @@ func (c *Cardano) matchPoolFilterTx(te event.TransactionEvent) bool {
 		}
 
 		// O(1) lookup using byte string key (no encoding needed)
-		if _, exists := c.filterSet.pools.bytesLookup[string(poolKeyHash)]; exists {
+		if _, exists := c.pools.bytesLookup[string(poolKeyHash)]; exists {
 			return true
 		}
 	}
@@ -84,7 +84,7 @@ func (c *Cardano) matchPoolFilterTx(te event.TransactionEvent) bool {
 			if voter.Type == common.VoterTypeStakingPoolKeyHash {
 				poolKeyHash := voter.Hash[:]
 				// O(1) lookup using byte string key (no encoding needed)
-				if _, exists := c.filterSet.pools.bytesLookup[string(poolKeyHash)]; exists {
+				if _, exists := c.pools.bytesLookup[string(poolKeyHash)]; exists {
 					return true
 				}
 			}

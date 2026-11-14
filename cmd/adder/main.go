@@ -98,6 +98,7 @@ func init() {
 	if err := cfg.BindFlags(rootCmd.Flags()); err != nil {
 		panic(err)
 	}
+	bindManagedFlags(rootCmd.Flags())
 	rootCmd.AddCommand(newNotificationsCmd())
 }
 
@@ -149,6 +150,10 @@ func run(cmd *cobra.Command) error {
 	logging.Configure(level)
 	logger := logging.GetLogger()
 	slog.SetDefault(logger)
+
+	if managedOptions.ConfigDir != "" {
+		return runManaged(resolved)
+	}
 
 	// Configure max processes with our logger wrapper, toss undo func
 	_, err = maxprocs.Set(maxprocs.Logger(slogPrintf))
