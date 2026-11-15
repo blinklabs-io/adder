@@ -24,7 +24,7 @@ import (
 )
 
 // matchAddressFilter checks if transaction matches address filters
-func (c *Cardano) matchAddressFilter(te event.TransactionEvent) bool {
+func (c *filterSet) matchAddressFilter(te event.TransactionEvent) bool {
 	// Include resolved inputs as outputs for matching
 	allOutputs := make(
 		[]ledger.TransactionOutput,
@@ -39,16 +39,16 @@ func (c *Cardano) matchAddressFilter(te event.TransactionEvent) bool {
 		addrStr := output.Address().String()
 
 		// O(1) lookup in payment addresses
-		if _, exists := c.filterSet.addresses.paymentAddresses[addrStr]; exists {
+		if _, exists := c.addresses.paymentAddresses[addrStr]; exists {
 			return true
 		}
 
 		// Check stake address if we have stake filters
-		if len(c.filterSet.addresses.stakeAddresses) > 0 {
+		if len(c.addresses.stakeAddresses) > 0 {
 			stakeAddr := output.Address().StakeAddress()
 			if stakeAddr != nil {
 				// O(1) lookup in stake addresses
-				if _, exists := c.filterSet.addresses.stakeAddresses[stakeAddr.String()]; exists {
+				if _, exists := c.addresses.stakeAddresses[stakeAddr.String()]; exists {
 					return true
 				}
 			}
@@ -56,7 +56,7 @@ func (c *Cardano) matchAddressFilter(te event.TransactionEvent) bool {
 	}
 
 	// Check certificates for stake address matches
-	if len(c.filterSet.addresses.stakeAddresses) > 0 {
+	if len(c.addresses.stakeAddresses) > 0 {
 		if c.matchStakeCertificates(te.Certificates) {
 			return true
 		}
@@ -66,11 +66,11 @@ func (c *Cardano) matchAddressFilter(te event.TransactionEvent) bool {
 }
 
 // matchAddressFilterGovernance checks if governance event matches address filters
-func (c *Cardano) matchAddressFilterGovernance(ge event.GovernanceEvent) bool {
+func (c *filterSet) matchAddressFilterGovernance(ge event.GovernanceEvent) bool {
 	// Check proposal procedures for reward account matches
 	for _, prop := range ge.ProposalProcedures {
 		// RewardAccount is a stake/reward address string
-		if _, exists := c.filterSet.addresses.stakeAddresses[prop.RewardAccount]; exists {
+		if _, exists := c.addresses.stakeAddresses[prop.RewardAccount]; exists {
 			return true
 		}
 
@@ -78,11 +78,11 @@ func (c *Cardano) matchAddressFilterGovernance(ge event.GovernanceEvent) bool {
 		if prop.ActionData.TreasuryWithdrawal != nil {
 			for _, withdrawal := range prop.ActionData.TreasuryWithdrawal.Withdrawals {
 				// Check against payment addresses
-				if _, exists := c.filterSet.addresses.paymentAddresses[withdrawal.Address]; exists {
+				if _, exists := c.addresses.paymentAddresses[withdrawal.Address]; exists {
 					return true
 				}
 				// Also check against stake addresses (some withdrawals may use stake addresses)
-				if _, exists := c.filterSet.addresses.stakeAddresses[withdrawal.Address]; exists {
+				if _, exists := c.addresses.stakeAddresses[withdrawal.Address]; exists {
 					return true
 				}
 			}
@@ -90,7 +90,7 @@ func (c *Cardano) matchAddressFilterGovernance(ge event.GovernanceEvent) bool {
 	}
 
 	// Check vote delegation certificates for stake credential matches
-	if len(c.filterSet.addresses.stakeCredentialHashes) > 0 {
+	if len(c.addresses.stakeCredentialHashes) > 0 {
 		for _, cert := range ge.VoteDelegationCertificates {
 			// StakeCredential is a hex string of the credential hash (28 bytes)
 			credBytes, err := hex.DecodeString(cert.StakeCredential)
@@ -107,7 +107,7 @@ func (c *Cardano) matchAddressFilterGovernance(ge event.GovernanceEvent) bool {
 }
 
 // matchStakeCertificates checks certificates against stake credential hashes
-func (c *Cardano) matchStakeCertificates(
+func (c *filterSet) matchStakeCertificates(
 	certificates []ledger.Certificate,
 ) bool {
 	for _, certificate := range certificates {
@@ -137,8 +137,8 @@ func (c *Cardano) matchStakeCertificates(
 }
 
 // matchStakeCredentialHash compares a decoded credential hash against configured stake credential hashes
-func (c *Cardano) matchStakeCredentialHash(credBytes []byte) bool {
-	for _, filterHash := range c.filterSet.addresses.stakeCredentialHashes {
+func (c *filterSet) matchStakeCredentialHash(credBytes []byte) bool {
+	for _, filterHash := range c.addresses.stakeCredentialHashes {
 		// filterHash may include header byte from bech32 decoding
 		// Compare against last 28 bytes (the actual credential hash)
 		var hashToCompare []byte

@@ -20,6 +20,14 @@ bounded buffers and can drop events when subscribers are slow.
 
 ![Adder event flow: input plugins, ordered filters, output plugins, and API subscribers](docs/diagrams/data-flow.svg)
 
+### Optional managed routing
+
+[Managed routing](docs/managed-routing.md) adds file-based customer rules and
+plugin destinations, isolated bounded queues, and authenticated reload APIs.
+The default CLI behavior described above remains unchanged. See the
+[local five-customer smoke test](docs/managed-routing-smoke.md) for public mainnet
+and Dingo runs.
+
 ### Event format
 
 Events are created with a simple schema.

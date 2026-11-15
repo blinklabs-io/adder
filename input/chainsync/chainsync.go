@@ -1043,3 +1043,7 @@ func resolveTransactionInputs(
 }
 
 var _ plugin.ManagedPlugin = (*ChainSync)(nil)
+
+// Connected reports whether this run currently owns a node connection. It does
+// not assert that the remote node is healthy or synchronized.
+func (c *ChainSync) Connected() bool { return c.conn() != nil }

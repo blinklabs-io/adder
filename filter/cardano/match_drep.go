@@ -20,10 +20,10 @@ import (
 )
 
 // matchDRepFilterGovernance checks if governance event contains matching DRep IDs
-func (c *Cardano) matchDRepFilterGovernance(ge event.GovernanceEvent) bool {
+func (c *filterSet) matchDRepFilterGovernance(ge event.GovernanceEvent) bool {
 	// Check DRep certificates (registrations, updates, retirements)
 	for _, cert := range ge.DRepCertificates {
-		if _, exists := c.filterSet.dreps.hexDRepIds[cert.DRepHash]; exists {
+		if _, exists := c.dreps.hexDRepIds[cert.DRepHash]; exists {
 			return true
 		}
 	}
@@ -31,7 +31,7 @@ func (c *Cardano) matchDRepFilterGovernance(ge event.GovernanceEvent) bool {
 	// Check vote delegation certificates (delegations TO a DRep)
 	for _, cert := range ge.VoteDelegationCertificates {
 		if cert.DRepHash != "" {
-			if _, exists := c.filterSet.dreps.hexDRepIds[cert.DRepHash]; exists {
+			if _, exists := c.dreps.hexDRepIds[cert.DRepHash]; exists {
 				return true
 			}
 		}
@@ -40,7 +40,7 @@ func (c *Cardano) matchDRepFilterGovernance(ge event.GovernanceEvent) bool {
 	// Check voting procedures (votes cast BY a DRep)
 	for _, vote := range ge.VotingProcedures {
 		if vote.VoterType == "DRep" {
-			if _, exists := c.filterSet.dreps.hexDRepIds[vote.VoterHash]; exists {
+			if _, exists := c.dreps.hexDRepIds[vote.VoterHash]; exists {
 				return true
 			}
 		}
@@ -50,7 +50,7 @@ func (c *Cardano) matchDRepFilterGovernance(ge event.GovernanceEvent) bool {
 }
 
 // matchDRepFilterTx checks transaction certificates against DRep filters
-func (c *Cardano) matchDRepFilterTx(te event.TransactionEvent) bool {
+func (c *filterSet) matchDRepFilterTx(te event.TransactionEvent) bool {
 	for _, certificate := range te.Certificates {
 		var drepHash []byte
 
@@ -87,7 +87,7 @@ func (c *Cardano) matchDRepFilterTx(te event.TransactionEvent) bool {
 
 		if drepHash != nil {
 			// O(1) lookup using byte string key (no encoding needed)
-			if _, exists := c.filterSet.dreps.bytesLookup[string(drepHash)]; exists {
+			if _, exists := c.dreps.bytesLookup[string(drepHash)]; exists {
 				return true
 			}
 		}
@@ -100,7 +100,7 @@ func (c *Cardano) matchDRepFilterTx(te event.TransactionEvent) bool {
 				voter.Type == common.VoterTypeDRepScriptHash {
 				voterHash := voter.Hash[:]
 				// O(1) lookup using byte string key (no encoding needed)
-				if _, exists := c.filterSet.dreps.bytesLookup[string(voterHash)]; exists {
+				if _, exists := c.dreps.bytesLookup[string(voterHash)]; exists {
 					return true
 				}
 			}

@@ -17,6 +17,7 @@ package log
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -33,10 +34,12 @@ const (
 
 type LogOutput struct {
 	plugin.Base
-	format string
-	path   string
-	file   *os.File
-	level  slog.Level
+	format    string
+	path      string
+	file      *os.File
+	level     slog.Level
+	openFile  func() (*os.File, error)
+	processed func()
 }
 
 func New(options ...LogOptionFunc) *LogOutput {
@@ -71,7 +74,13 @@ func (l *LogOutput) StartContext(ctx context.Context) error {
 }
 
 func (l *LogOutput) start(ctx context.Context) error {
-	if l.path != "" {
+	if l.openFile != nil {
+		f, err := l.openFile()
+		if err != nil {
+			return err
+		}
+		l.file = f
+	} else if l.path != "" {
 		f, err := os.OpenFile(
 			l.path,
 			os.O_APPEND|os.O_CREATE|os.O_WRONLY,
@@ -87,6 +96,9 @@ func (l *LogOutput) start(ctx context.Context) error {
 	l.Go(func() {
 		for evt := range in {
 			if l.level > slog.LevelInfo {
+				if l.processed != nil {
+					l.processed()
+				}
 				continue
 			}
 			switch l.format {
@@ -94,6 +106,9 @@ func (l *LogOutput) start(ctx context.Context) error {
 				l.writeJSON(evt)
 			default:
 				l.writeText(evt)
+			}
+			if l.processed != nil {
+				l.processed()
 			}
 		}
 	})
@@ -175,6 +190,10 @@ func (l *LogOutput) writeText(evt event.Event) {
 func (l *LogOutput) writeJSON(evt event.Event) {
 	data, err := json.Marshal(evt)
 	if err != nil {
+		if l.processed != nil {
+			l.TrySendError(errors.New("log serialization failed"))
+			return
+		}
 		fmt.Fprintf(
 			os.Stderr,
 			"error: failed to marshal event: %v\n",
@@ -187,6 +206,10 @@ func (l *LogOutput) writeJSON(evt event.Event) {
 		out = l.file
 	}
 	if _, err := out.Write(append(data, '\n')); err != nil {
+		if l.processed != nil {
+			l.TrySendError(errors.New("log write failed"))
+			return
+		}
 		fmt.Fprintf(os.Stderr, "error writing JSON log: %v\n", err)
 	}
 }
@@ -218,3 +241,11 @@ func (l *LogOutput) shutdownHooks() plugin.ShutdownHooks {
 }
 
 var _ plugin.ManagedPlugin = (*LogOutput)(nil)
+
+// SetFileOpener supplies an instance-owned, confined file opener. The output
+// owns the returned file and closes it on Stop. Configure before Start.
+func (l *LogOutput) SetFileOpener(open func() (*os.File, error)) { l.openFile = open }
+
+// SetProcessingObserver observes completion of event processing, not durable
+// persistence. Configure before Start; the callback must not block or call Stop.
+func (l *LogOutput) SetProcessingObserver(observer func()) { l.processed = observer }

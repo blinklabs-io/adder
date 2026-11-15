@@ -52,7 +52,7 @@ Adder is built around a concurrent **Pipeline-Plugin** architecture. Data flows 
 into the first filter; each filter feeds the next. Without filters, inputs feed
 the terminal output loop directly. See [pipeline.go](../pipeline/pipeline.go).
 
-The `adder` CLI uses a narrower subset of that capability:
+By default, the `adder` CLI uses a narrower subset of that capability:
 
 - **Exactly one input**: the plugin named by `--input` / `INPUT` (`chainsync`, `mempool`, or `utxorpc`).
 - **Every registered filter**: `cardano` then `event`, in registration order.
@@ -64,6 +64,35 @@ multi-input / multi-output form, including pipelines with no output or observer.
 With no consumers the terminal loop drains and discards events. The application
 uses one network per process; input network selection does not replace the
 shared genesis configuration used for epoch calculations.
+
+### Optional managed routing
+
+With `--managed-config-dir`, the CLI uses ChainSync and one managed router
+output, with no legacy global filters or `/events` observer. The router binds
+each occurrence to the applied customer configuration before nonblocking
+admission to independent customer queues. Each customer matches in order and
+fans out to independent bounded destination queues. A destination's plugin
+and quota waits cannot block another customer's admission.
+
+```mermaid
+flowchart LR
+  F[Operator-owned files] --> R[Authenticated reload API]
+  R --> V[Validate and prepare configuration]
+  V --> S[Atomic routing configuration switch]
+  I[ChainSync input] --> D[Sequence and configuration binding]
+  S --> D
+  D --> C1[Customer A queue and matcher]
+  D --> C2[Customer B queue and matcher]
+  C1 --> O1[Destination queue and plugin]
+  C1 --> O2[Destination queue and plugin]
+  C2 --> O3[Destination queue and plugin]
+```
+
+Only adapters with explicit lifecycle, target, and work limits are enabled;
+other registered outputs report a rejection reason. Reloads prepare outside
+the dispatch lock and do not restart the input. See
+[managed routing](managed-routing.md) for the file schema, API, quotas,
+best-effort delivery boundaries, and status meanings.
 
 ### Input plugins
 
