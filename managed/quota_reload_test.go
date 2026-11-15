@@ -140,7 +140,16 @@ func TestManagedRemovedRouteRetainsProviderPause(t *testing.T) {
 	c.Destinations = append(c.Destinations, remote)
 	b.publish(t, 1, c)
 	r := b.start(t, nil)
-	old := r.lanes["u1"].active.destinations["remote"]
+	lane := r.lanes["u1"]
+	if lane == nil {
+		t.Fatal("missing configured customer")
+		return
+	}
+	old := lane.active.destinations["remote"]
+	if old == nil || old.transport == nil || old.transport.group == nil {
+		t.Fatal("missing configured webhook quota")
+		return
+	}
 	old.transport.group.pause("60")
 	c.Revision = 2
 	c.Destinations = c.Destinations[:1]
@@ -157,7 +166,12 @@ func TestManagedRemovedRouteRetainsProviderPause(t *testing.T) {
 	b.publish(t, 3, c)
 	_, err = r.ReloadCustomer(t.Context(), "u1", 3)
 	require.NoError(t, err)
-	group := r.lanes["u1"].active.destinations["remote"].transport.group
+	next := lane.active.destinations["remote"]
+	if next == nil || next.transport == nil || next.transport.group == nil {
+		t.Fatal("missing re-added webhook quota")
+		return
+	}
+	group := next.transport.group
 	ctx, cancel := context.WithTimeout(t.Context(), 25*time.Millisecond)
 	defer cancel()
 	require.ErrorIs(t, group.wait(ctx), context.DeadlineExceeded, "re-adding a route cannot bypass its provider's pause")
@@ -172,6 +186,11 @@ func TestManagedRetainedProviderPausesAreBoundedAndReclaimed(t *testing.T) {
 	c := localCustomer("u1")
 	b.publish(t, 1, c)
 	r := b.start(t, nil)
+	lane := r.lanes["u1"]
+	if lane == nil {
+		t.Fatal("missing configured customer")
+		return
+	}
 	for version := uint64(1); version <= 2; version++ {
 		c.Revision++
 		remote := b.webhook(t, "u1", "remote", fmt.Sprintf("http://127.0.0.1:%d/private", 43210+version), version)
@@ -179,7 +198,11 @@ func TestManagedRetainedProviderPausesAreBoundedAndReclaimed(t *testing.T) {
 		b.publish(t, c.Revision, c)
 		_, err := r.ReloadCustomer(t.Context(), "u1", c.Revision)
 		require.NoError(t, err)
-		old := r.lanes["u1"].active.destinations["remote"]
+		old := lane.active.destinations["remote"]
+		if old == nil || old.transport == nil || old.transport.group == nil {
+			t.Fatal("missing configured webhook quota")
+			return
+		}
 		old.transport.group.pause("60")
 		c.Revision++
 		c.Destinations = c.Destinations[:1]
