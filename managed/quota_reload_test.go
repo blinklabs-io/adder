@@ -5,6 +5,7 @@ package managed
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -103,9 +104,10 @@ func TestManagedQuotaIntervalChangesAtCutover(t *testing.T) {
 	_, err := r.ReloadCustomer(context.Background(), "u1", 2)
 	require.NoError(t, err)
 	group.mu.Lock()
-	require.Equal(t, time.Second, group.interval)
-	require.Equal(t, until, group.next, "reload must preserve pending Retry-After")
+	interval, next := group.interval, group.next
 	group.mu.Unlock()
+	require.Equal(t, time.Second, interval)
+	require.Equal(t, until, next, "reload must preserve pending Retry-After")
 }
 
 func TestManagedQuotaConflictLeavesOtherCustomerUnchanged(t *testing.T) {
@@ -129,4 +131,84 @@ func TestManagedQuotaConflictLeavesOtherCustomerUnchanged(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, uint64(2), r.Status().Customers["u1"].Revision)
 	require.Equal(t, uint64(2), r.Status().Customers["u2"].Revision)
+}
+
+func TestManagedRemovedRouteRetainsProviderPause(t *testing.T) {
+	b := newAcceptanceBundle(t)
+	c := localCustomer("u1")
+	remote := b.webhook(t, "u1", "remote", "http://127.0.0.1:43210/private", 1)
+	c.Destinations = append(c.Destinations, remote)
+	b.publish(t, 1, c)
+	r := b.start(t, nil)
+	old := r.lanes["u1"].active.destinations["remote"]
+	old.transport.group.pause("60")
+	c.Revision = 2
+	c.Destinations = c.Destinations[:1]
+	b.publish(t, 2, c)
+	_, err := r.ReloadCustomer(t.Context(), "u1", 2)
+	require.NoError(t, err)
+	select {
+	case <-old.done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("removed worker did not exit")
+	}
+	c.Revision = 3
+	c.Destinations = append(c.Destinations, remote)
+	b.publish(t, 3, c)
+	_, err = r.ReloadCustomer(t.Context(), "u1", 3)
+	require.NoError(t, err)
+	group := r.lanes["u1"].active.destinations["remote"].transport.group
+	ctx, cancel := context.WithTimeout(t.Context(), 25*time.Millisecond)
+	defer cancel()
+	require.ErrorIs(t, group.wait(ctx), context.DeadlineExceeded, "re-adding a route cannot bypass its provider's pause")
+	require.NoError(t, r.Stop())
+	require.Zero(t, r.memory.Load())
+	require.Zero(t, r.capacity.Load())
+}
+
+func TestManagedRetainedProviderPausesAreBoundedAndReclaimed(t *testing.T) {
+	b := newAcceptanceBundle(t)
+	b.options.MaxInstances = 2
+	c := localCustomer("u1")
+	b.publish(t, 1, c)
+	r := b.start(t, nil)
+	for version := uint64(1); version <= 2; version++ {
+		c.Revision++
+		remote := b.webhook(t, "u1", "remote", fmt.Sprintf("http://127.0.0.1:%d/private", 43210+version), version)
+		c.Destinations = append(c.Destinations, remote)
+		b.publish(t, c.Revision, c)
+		_, err := r.ReloadCustomer(t.Context(), "u1", c.Revision)
+		require.NoError(t, err)
+		old := r.lanes["u1"].active.destinations["remote"]
+		old.transport.group.pause("60")
+		c.Revision++
+		c.Destinations = c.Destinations[:1]
+		b.publish(t, c.Revision, c)
+		_, err = r.ReloadCustomer(t.Context(), "u1", c.Revision)
+		require.NoError(t, err)
+		select {
+		case <-old.done:
+		case <-time.After(5 * time.Second):
+			t.Fatal("removed worker did not exit")
+		}
+	}
+	c.Revision++
+	c.Destinations = append(c.Destinations, b.webhook(t, "u1", "remote", "http://127.0.0.1:43213/private", 3))
+	b.publish(t, c.Revision, c)
+	_, err := r.ReloadCustomer(t.Context(), "u1", c.Revision)
+	require.ErrorContains(t, err, "shared quota group budget exceeded")
+	require.Equal(t, c.Revision-1, r.Status().Customers["u1"].Revision)
+	// Advance only the provider deadlines, without sleeping through real backoff.
+	r.groupMu.Lock()
+	for _, group := range r.groups {
+		group.mu.Lock()
+		group.next = time.Now().Add(-time.Second)
+		group.mu.Unlock()
+	}
+	r.groupMu.Unlock()
+	_, err = r.ReloadCustomer(t.Context(), "u1", c.Revision)
+	require.NoError(t, err)
+	require.NoError(t, r.Stop())
+	require.Zero(t, r.memory.Load())
+	require.Zero(t, r.capacity.Load())
 }

@@ -106,15 +106,12 @@ func (r *Router) prepareDestination(ctx context.Context, customer string, spec p
 		})
 		p.SetProcessingObserver(observer)
 	case *webhook.WebhookOutput:
-		r.groupMu.Lock()
-		group := r.groups[spec.config.LimitGroup]
 		interval := time.Duration(spec.config.IntervalMS) * time.Millisecond
-		if group == nil {
-			group = &limitGroup{interval: interval}
-			r.groups[spec.config.LimitGroup] = group
+		group, err := r.acquireGroup(spec.config.LimitGroup, interval)
+		if err != nil {
+			cleanup()
+			return nil, err
 		}
-		group.refs++
-		r.groupMu.Unlock()
 		d.transport = r.transport(group)
 		p.SetHTTPClient(&http.Client{Transport: d.transport, CheckRedirect: func(*http.Request, []*http.Request) error { return errors.New("managed redirects forbidden") }})
 		p.SetLogger(slog.New(slog.NewTextHandler(io.Discard, nil)))
@@ -149,9 +146,7 @@ func (d *destination) releaseGroup() {
 	defer r.groupMu.Unlock()
 	g := d.transport.group
 	g.refs--
-	if g.refs == 0 {
-		delete(r.groups, d.spec.config.LimitGroup)
-	}
+	r.pruneGroups()
 }
 func (d *destination) release() { d.refs.Add(-1); d.releaseResources() }
 func (d *destination) releaseResources() {

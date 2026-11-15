@@ -105,6 +105,33 @@ def observations(root, *, complete=False):
     return configured, matched, events
 
 
+def receipt_identity(receipt):
+    event_type = receipt["type"]
+    payload = receipt.get("payload")
+    if not isinstance(payload, dict):
+        raise ValueError("receipt identity requires an object payload")
+    block_hash = payload.get("blockHash")
+    if event_type == "input.transaction":
+        if not isinstance(block_hash, str) or len(block_hash) != 64 or any(c not in "0123456789abcdef" for c in block_hash):
+            raise ValueError("transaction receipt has an invalid identity")
+        context = receipt.get("context")
+        transaction_hash = context.get("transactionHash") if isinstance(context, dict) else None
+        if not isinstance(transaction_hash, str) or len(transaction_hash) != 64 or any(c not in "0123456789abcdef" for c in transaction_hash):
+            raise ValueError("transaction receipt has an invalid identity")
+        # Asset lists originate in maps and may serialize in different orders.
+        return event_type, block_hash, transaction_hash
+    if event_type == "input.rollback":
+        slot = payload.get("slotNumber")
+        if not isinstance(slot, int) or isinstance(slot, bool) or slot < 0:
+            raise ValueError("rollback receipt has an invalid identity")
+        if not isinstance(block_hash, str) or (block_hash != "" and (len(block_hash) != 64 or any(c not in "0123456789abcdef" for c in block_hash))):
+            raise ValueError("rollback receipt has an invalid identity")
+        if block_hash == "" and slot != 0:
+            raise ValueError("rollback origin must have slot zero")
+        return event_type, block_hash, slot
+    return event_type, block_hash
+
+
 def verify(configured, matched, events, *, network, complete=False):
     """Preview an aligned live prefix; reconcile every receipt only after stop."""
     expected = {(customer, rule) for customer in CUSTOMERS for rule in RULES}
@@ -170,6 +197,12 @@ def verify(configured, matched, events, *, network, complete=False):
                 raise ValueError("customers received different block hashes for the same occurrence")
             continue
         witnesses.append({"occurrence_id": occurrence, "block_hash": hashes.pop()})
+    if complete:
+        reference_customer = CUSTOMERS[0]
+        reference_identities = [receipt_identity(receipt) for receipt in events[reference_customer]]
+        for customer in CUSTOMERS[1:]:
+            if [receipt_identity(receipt) for receipt in events[customer]] != reference_identities:
+                raise ValueError(f"{customer} ordered receipt identities differ from {reference_customer}")
     return {
         "passed": ready and bool(witnesses),
         "rules_loaded": len(loaded),
@@ -190,6 +223,8 @@ def status_at(address, token):
 
 def reconcile_routes(root, matched):
     dispatched = []
+    selected = []
+    rules_by_type = {event_type: rule for rule, event_type in RULES.items()}
     submissions = {customer: [] for customer in CUSTOMERS}
     failures = {"input_dropped", "input_canceled", "destination_dropped", "destination_canceled", "plugin_error", "submission_uncertain"}
     for record in json_lines(root / "adder.log", diagnostic=True, complete=True):
@@ -199,7 +234,12 @@ def reconcile_routes(root, matched):
         if action in failures:
             raise ValueError(f"router reported {action}, including during shutdown")
         if action == "dispatched":
-            dispatched.append(record.get("occurrence_id"))
+            occurrence, event_type = record.get("occurrence_id"), record.get("event_type")
+            if not isinstance(event_type, str) or not event_type:
+                raise ValueError("dispatch diagnostic has no event type")
+            dispatched.append(occurrence)
+            if event_type in rules_by_type:
+                selected.append((occurrence, rules_by_type[event_type], event_type))
         if action == "submitted_to_plugin":
             customer = record.get("customer_id")
             if customer not in submissions or record.get("destination_id") != "local-log":
@@ -207,13 +247,13 @@ def reconcile_routes(root, matched):
             submissions[customer].append((record.get("occurrence_id"), record.get("revision"), record.get("rule_ids")))
     if dispatched != list(range(1, len(dispatched) + 1)):
         raise ValueError("dispatch occurrence diagnostics are missing or out of order")
-    observed = set(dispatched)
+    expected_submissions = [(occurrence, 1, [rule]) for occurrence, rule, _ in selected]
     for customer in CUSTOMERS:
-        expected = [(record["occurrence_id"], record["revision"], [record["rule_id"]]) for record in matched[customer]]
-        if submissions[customer] != expected:
+        actual_matches = [(record["occurrence_id"], record["rule_id"], record["event_type"]) for record in matched[customer]]
+        if actual_matches != selected:
+            raise ValueError(f"{customer} matches do not reconcile with selected dispatches")
+        if submissions[customer] != expected_submissions:
             raise ValueError(f"{customer} plugin submissions do not reconcile with matched rules")
-        if not {record["occurrence_id"] for record in matched[customer]}.issubset(observed):
-            raise ValueError("a match has no observed source dispatch")
     return {
         "dispatched_occurrences": len(dispatched),
         "plugin_submissions": {customer: len(records) for customer, records in submissions.items()},

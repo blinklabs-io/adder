@@ -3,7 +3,10 @@
 
 package managed
 
-import "errors"
+import (
+	"errors"
+	"strings"
+)
 
 type credentialRevision struct {
 	version uint64
@@ -27,10 +30,18 @@ type revisionState struct {
 // Identity counts are bounded for the whole run, not just the active roster.
 func advanceHistory(previous map[string]customerRevision, prepared map[string]*preparedCustomer, options Options) (map[string]customerRevision, int64, error) {
 	next := make(map[string]customerRevision, len(previous)+len(prepared))
+	identities := make(map[string]string, len(previous)+len(prepared))
 	for id, old := range previous {
 		next[id] = old
+		identities[strings.ToLower(id)] = id
 	}
 	for id, p := range prepared {
+		// Removed customers still own their filenames on case-insensitive disks.
+		folded := strings.ToLower(id)
+		if previousID, exists := identities[folded]; exists && previousID != id {
+			return nil, 0, errors.New("customer identity differs only by case")
+		}
+		identities[folded] = id
 		old, exists := previous[id]
 		if exists && p.config.Revision < old.revision {
 			return nil, 0, errors.New("stale customer revision")

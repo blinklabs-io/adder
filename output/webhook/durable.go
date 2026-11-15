@@ -240,46 +240,55 @@ func validateDurableEvent(evt event.Event) error {
 
 func (w *WebhookOutput) runDurable(ctx context.Context) {
 	for evt := range w.Input() {
-		if err := validateDurableEvent(evt); err != nil {
-			w.reportError(w.log(), err)
-			continue
-		}
-		body, err := formatWebhook(&evt, w.format)
-		if err != nil {
-			w.reportError(w.log(), err)
-			continue
-		}
-		encoded, err := json.Marshal(queuedWebhook{Type: evt.Type, Body: body})
-		if err != nil {
-			w.reportError(w.log(), fmt.Errorf("encode queued webhook: %w", err))
-			continue
-		}
-		if len(encoded) > maxQueuedBytes {
-			w.drainErr = errors.Join(w.drainErr, fmt.Errorf("webhook payload exceeds %d-byte durable queue limit", maxQueuedBytes))
-			if ctx.Err() == nil {
-				w.Fail(w.drainErr)
-				<-w.Done()
-			}
-			continue
-		}
-		if _, err := w.queue.Enqueue(queueName, encoded, w.maxPending); err != nil {
-			w.drainErr = errors.Join(w.drainErr, fmt.Errorf("persist webhook delivery: %w", err))
-			if ctx.Err() == nil {
-				w.Fail(w.drainErr)
-				<-w.Done()
-			}
-			continue
-		}
-		if ctx.Err() == nil {
-			if err := w.replay(ctx); err != nil {
-				terminal := ctx.Err() == nil
-				w.handleReplayError(ctx, err)
-				if terminal {
-					<-w.Done()
-				}
-			}
+		if w.processDurableEvent(ctx, evt) {
+			// Complete this input's observer before pausing for terminal shutdown.
+			<-w.Done()
 		}
 	}
+}
+
+func (w *WebhookOutput) processDurableEvent(ctx context.Context, evt event.Event) bool {
+	if w.processed != nil {
+		defer w.processed()
+	}
+	if err := validateDurableEvent(evt); err != nil {
+		w.reportError(w.log(), err)
+		return false
+	}
+	body, err := formatWebhook(&evt, w.format)
+	if err != nil {
+		w.reportError(w.log(), err)
+		return false
+	}
+	encoded, err := json.Marshal(queuedWebhook{Type: evt.Type, Body: body})
+	if err != nil {
+		w.reportError(w.log(), fmt.Errorf("encode queued webhook: %w", err))
+		return false
+	}
+	if len(encoded) > maxQueuedBytes {
+		w.drainErr = errors.Join(w.drainErr, fmt.Errorf("webhook payload exceeds %d-byte durable queue limit", maxQueuedBytes))
+		if ctx.Err() == nil {
+			w.Fail(w.drainErr)
+			return true
+		}
+		return false
+	}
+	if _, err := w.queue.Enqueue(queueName, encoded, w.maxPending); err != nil {
+		w.drainErr = errors.Join(w.drainErr, fmt.Errorf("persist webhook delivery: %w", err))
+		if ctx.Err() == nil {
+			w.Fail(w.drainErr)
+			return true
+		}
+		return false
+	}
+	if ctx.Err() == nil {
+		if err := w.replay(ctx); err != nil {
+			terminal := ctx.Err() == nil
+			w.handleReplayError(ctx, err)
+			return terminal
+		}
+	}
+	return false
 }
 
 func (w *WebhookOutput) handleReplayError(ctx context.Context, err error) {

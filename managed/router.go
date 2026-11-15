@@ -9,6 +9,7 @@ import (
 	"errors"
 	"log/slog"
 	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -309,8 +310,17 @@ func (r *Router) dispatch(e event.Event) {
 		}
 	}
 	elapsed := time.Since(started).Seconds()
+	eventType := "unsupported"
+	switch e.Type {
+	case event.TypeBlock, event.TypeTransaction, event.TypeRollback,
+		event.TypeGovernance, event.TypeDRepRegistration,
+		event.TypeDRepUpdate, event.TypeDRepRetirement:
+		// Diagnostics retain only bounded metadata, never an arbitrary input string.
+		eventType = strings.Clone(e.Type)
+	}
 	r.diagnostic(slog.LevelDebug, "managed dispatch",
 		slog.String("component", "managed.router"), slog.String("action", "dispatched"),
+		slog.String("event_type", eventType),
 		slog.Uint64("occurrence_id", sequence), slog.Float64("admission_seconds", elapsed))
 }
 
@@ -463,6 +473,12 @@ func (r *Router) beginCleanup() (<-chan struct{}, context.Context) {
 		// A plugin may be stuck in a filesystem write. Keep its ownership and
 		// budget until Stop really joins the worker and closes its file.
 		r.workers.Wait()
+		r.groupMu.Lock()
+		for authority, group := range r.groups {
+			r.releaseMemory(group.weight)
+			delete(r.groups, authority)
+		}
+		r.groupMu.Unlock()
 		r.stopDiagnostics()
 		for _, lane := range lanes {
 			lane.active.release()

@@ -17,6 +17,7 @@ import (
 	"os"
 	"regexp"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/blinklabs-io/adder/filter/cardano"
@@ -225,11 +226,12 @@ func (r *Router) loadManifest() (Manifest, [32]byte, error) {
 	ids := map[string]bool{}
 	files := map[string]bool{}
 	for _, c := range m.Customers {
-		if !identifier.MatchString(c.ID) || c.Revision == 0 || !basename.MatchString(c.File) || ids[c.ID] || files[c.File] {
+		id, file := strings.ToLower(c.ID), strings.ToLower(c.File)
+		if !identifier.MatchString(c.ID) || c.Revision == 0 || !basename.MatchString(c.File) || ids[id] || files[file] {
 			return m, digest, errors.New("invalid or duplicate customer reference")
 		}
-		ids[c.ID] = true
-		files[c.File] = true
+		ids[id] = true
+		files[file] = true
 	}
 	return m, digest, nil
 }

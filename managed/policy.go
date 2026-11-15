@@ -234,6 +234,45 @@ type limitGroup struct {
 	last     time.Time
 	interval time.Duration
 	refs     int
+	weight   int64
+}
+
+func (r *Router) acquireGroup(authority string, interval time.Duration) (*limitGroup, error) {
+	r.groupMu.Lock()
+	defer r.groupMu.Unlock()
+	r.pruneGroups()
+	group := r.groups[authority]
+	if group == nil {
+		// Removed routes retain provider pauses, but cannot grow an unbounded map.
+		if len(r.groups) >= r.options.MaxInstances {
+			return nil, errors.New("shared quota group budget exceeded")
+		}
+		weight := int64(512 + len(authority))
+		if !r.reserve(weight) {
+			return nil, errors.New("shared quota memory budget exceeded")
+		}
+		group = &limitGroup{interval: interval, weight: weight}
+		r.groups[strings.Clone(authority)] = group
+	}
+	group.refs++
+	return group, nil
+}
+
+// pruneGroups requires groupMu; active groups can still extend their pauses.
+func (r *Router) pruneGroups() {
+	now := time.Now()
+	for authority, group := range r.groups {
+		if group.refs != 0 {
+			continue
+		}
+		group.mu.Lock()
+		expired := !group.next.After(now)
+		group.mu.Unlock()
+		if expired {
+			delete(r.groups, authority)
+			r.releaseMemory(group.weight)
+		}
+	}
 }
 
 func (g *limitGroup) wait(ctx context.Context) error {

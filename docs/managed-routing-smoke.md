@@ -21,11 +21,16 @@ at the corresponding position in every customer's event file. Receipt order,
 event types, and counts are reconciled against matched occurrence IDs. After
 shutdown, all five customers must have identical ordered
 `(occurrence_id, rule_id, event_type)` sequences for their identical filters. Duplicate,
-extra, missing, or reordered local receipts cause failure. The script sends
+extra, missing, or reordered local receipts cause failure. Ordered receipt identities
+(block hashes, transaction hashes with their block hash, and rollback points)
+are compared across customers. Transaction asset-list ordering is not part of
+identity: those lists are serialized from maps. The script sends
 SIGTERM to its own Adder process, allows graceful draining, and checks the final
 files. Dispatch diagnostics and exact customer/occurrence/destination/rule/revision
-submissions are also reconciled. Any logged drop, plugin error, cancellation, or
-uncertain submission fails this local-log run, including during shutdown. A
+submissions are also reconciled. Expected matches come from dispatch event types
+independently of match logs, so a selected dispatch omitted by every customer
+still causes failure. Any logged drop, plugin error, cancellation, or uncertain
+submission fails this local-log run, including during shutdown. A
 forced shutdown fails the run. The default observation deadline is 180
 seconds; override it with `--timeout-seconds` when necessary.
 
