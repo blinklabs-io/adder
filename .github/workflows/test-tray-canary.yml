@@ -1,0 +1,95 @@
+name: Test public tray build
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/ci.yml'
+      - '.github/workflows/test-tray-canary.yml'
+      - 'cmd/adder-tray/**'
+      - 'tray/**'
+      - 'Makefile'
+      - 'go.mod'
+      - 'go.sum'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-2025
+            arch: amd64
+            system: MINGW64
+            package: mingw-w64-x86_64-gcc
+          - runner: windows-11-arm
+            arch: arm64
+            system: CLANGARM64
+            package: mingw-w64-clang-aarch64-clang
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: blinklabs-io/shared-actions
+          ref: 7328ad66dec3a12676f5a9d1948fa74946712613
+          path: .canary-shared-actions
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.26.x'
+          check-latest: true
+          cache: false
+      - uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e # v2.33.0
+        id: toolchain
+        with:
+          msystem: ${{ matrix.system }}
+          update: true
+          install: ${{ matrix.package }}
+      - name: Extract the pinned publishing build step
+        shell: bash
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+
+          source = Path('.canary-shared-actions/.github/workflows/reuseable-publish-desktop.yml').read_text()
+          lines = source.splitlines()
+          marker = '      - name: Build binary (Windows)'
+          if lines.count(marker) != 1:
+              raise SystemExit('Expected one Windows publishing build step')
+          start = lines.index(marker)
+          end = next((i for i in range(start + 1, len(lines)) if lines[i].startswith('      - ')), len(lines))
+          section = lines[start:end]
+          block = section[section.index('        run: |') + 1:]
+          if any(line and not line.startswith('          ') for line in block):
+              raise SystemExit('Unexpected publishing step indentation')
+          script = '\n'.join(line[10:] if line else '' for line in block)
+          if not script.strip() or ('$' + '{{') in script:
+              raise SystemExit('Expected a self-contained publishing build script')
+          wrapper = "$ErrorActionPreference = 'Stop'\n" + script + '\n'
+          wrapper += 'if (Test-Path -LiteralPath variable:\\LASTEXITCODE) { exit $LASTEXITCODE }\n'
+          Path(os.environ['RUNNER_TEMP'], 'public-tray-build.ps1').write_text(wrapper)
+          PY
+      - name: Build the CLI and tray without publishing
+        shell: pwsh
+        env:
+          MATRIX_OS: windows
+          MATRIX_ARCH: ${{ matrix.arch }}
+          MATRIX_TRAY: 'true'
+          MSYS2_AMD64_LOC: ${{ steps.toolchain.outputs.msys2-location }}
+          MSYS2_ARM64_LOC: ${{ steps.toolchain.outputs.msys2-location }}
+          GOWORK: 'off'
+        run: |
+          pwsh -NoLogo -NoProfile -NonInteractive -File "$env:RUNNER_TEMP/public-tray-build.ps1"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          foreach ($binary in @('adder.exe', 'adder-tray.exe')) {
+            if (-not (Test-Path -LiteralPath $binary)) { throw "Missing build output: $binary" }
+          }
+          git diff --exit-code -- go.mod go.sum
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

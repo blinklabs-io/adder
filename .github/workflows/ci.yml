@@ -12,7 +12,7 @@ on:
 
 jobs:
   go-test:
-    uses: blinklabs-io/actions/.github/workflows/reuseable-go-test.yml@main
+    uses: blinklabs-io/shared-actions/.github/workflows/reuseable-go-test.yml@7328ad66dec3a12676f5a9d1948fa74946712613
     with:
       go-versions: '["1.26.x","1.27.x"]'
       golangci-cgo-enabled: true
@@ -32,7 +32,7 @@ jobs:
   publish:
     needs: [go-test]
     if: github.event_name == 'push'
-    uses: blinklabs-io/actions/.github/workflows/reuseable-publish-desktop.yml@50f4ed21d4ead09f72ca3b696c4e607a8c2832be
+    uses: blinklabs-io/shared-actions/.github/workflows/reuseable-publish-desktop.yml@7328ad66dec3a12676f5a9d1948fa74946712613
     permissions:
       attestations: write
       contents: write

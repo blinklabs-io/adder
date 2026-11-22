@@ -15,6 +15,6 @@ on:
 
 jobs:
   orchestrate:
-    uses: blinklabs-io/actions/.github/workflows/reuseable-ci-docker-multiarch.yml@main
+    uses: blinklabs-io/shared-actions/.github/workflows/reuseable-ci-docker-multiarch.yml@7328ad66dec3a12676f5a9d1948fa74946712613
     with:
       image-name: blinklabs-io/adder
