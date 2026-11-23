@@ -2,14 +2,6 @@ name: Test public tray build
 
 on:
   pull_request:
-    paths:
-      - '.github/workflows/ci.yml'
-      - '.github/workflows/test-tray-canary.yml'
-      - 'cmd/adder-tray/**'
-      - 'tray/**'
-      - 'Makefile'
-      - 'go.mod'
-      - 'go.sum'
 
 permissions:
   contents: read
@@ -34,10 +26,35 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Resolve the caller's public publisher
+        id: publisher
+        shell: bash
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          import re
+
+          lines = Path('.github/workflows/ci.yml').read_text().splitlines()
+          marker = '  publish:'
+          if lines.count(marker) != 1:
+              raise SystemExit('Expected one generated publish job')
+          start = lines.index(marker)
+          end = next((i for i in range(start + 1, len(lines)) if lines[i] and not lines[i].startswith('    ')), len(lines))
+          sources = [line.removeprefix('    uses: ').strip() for line in lines[start + 1:end] if line.startswith('    uses: ')]
+          prefix = 'blinklabs-io/shared-actions/.github/workflows/reuseable-publish-desktop.yml@'
+          if len(sources) != 1 or not sources[0].startswith(prefix):
+              raise SystemExit('Expected the public desktop publisher')
+          ref = sources[0][len(prefix):]
+          if not re.fullmatch('[0-9a-f]{40}', ref):
+              raise SystemExit('Expected an immutable publisher revision')
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write(f'ref={ref}\n')
+          PY
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: blinklabs-io/shared-actions
-          ref: 7328ad66dec3a12676f5a9d1948fa74946712613
+          ref: ${{ steps.publisher.outputs.ref }}
           path: .canary-shared-actions
           persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
