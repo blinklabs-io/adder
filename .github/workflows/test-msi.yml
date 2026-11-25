@@ -119,7 +119,7 @@ jobs:
 
       - name: Sign and verify Windows executables
         if: steps.auth.outcome == 'success'
-        uses: blinklabs-io/shared-actions/sign-windows@9e86a63c140305c61bf07e9abbb66b255c93d50d
+        uses: blinklabs-io/shared-actions/sign-windows@57afbad119d9da1793cb8184a97606ca2f2525c6
         with:
           files: |
             adder.exe
@@ -150,7 +150,7 @@ jobs:
 
       - name: Sign and verify MSI
         if: steps.auth.outcome == 'success'
-        uses: blinklabs-io/shared-actions/sign-windows@9e86a63c140305c61bf07e9abbb66b255c93d50d
+        uses: blinklabs-io/shared-actions/sign-windows@57afbad119d9da1793cb8184a97606ca2f2525c6
         with:
           files: dist/adder-0.0.${{ github.run_number }}-windows-${{ env.WINDOWS_ARCH }}.msi
           application-name: Adder
