@@ -77,10 +77,12 @@ jobs:
             $env:CXX = "$msys2Loc\clangarm64\bin\clang++.exe"
           }
 
+          $env:PATH = "$(Split-Path -Parent $env:CC);$env:PATH"
           go env GOOS GOARCH CC CXX
           & $env:CC --version
 
           make build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           make build-tray
 
       - name: Check signing secrets
