@@ -276,11 +276,11 @@ func TestOwnedStateStoreReopensAfterStop(t *testing.T) {
 	}))
 
 	setup := func(context.Context) error { return c.ensureStateStore() }
-	require.NoError(t, c.StartRun(context.Background(), chainSyncBaseConfig(), setup, c.shutdownHooks()))
+	require.NoError(t, c.StartRun(context.Background(), chainSyncBaseConfig(), setup, c.shutdownHooks(context.Background())))
 	require.NoError(t, c.Stop())
 	require.Equal(t, 1, initial.closeCalls)
 
-	require.NoError(t, c.StartRun(context.Background(), chainSyncBaseConfig(), setup, c.shutdownHooks()))
+	require.NoError(t, c.StartRun(context.Background(), chainSyncBaseConfig(), setup, c.shutdownHooks(context.Background())))
 	require.Equal(t, opened, c.stateStore)
 	require.Equal(t, 1, openCalls)
 	require.NoError(t, c.Stop())
@@ -292,7 +292,7 @@ func TestCallerStateStoreRemainsOpenAfterStop(t *testing.T) {
 	c := New(WithStateStore(store))
 	setup := func(context.Context) error { return c.ensureStateStore() }
 
-	require.NoError(t, c.StartRun(context.Background(), chainSyncBaseConfig(), setup, c.shutdownHooks()))
+	require.NoError(t, c.StartRun(context.Background(), chainSyncBaseConfig(), setup, c.shutdownHooks(context.Background())))
 	require.NoError(t, c.Stop())
 	require.Equal(t, 0, store.closeCalls)
 }

@@ -136,7 +136,13 @@ func TestStopCancelsConnectionSetup(t *testing.T) {
 					)),
 				)
 				require.NoError(t, err)
-				defer server.Close()
+				defer func() {
+					closeCtx, cancel := context.WithTimeout(
+						context.Background(), 10*time.Second,
+					)
+					defer cancel()
+					_ = server.Close(closeCtx)
+				}()
 				select {
 				case <-entered:
 				case <-time.After(2 * time.Second):

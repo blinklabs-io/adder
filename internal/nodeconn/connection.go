@@ -18,9 +18,14 @@ package nodeconn
 import (
 	"context"
 	"net"
+	"time"
 
 	ouroboros "github.com/blinklabs-io/gouroboros"
 )
+
+// closeTimeout bounds how long Dial waits for a connection it is
+// discarding to finish shutting down.
+const closeTimeout = 10 * time.Second
 
 // Dial cancels both the socket dial and the Ouroboros handshake with ctx.
 // The caller owns the returned connection after a successful handshake.
@@ -53,7 +58,12 @@ func Dial(
 		return nil, err
 	}
 	if err := ctx.Err(); err != nil {
-		_ = conn.Close()
+		closeCtx, cancel := context.WithTimeout(
+			context.WithoutCancel(ctx),
+			closeTimeout,
+		)
+		defer cancel()
+		_ = conn.Close(closeCtx)
 		return nil, err
 	}
 	return conn, nil

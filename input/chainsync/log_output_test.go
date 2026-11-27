@@ -36,7 +36,7 @@ func (c *callbackLogInput) StartContext(ctx context.Context) error {
 		ctx,
 		chainSyncBaseConfig(),
 		func(context.Context) error { return nil },
-		c.shutdownHooks(),
+		c.shutdownHooks(context.Background()),
 	)
 }
 

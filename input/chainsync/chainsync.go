@@ -57,6 +57,10 @@ const (
 	// can see 1000+ events queued before the output drains them.
 	eventChanBuffer = 2048
 
+	// connCloseTimeout bounds how long a node connection close waits for
+	// the connection's goroutines and protocol callbacks to finish.
+	connCloseTimeout = 10 * time.Second
+
 	maxAutoReconnectDelay = 60 * time.Second
 	defaultKupoTimeout    = 30 * time.Second
 
@@ -168,7 +172,7 @@ func (c *ChainSync) Start() error {
 // StartContext starts the plugin with ctx governing setup and run operations.
 // Call Stop to wait for workers and release resources, including after cancellation.
 func (c *ChainSync) StartContext(ctx context.Context) error {
-	return c.StartRun(ctx, chainSyncBaseConfig(), c.start, c.shutdownHooks())
+	return c.StartRun(ctx, chainSyncBaseConfig(), c.start, c.shutdownHooks(ctx))
 }
 
 func (c *ChainSync) start(ctx context.Context) error {
@@ -206,16 +210,16 @@ func (c *ChainSync) start(ctx context.Context) error {
 // and its goroutines are still live, and those goroutines call back into
 // a plugin whose channels are closing.
 func (c *ChainSync) Stop() error {
-	return c.Shutdown(c.shutdownHooks())
+	return c.Shutdown(c.shutdownHooks(context.Background()))
 }
 
-func (c *ChainSync) shutdownHooks() plugin.ShutdownHooks {
+func (c *ChainSync) shutdownHooks(ctx context.Context) plugin.ShutdownHooks {
 	return plugin.ShutdownHooks{
 		BeforeWait: func() error {
-			return c.closeConn()
+			return c.closeConn(ctx)
 		},
 		AfterWait: func() error {
-			err := c.closeConn()
+			err := c.closeConn(ctx)
 			// persistCursorLoop has exited by now (it is a tracked worker
 			// waited on above), so flushing here cannot race its own
 			// periodic flush.
@@ -261,12 +265,19 @@ func (c *ChainSync) takeConn() *ouroboros.Connection {
 // closeConn closes the current node connection, if there is one. The
 // close runs outside the lock: it blocks until the connection's own
 // goroutines are done, and those call back into this plugin.
-func (c *ChainSync) closeConn() error {
+func (c *ChainSync) closeConn(ctx context.Context) error {
 	conn := c.takeConn()
 	if conn == nil {
 		return nil
 	}
-	return conn.Close()
+	// ctx is usually cancelled by the time a close is needed, so only its
+	// values carry over; the close is bounded separately.
+	closeCtx, cancel := context.WithTimeout(
+		context.WithoutCancel(ctx),
+		connCloseTimeout,
+	)
+	defer cancel()
+	return conn.Close(closeCtx)
 }
 
 func (c *ChainSync) setupConnection(ctx context.Context) error {
@@ -360,7 +371,13 @@ func (c *ChainSync) connect(ctx context.Context) (<-chan error, error) {
 	// on cancellation even before Stop can acquire the lifecycle lock.
 	closed := make(chan struct{})
 	stop := context.AfterFunc(ctx, func() {
-		_ = conn.Close()
+		// ctx is already cancelled here, so the close needs its own bound.
+		closeCtx, cancel := context.WithTimeout(
+			context.WithoutCancel(ctx),
+			connCloseTimeout,
+		)
+		defer cancel()
+		_ = conn.Close(closeCtx)
 		close(closed)
 	})
 	defer func() {
@@ -476,7 +493,7 @@ func (c *ChainSync) reconnect(
 			delay = 1 * time.Second
 		}
 		// Retire the failed connection before dialling a replacement.
-		if err := c.closeConn(); err != nil {
+		if err := c.closeConn(ctx); err != nil {
 			if logger := c.Logger(); logger != nil {
 				logger.Warn(
 					"failed to properly close connection",
