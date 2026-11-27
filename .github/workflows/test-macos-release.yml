@@ -1,0 +1,23 @@
+# Generated automatically by org-governance-bot. Do not edit manually.
+name: "test-macos-release"
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  orchestrate:
+    uses: blinklabs-io/shared-actions/.github/workflows/reuseable-test-macos-release.yml@a80f7002ed898be8536905f5a59002fce59890c4
+    secrets:
+      apple-app-specific-password: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+      apple-certificate: ${{ secrets.APPLE_CERTIFICATE }}
+      apple-certificate-password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+      apple-id: ${{ secrets.APPLE_ID }}
+      apple-installer-certificate: ${{ secrets.APPLE_INSTALLER_CERTIFICATE }}
+      apple-installer-certificate-password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+      apple-keychain-password: ${{ secrets.APPLE_KEYCHAIN_PASSWORD }}
+      apple-team-id: ${{ secrets.APPLE_TEAM_ID }}
+    with:
+      config: '{"artifact_type":"pkg","artifact_basename":"adder","build":{"binaries":[{"name":"adder","module":".","package":"./cmd/adder","cgo":false,"tags":["nodbus"]},{"name":"adder-tray","module":".","package":"./cmd/adder-tray","cgo":true,"tags":[]}]},"metadata":{"application_name":"Adder","bundle_id":"io.blinklabs.adder","executable":"adder-tray","icon_name":"adder","cli_symlink":"adder"},"icon":".github/assets/Adder.icns"}'
