@@ -32,7 +32,7 @@ jobs:
   publish:
     needs: [go-test]
     if: github.event_name == 'push'
-    uses: blinklabs-io/shared-actions/.github/workflows/reuseable-publish-desktop.yml@4de297c45676130a4ff441f6a587f3a1087af6c4
+    uses: blinklabs-io/shared-actions/.github/workflows/reuseable-publish-desktop.yml@a80f7002ed898be8536905f5a59002fce59890c4
     permissions:
       attestations: write
       contents: write
@@ -59,4 +59,5 @@ jobs:
       binary-target-matrix: '[{"runner":"macos-15","os":"darwin","arch":"arm64","tray":true},{"runner":"ubuntu-26.04","os":"freebsd","arch":"amd64","tray":false},{"runner":"ubuntu-26.04","os":"freebsd","arch":"arm64","tray":false},{"runner":"ubuntu-26.04","os":"linux","arch":"amd64","tray":true},{"runner":"ubuntu-26.04-arm","os":"linux","arch":"arm64","tray":true},{"runner":"windows-latest","os":"windows","arch":"amd64","tray":true},{"runner":"windows-11-arm","os":"windows","arch":"arm64","tray":true}]'
       description: Adder is a tool for tailing the Cardano blockchain and emitting events
       docker-image: blinklabs/adder
+      macos-release-config: '{"artifact_type":"pkg","artifact_basename":"adder","build":{"binaries":[{"name":"adder","module":".","package":"./cmd/adder","cgo":false,"tags":["nodbus"]},{"name":"adder-tray","module":".","package":"./cmd/adder-tray","cgo":true,"tags":[]}]},"metadata":{"application_name":"Adder","bundle_id":"io.blinklabs.adder","executable":"adder-tray","icon_name":"adder","cli_symlink":"adder"},"icon":".github/assets/Adder.icns"}'
       windows-signing-name: Adder
