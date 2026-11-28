@@ -40,6 +40,10 @@ const (
 	defaultPollInterval = 5 * time.Second
 	defaultKupoTimeout  = 30 * time.Second
 	kupoHealthTimeout   = 3 * time.Second
+
+	// connCloseTimeout bounds how long a node connection close waits for
+	// the connection's goroutines and protocol callbacks to finish.
+	connCloseTimeout = 10 * time.Second
 )
 
 // pollTx holds a transaction and its hash for one mempool poll.
@@ -103,12 +107,19 @@ func (m *Mempool) takeConn() *ouroboros.Connection {
 // closeConn closes the current node connection, if there is one. The
 // close runs outside the lock: it blocks until the connection's own
 // goroutines are done, and those call back into this plugin.
-func (m *Mempool) closeConn() error {
+func (m *Mempool) closeConn(ctx context.Context) error {
 	conn := m.takeConn()
 	if conn == nil {
 		return nil
 	}
-	return conn.Close()
+	// ctx is usually cancelled by the time a close is needed, so only its
+	// values carry over; the close is bounded separately.
+	closeCtx, cancel := context.WithTimeout(
+		context.WithoutCancel(ctx),
+		connCloseTimeout,
+	)
+	defer cancel()
+	return conn.Close(closeCtx)
 }
 
 // New returns a new Mempool input plugin
@@ -135,7 +146,7 @@ func (m *Mempool) StartContext(ctx context.Context) error {
 	return m.StartRun(ctx,
 		plugin.BaseConfig{HasOutput: true},
 		m.start,
-		m.shutdownHooks(),
+		m.shutdownHooks(ctx),
 	)
 }
 
@@ -175,13 +186,14 @@ func (m *Mempool) start(ctx context.Context) error {
 
 // Stop cancels startup or polling and releases the node connection.
 func (m *Mempool) Stop() error {
-	return m.Shutdown(m.shutdownHooks())
+	return m.Shutdown(m.shutdownHooks(context.Background()))
 }
 
-func (m *Mempool) shutdownHooks() plugin.ShutdownHooks {
+func (m *Mempool) shutdownHooks(ctx context.Context) plugin.ShutdownHooks {
+	closeConn := func() error { return m.closeConn(ctx) }
 	return plugin.ShutdownHooks{
-		BeforeWait: m.closeConn,
-		AfterWait:  m.closeConn,
+		BeforeWait: closeConn,
+		AfterWait:  closeConn,
 	}
 }
 

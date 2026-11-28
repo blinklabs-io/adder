@@ -20,6 +20,7 @@ import (
 	"net"
 	"sync"
 	"testing"
+	"time"
 
 	ouroboros "github.com/blinklabs-io/gouroboros"
 	"github.com/blinklabs-io/gouroboros/protocol/chainsync"
@@ -74,7 +75,13 @@ func Node(t *testing.T) string {
 				if err != nil {
 					return
 				}
-				defer conn.Close()
+				defer func() {
+					closeCtx, cancel := context.WithTimeout(
+						context.WithoutCancel(ctx), 10*time.Second,
+					)
+					defer cancel()
+					_ = conn.Close(closeCtx)
+				}()
 				for range conn.ErrorChan() {
 				}
 			})
